@@ -1,5 +1,7 @@
 # SpineML
 
+![Social preview](./screenshots/salabim.png)
+
 In this project we study techniques for reducing the effort of factory layout planning (FLP) and optimal job shop scheduling (JSS).
 To achieve this goal, we develop an easy-to-use configurator and simulator for a particular class of factories.
 More precisely, we concentrate on flexible manufacturing systems, which can be adapted to a variety of products and processes.

@@ -160,6 +160,7 @@ l2 = Layout("Layout 2", storageOutTime2, storageInTime2)
 # Step 4.2: Define your corridors for the layout variants
 c1 = Corridor("Corridor 1", storageCapacity1, storageOutTime1, storageInTime1, l1)
 c2 = Corridor("Corridor 1", storageCapacity2, storageOutTime2, storageInTime2, l2)
+...
 
 # Step 4.3: Define your machines for the corridors of the layout variants
 m1 = Machine("Machine 1", mt1, c1, left1)

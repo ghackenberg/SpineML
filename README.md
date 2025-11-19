@@ -97,63 +97,79 @@ In the following, we describe each phase in more  detail.
 
 ### **Phase 1:** Basic configuration
 
-**Step 1:** Import the Factory Design Automation (FDA) library.
+**Step 1:** Import the SpineML library.
 
 ```python
 from SpineML import *
 ```
 
-**Step 2:** Define your product, tool, and machine types.
+**Step 2:** Define your product, tool, machine, and operation types.
 
 ```python
 # Step 2.1: Define your product types
 # (everything from raw material to end product)
-pt1 = ProductType("Raw material 1", ...)
-pt2 = ProductType("End product 1", ...)
+pt1 = ProductType("Raw material 1", width1, length1, depth1, weight1)
+pt2 = ProductType("End product 1", width2, length2, depth2, weight2)
+...
 
 # Step 2.2: Define your tool types
 # (all types of tools you are using in your production)
-tt1 = ToolType(...)
+tt1 = ToolType("Tool type 1", mountTime1, unmountTime1, totalLifeUnits1)
+tt2 = ToolType("Tool type 2", mountTime2, unmountTime2, totalLifeUnits2)
+...
 
 # Step 2.3: Define your machine types
 # (all types of machines you are using in your production)
-mt1 = MachineType(...)
-```
+mt1 = MachineType("Machine type 1")
+mt2 = MachineType("Machine type 2")
+...
 
-**Step 3:** Define your executable operations.
-
-```python
-# Produce PT2 from PT1 on MT1 with TT1
-ot1 = OperationType(..., mt1, tt1, pt1, pt2)
+# Step 2.4: Define your operation types
+# (all type of operations you can execute in your production)
+ot1 = OperationType("Operation type 1", duration1, consumedLifeUnits1, defectProbability1, mt1, tt1, pt1, pt2)
+ot2 = OperationType("Operation type 2", duration2, consumedLifeUnits2, defectProbability2, mt2, tt2, pt1, pt2)
+...
 ```
 
 ### **Phase 2:** Scenario configuration
 
-**Step 4:** Define your scenarios including orders for product types (see *Basic Configuration*)
+**Step 3:** Define your scenarios including orders for product types (see *Basic Configuration*)
 
 ```python
-# Step 4.1: Define your scenarios
-s1 = Scenario(...)
-# Step 4.2: Define your orders in the scenarios
-o1 = Order(..., pt1, s1)
+# Step 3.1: Define your scenarios
+s1 = Scenario("Scenario 1")
+s2 = Scenario("Scenario 2")
+...
+
+# Step 3.2: Define your orders in the scenarios
+o1 = Order("Order 1", quantity1, earliestStart1, latestEnd1, pt2, s1)
+o2 = Order("Order 2", quantity2, earliestStart2, latestEnd2, pt2, s2)
+...
 ```
 
 ### **Phase 3:** Layout configuration
 
-**Step 5:** Define your factory layouts including corridors, and machines (i.e. instances of machine types).
+**Step 4:** Define your factory layouts including corridors, and machines (i.e. instances of machine types).
 
 ```python
-# Step 5.1: Define your layout variants
-l1 = Layout(...)
-# Step 5.2: Define your corridors for the layout variants
-c1 = Corridor(..., l1)
-# Step 5.3: Define your machines for the corridors of the layout variants
-m1 = Machine(..., mt1, c1, ...)
+# Step 4.1: Define your layout variants
+l1 = Layout("Layout 1", storageOutTime1, storageInTime1)
+l2 = Layout("Layout 2", storageOutTime2, storageInTime2)
+...
+
+# Step 4.2: Define your corridors for the layout variants
+c1 = Corridor("Corridor 1", storageCapacity1, storageOutTime1, storageInTime1, l1)
+c2 = Corridor("Corridor 1", storageCapacity2, storageOutTime2, storageInTime2, l2)
+
+# Step 4.3: Define your machines for the corridors of the layout variants
+m1 = Machine("Machine 1", mt1, c1, left1)
+m2 = Machine("Machine 2", mt2, c2, left2)
+...
 ```
 
 ### **Phase 4:** Performance evaluation
 
-**Step 6:** Evaluate the performance of a layout variant in a given scenario.
+**Step 5:** Evaluate the performance of a layout variant in a given scenario.
 
 ```python
 # Simulate L1 on S1

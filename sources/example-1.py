@@ -1,43 +1,51 @@
 from SpineML import *
 
-# Create machine types
+# Create machine types (name)
+
 mt1 = MachineType('Machine type 1')
 mt2 = MachineType('Machine type 2')
 mt3 = MachineType('Machine type 3')
 
-# Create tool types
+# Create tool types (name, mount time, unmount time, total life units)
+
 tt1 = ToolType('Tool type 1', 2, 3, 10)
 tt2 = ToolType('Tool type 2', 1, 2, 9)
 tt3 = ToolType('Tool type 3', 3, 4, 12)
 
-# Create product types
+# Create product types (name, length, width, depth, weight)
+
 pt1 = ProductType('Product type 1', 12, 12, 12, 5)
 pt2 = ProductType('Product type 2', 12, 24, 11, 10)
 pt3 = ProductType('Product type 3', 14, 15, 15, 6)
 pt4 = ProductType('Product type 4', 33, 12, 22, 17)
 
-# Create process steps
+# Create operation types (name, duration, consumed life units, defect probability, machine type, tool type, consumed product type, produced product type)
+
 OperationType('Operation 1', 1, 5, 0.15,mt1, tt1, pt1, pt2)
 OperationType('Operation 2', 1, 4, 0.20, mt2, tt2, pt4, pt1)
 OperationType('Operation 3', 1, 6, 0.11, mt3, tt3, pt3, pt4)
 
-# Create scenarios
+# Create scenarios (name)
+
 s1 = Scenario('Scenario 1')
 s2 = Scenario('Scenario 2')
 
-# Create orders
+# Create orders (name, quantity, earliest start time, latest end time, product type, scenario)
+
 # ... scenario 1
 o1_1 = Order("Order 1.1", 10, 11, 20, pt1, s1)
 # ... scenario 2
 o2_1 = Order("Order 2.1", 500, 25, 26, pt2, s2)
 o2_2 = Order("Order 2.2", 400, 14, 16, pt2, s2)
 
-# Create layouts
+# Create layouts (name, storage out time, storage in time)
+
 l1 = Layout('Layout 1', 10, 5)
 l2 = Layout('Layout 2', 11, 7)
 l3 = Layout('Layout 3', 11, 3)
 
-# Create corridors
+# Create corridors (name, storage capacity, storage out time, storage in time, layout)
+
 # ... layout 1
 c1_1 = Corridor("Corridor 1.1", 200, 3, 4, l1)
 c1_2 = Corridor("Corridor 1.2", 150, 1, 2, l1)
@@ -49,7 +57,7 @@ c3_1 = Corridor("Corridor 3.1", 200, 1, 1, l3)
 c3_2 = Corridor("Corridor 3.2", 300, 1, 1, l3)
 c3_3 = Corridor("Corridor 3.3", 200, 1, 1, l3)
 
-# Create machines
+# Create machines (name, machine type, corridor, left)
 
 # ... layout 1 / corridor 1
 Machine('Machine 1.1.1', mt3, c1_1, True)
@@ -74,7 +82,9 @@ Machine('Machine 3.2.1', mt3, c3_2, True)
 Machine('Machine 3.3.1', mt2, c3_3, True)
 
 # Visualize
+
 visualizeRoute(l1, o1_1)
 
 # Simulate
+
 simulate(l1, s1)

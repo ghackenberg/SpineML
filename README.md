@@ -62,6 +62,38 @@ The goal of optimization is to determine the best sequence of machines for a giv
 
 ![Tkinter screenshot](./screenshots/routes.png)
 
+## Controller architecture
+
+The project now contains a dedicated `controller` module that separates decision-making from the simulation kernel.
+Simulation components such as robots and machines no longer decide autonomously what to do next.
+Instead, they expose actor-specific `cmd_store`s and execute typed commands issued by the controller.
+
+The controller module is split into four parts:
+
+- `types.py`
+  defines the interface between controller and simulation through typed planning requests, job plans, system observations, and dispatch commands
+- `policy.py`
+  defines the abstract control interfaces:
+  - `RoutingPolicy` plans a newly created job by assigning an `operation_sequence` and a `machine_sequence`
+  - `DispatchPolicy` decides which commands should be issued for the current system state
+  - `RuleBasedDispatchPolicy` provides a reusable dispatch skeleton for main robots, corridor robots, and machines
+- `controller.py`
+  implements `PolicyController`, a `salabim.Component` that periodically reads the global system state, converts simulation objects into typed observations, calls the active policies, and forwards the resulting commands to the corresponding actor `cmd_store`s
+- `default_controller.py`
+  provides `DefaultRoutingPolicy` and `DefaultDispatchPolicy` as an executable baseline implementation of the new interfaces
+
+Operationally, the control flow is now as follows:
+
+1. when a `SimOrderJob` is created, the controller calls the active `RoutingPolicy`
+2. the resulting job plan is stored as the job's initial `operation_sequence` and `machine_sequence`
+3. during the simulation, the `PolicyController` periodically reads the system state
+4. the active `DispatchPolicy` derives transport and processing commands from that state
+5. each command is sent to the responsible actor via its `cmd_store`
+6. robots and machines execute the received commands inside the simulation kernel
+
+This architecture makes the control logic exchangeable.
+New heuristics can be integrated by implementing alternative routing or dispatch policies without rewriting the machine and robot simulation processes.
+
 ## Requirements
 
 To use this project, you need to install the following software packages on your machine.

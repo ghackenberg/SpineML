@@ -1,4 +1,4 @@
-from .Configuration import ProductType, OperationType, Layout, Machine
+from ..Configuration import ProductType, OperationType, Layout, Machine
 
 def calculateMachineSequencesFromOperationSequence(process: list[OperationType], layout: Layout) -> list[list[Machine]]:
     if len(process) > 0:

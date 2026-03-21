@@ -5,31 +5,57 @@ from ..Configuration import Corridor, Machine
 from .SimMachine import SimMachine
 from .SimRobotCorridorArm import SimRobotCorridorArm
 
+
 class SimCorridorArm(sim.Component):
-    def __init__(self, corridor: Corridor, machines: list[Machine], direction: str, store_in: sim.Store, store_out_1: sim.Store, store_out_2: sim.Store, dx: float, y: float, *args, **kwargs):
+    def __init__(
+        self,
+        corridor: Corridor,
+        machines: list[Machine],
+        direction: str,
+        store_in: sim.Store,
+        store_out_1: sim.Store,
+        store_out_2: sim.Store,
+        dx: float,
+        y: float,
+        controller=None,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         self.corridor = corridor
         self.machines = machines
-        
         self.direction = direction
 
         self.store_in = store_in
         self.store_out_1 = store_out_1
         self.store_out_2 = store_out_2
+        self.controller = controller
 
         # Machines
         self.sim_machines: list[SimMachine] = []
         machine_num = 0
         for machine in machines:
             machine_x = (3 + machine_num * 2) * dx
-            sim_machine = SimMachine(machine, machine_x, y, env=self.env)
+            sim_machine = SimMachine(machine, machine_x, y, controller=self.controller, env=self.env)
             self.sim_machines.append(sim_machine)
             machine_num = machine_num + 1
 
         # Transversal robot
         if len(machines) != 0:
-            self.sim_arm_robot = SimRobotCorridorArm(corridor, machines, direction, store_in, store_out_1, store_out_2, self.sim_machines, dx, y, env=self.env)
+            self.sim_arm_robot = SimRobotCorridorArm(
+                corridor,
+                machines,
+                direction,
+                store_in,
+                store_out_1,
+                store_out_2,
+                self.sim_machines,
+                dx,
+                y,
+                controller=self.controller,
+                env=self.env,
+            )
 
         # Arm horizontal box
         if len(machines) != 0:
@@ -40,14 +66,14 @@ class SimCorridorArm(sim.Component):
         # Corridor storage arm vertical box
         if len(machines) != 0:
             sim.Animate3dBox(x_len=0.25, y_len=0.25, z_len=1.5, color="green", x=dx, y=y, z=1.625)
-    
+
     def printStatistics(self):
         print(f"    - Arm {self.direction}:")
         if len(self.machines) != 0:
             self.sim_arm_robot.printStatistics()
         for sim_machine in self.sim_machines:
             sim_machine.printStatistics()
-    
+
     def robotCount(self):
         if self.machineCount() > 0:
             return 1
@@ -56,7 +82,7 @@ class SimCorridorArm(sim.Component):
 
     def machineCount(self):
         return len(self.sim_machines)
-    
+
     def robotUtilization(self):
         if self.machineCount() > 0:
             return self.sim_arm_robot.utilization()
@@ -72,6 +98,6 @@ class SimCorridorArm(sim.Component):
             return utl
         else:
             return 1
-    
+
     def plot(self):
         pass

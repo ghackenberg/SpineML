@@ -3,7 +3,7 @@ from random import randint
 
 from ..Configuration import Layout, Order, Corridor, Machine
 
-from ..calculate import calculateMachineSequences
+from ..controller.calculate import calculateMachineSequences
 
 canvas_width = 800
 canvas_height = 600

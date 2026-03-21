@@ -1,233 +1,365 @@
 # SpineML
 
-![Social preview](./screenshots/salabim.png)
+## Erweiterung auf eine austauschbare Controller-Architektur
 
-In this project we study techniques for reducing the effort of factory layout planning (FLP) and optimal job shop scheduling (JSS).
-To achieve this goal, we develop an easy-to-use configurator and simulator for a particular class of factories.
-More precisely, we concentrate on flexible manufacturing systems, which can be adapted to a variety of products and processes.
-We assume that the material flow between the work stations of the factory is handled completely by gantry robots.
+Im Projekt wurde die Steuerungslogik von der eigentlichen Simulationslogik getrennt.
+Ziel dieser Erweiterung ist es, unterschiedliche Steuerungsverfahren einsetzen zu können, ohne den Simulationskern für Roboter, Maschinen, Queues und Layouts jeweils neu anpassen zu müssen.
 
-## 🖼️ Screenshots
+Die zentrale Idee ist:
 
-Here are some screenshots of our software tool:
+- der Simulationskern beschreibt nur noch Zustände und Ausführung
+- der Controller liest den Systemzustand periodisch ein
+- die eigentliche Entscheidungslogik liegt in austauschbaren Policies
+- Maschinen und Roboter führen nur noch die vom Controller erzeugten Commands aus
 
-- **3D animation** of the factory components including robots and machines
-- **Performance evaluation** of the factory layout in a given order scenario
-- **Graph visualization** of the underlying factory configuration data model
-- **Route visualization** for a given job and a given factory layout
+Damit entsteht eine klarere Schnittstelle zwischen Steuerung und Simulation und gleichzeitig eine Grundlage für spätere heuristische oder lernbasierte Verfahren.
 
-In the following, we explain the software outputs in more detail.
+## Überblick über die neue Struktur
 
-### 3D animation
-
-Our software is based on [Salabim](https://www.salabim.org/), a Python framework for Discrete Event Simulation (DES).
-DES is a standard tool for factory layout planning and performance evaluation.
-Salabim comes with an integrated 3D animation engine, which supports both primitive shapes and Computer-Aided Design (CAD) models in OBJ Wavefront format.
-
-![Salabim screenshot](./screenshots/salabim.png)
-
-### Performance evaluation
-
-The goal of Discrete Event Simulation (DES) is to evaluate the performance of your factory layout plan early in the planning process.
-Performance evaluation typically concentrates on the utilization of resources such as workers, machines, and storage areas.
-Our software automatically tracks the most relevant performance characteristics.
-
-#### Console output
-
-The performance data can be printed to the console.
-
-![Console screenshot](./screenshots/console.png)
-
-#### PyPlot output
-
-The performance data can be visualized using bar charts.
-
-![PyPlot screenshot](./screenshots/pyplot.png)
-
-### 🖼️ Graph visualization
-
-Furthermore, we support basic graph visualizations for debugging your factory configuration models.
-The following graph visualization displays the product types and manufacturing operations of a configuration model.
-Product types represent everything from raw material to end products, while operations consume and product them.
-
-![NetworkX screenshot](./screenshots/networkx.png)
-
-### 🖼️ Route visualization
-
-Finally, we provide a visualization of all possible routes through a given layout for a given job.
-Note that for a given job at first only the source and the target product type are known.
-From this information, the possible sequence of operation types is computed leading from source to target product type.
-Finally, from all possible sequences of operation types the possible sequences of machine types can be computed performing these operations.
-The goal of optimization is to determine the best sequence of machines for a given job at a given time.
-
-![Tkinter screenshot](./screenshots/routes.png)
-
-## Controller architecture
-
-The project now contains a dedicated `controller` module that separates decision-making from the simulation kernel.
-Simulation components such as robots and machines no longer decide autonomously what to do next.
-Instead, they expose actor-specific `cmd_store`s and execute typed commands issued by the controller.
-
-The controller module is split into four parts:
+Die Erweiterung konzentriert sich auf das Paket `sources/SpineML/controller/`.
+Dort wurde die Steuerung in vier Bausteine aufgeteilt:
 
 - `types.py`
-  defines the interface between controller and simulation through typed planning requests, job plans, system observations, and dispatch commands
+- `calculate.py`
 - `policy.py`
-  defines the abstract control interfaces:
-  - `RoutingPolicy` plans a newly created job by assigning an `operation_sequence` and a `machine_sequence`
-  - `DispatchPolicy` decides which commands should be issued for the current system state
-  - `RuleBasedDispatchPolicy` provides a reusable dispatch skeleton for main robots, corridor robots, and machines
 - `controller.py`
-  implements `PolicyController`, a `salabim.Component` that periodically reads the global system state, converts simulation objects into typed observations, calls the active policies, and forwards the resulting commands to the corresponding actor `cmd_store`s
 - `default_controller.py`
-  provides `DefaultRoutingPolicy` and `DefaultDispatchPolicy` as an executable baseline implementation of the new interfaces
 
-Operationally, the control flow is now as follows:
+Zusätzlich wurde der Simulationskern im Ordner `sources/SpineML/Simulation/` so angepasst, dass Roboter und Maschinen ihre Entscheidungen nicht mehr selbst treffen, sondern Commands aus actor-spezifischen Command-Stores verarbeiten.
 
-1. when a `SimOrderJob` is created, the controller calls the active `RoutingPolicy`
-2. the resulting job plan is stored as the job's initial `operation_sequence` and `machine_sequence`
-3. during the simulation, the `PolicyController` periodically reads the system state
-4. the active `DispatchPolicy` derives transport and processing commands from that state
-5. each command is sent to the responsible actor via its `cmd_store`
-6. robots and machines execute the received commands inside the simulation kernel
+## Controller-Module
 
-This architecture makes the control logic exchangeable.
-New heuristics can be integrated by implementing alternative routing or dispatch policies without rewriting the machine and robot simulation processes.
+### `types.py`
 
-## Requirements
+`types.py` definiert die Datenschnittstelle zwischen Controller und Simulation.
+Hier werden die Objekte beschrieben, mit denen der Controller arbeitet.
 
-To use this project, you need to install the following software packages on your machine.
-Note that simulation experiments can be carried out without the optional software packages.
+Dazu gehören insbesondere:
 
-* **Python**
-* *Discrete event simulation support*
-  * **Salabim**
-  * *3D animation support (optional)*
-    * PyOpenGL
-    * PyOpenGL_accelerate
-  * *OBJ Wavefront file format support (optional)*
-    * PyWavefront
-    * PyGlet
-  * *Video production support (optional)*
-    * opencv-python
-    * numpy
-* *Chart visualization support*
-  * **Matplotlib**
-* *Graph visualization support (optional)*
-  * NetworkX
+- `JobKey`
+  - eindeutige Identifikation einer Produktionseinheit über Szenario, Order und Jobnummer
+- `JobPlanningRequest`
+  - Anfrage an die Routing-Logik für die Planung eines Jobs
+- `JobPlan`
+  - Ergebnis der Jobplanung mit `operation_sequence` und `machine_sequence`
+- `JobHeadObservation`
+  - detaillierte Beobachtung eines Jobs am Kopf einer Queue
+- `QueueObservation`
+  - Beobachtung einer Queue mit Länge und Head-Job
+- `SystemObservation`
+  - vollständige Beobachtung des Systems aus Sicht des Controllers
+- `DispatchCommand`
+  - allgemeiner Command an einen Actor
+- `MainRobotCommand`, `ArmRobotCommand`, `MachineCommand`
+  - konkrete Commands für die jeweiligen Actoren
 
-## 👨‍💻 Examples
+Diese Typen bilden die eigentliche Schnittstelle zwischen Simulationskern und Steuerungslogik.
 
-When performing a simulation study, we suggest working in four phases:
+### `calculate.py`
 
-1. **Basic configuration** defines the products as well as the processes to product them.
-2. **Scenario configuration** defines the situations, in which the factory must operate.
-3. **Layout configuration** defines the number and arrangement of the factory resources.
-4. **Performance evaluation** simulates the performance of the layout in a given scenario.
+`calculate.py` enthält die Logik zur Berechnung möglicher Operations- und Maschinenfolgen.
+Diese Funktionen gehören fachlich zur Routing-Logik und werden von Routing-Policies genutzt.
 
-In the following, we describe each phase in more  detail.
+Hier wird also berechnet:
 
-### **Phase 1:** Basic configuration
+- welche Operationsfolgen für ein Produkt möglich sind
+- welche Maschinenfolgen für eine Operationsfolge im gegebenen Layout möglich sind
 
-**Step 1:** Import the SpineML library.
+### `policy.py`
 
-```python
-from SpineML import *
-```
+`policy.py` definiert die austauschbaren Steuerungsschnittstellen.
 
-**Step 2:** Define your product, tool, machine, and operation types.
+Es gibt zwei zentrale Policy-Arten:
 
-```python
-# Step 2.1: Define your product types
-# (everything from raw material to end product)
-pt1 = ProductType("Raw material 1", width1, length1, depth1, weight1)
-pt2 = ProductType("End product 1", width2, length2, depth2, weight2)
-...
+- `RoutingPolicy`
+  - plant einen einzelnen Job beim Erzeugen
+  - liefert ein `JobPlan`
+- `DispatchPolicy`
+  - entscheidet im laufenden Betrieb, welche Commands als Nächstes erzeugt werden sollen
 
-# Step 2.2: Define your tool types
-# (all types of tools you are using in your production)
-tt1 = ToolType("Tool type 1", mountTime1, unmountTime1, totalLifeUnits1)
-tt2 = ToolType("Tool type 2", mountTime2, unmountTime2, totalLifeUnits2)
-...
+Zusätzlich gibt es:
 
-# Step 2.3: Define your machine types
-# (all types of machines you are using in your production)
-mt1 = MachineType("Machine type 1")
-mt2 = MachineType("Machine type 2")
-...
+- `RuleBasedDispatchPolicy`
+  - ein regelbasiertes Gerüst für Dispatching
+  - zerlegt die Gesamtentscheidung in kleinere Teilentscheidungen:
+    - `decide_main_robot_pick(...)`
+    - `decide_main_robot_place(...)`
+    - `decide_arm_robot_pick(...)`
+    - `decide_arm_robot_place(...)`
+    - `decide_machine_process(...)`
 
-# Step 2.4: Define your operation types
-# (all type of operations you can execute in your production)
-ot1 = OperationType("Operation type 1", duration1, consumedLifeUnits1, defectProbability1, mt1, tt1, pt1, pt2)
-ot2 = OperationType("Operation type 2", duration2, consumedLifeUnits2, defectProbability2, mt2, tt2, pt1, pt2)
-...
-```
+Damit muss eine neue Dispatch-Strategie nicht zwingend die gesamte Methode `decide(...)` selbst schreiben, sondern kann auf diesem Gerüst aufbauen.
 
-### **Phase 2:** Scenario configuration
+### `controller.py`
 
-**Step 3:** Define your scenarios including orders for product types (see *Basic Configuration*)
+`controller.py` enthält den eigentlichen Laufzeit-Controller.
 
-```python
-# Step 3.1: Define your scenarios
-s1 = Scenario("Scenario 1")
-s2 = Scenario("Scenario 2")
-...
+Die zentrale Klasse ist:
 
-# Step 3.2: Define your orders in the scenarios
-o1 = Order("Order 1", quantity1, earliestStart1, latestEnd1, pt2, s1)
-o2 = Order("Order 2", quantity2, earliestStart2, latestEnd2, pt2, s2)
-...
-```
+- `PolicyController`
 
-### **Phase 3:** Layout configuration
+`PolicyController` ist selbst eine `salabim.Component` und übernimmt die Vermittlung zwischen Simulation und Policies.
 
-**Step 4:** Define your factory layouts including corridors, and machines (i.e. instances of machine types).
+Seine Aufgaben sind:
 
-```python
-# Step 4.1: Define your layout variants
-l1 = Layout("Layout 1", storageOutTime1, storageInTime1)
-l2 = Layout("Layout 2", storageOutTime2, storageInTime2)
-...
+- Speichern der aktiven `RoutingPolicy`
+- Speichern der aktiven `DispatchPolicy`
+- Beobachten aller relevanten Simulationsobjekte
+- Umwandeln von Simulationszuständen in typed observations
+- periodisches Aufrufen der Dispatch-Logik
+- Verteilen der resultierenden Commands auf die jeweiligen Actoren
 
-# Step 4.2: Define your corridors for the layout variants
-c1 = Corridor("Corridor 1", storageCapacity1, storageOutTime1, storageInTime1, l1)
-c2 = Corridor("Corridor 1", storageCapacity2, storageOutTime2, storageInTime2, l2)
-...
+Technisch wichtig ist dabei:
 
-# Step 4.3: Define your machines for the corridors of the layout variants
-m1 = Machine("Machine 1", mt1, c1, left1)
-m2 = Machine("Machine 2", mt2, c2, left2)
-...
-```
+- jeder Actor besitzt einen eigenen `cmd_store`
+- der Controller verwaltet eine Zuordnung `actor_id -> cmd_store`
+- neue Commands werden über diese Zuordnung an den richtigen Actor geschickt
 
-### **Phase 4:** Performance evaluation
+Der `PolicyController` enthält dafür insbesondere:
 
-**Step 5:** Evaluate the performance of a layout variant in a given scenario.
+- Statusfunktionen für Jobs, Roboter und Maschinen
+- `read_status()` zum Erzeugen eines `SystemObservation`
+- `build_commands()` zum Aufruf der aktiven Dispatch-Policy
+- `process()` als periodische Controller-Schleife
 
-```python
-# Simulate L1 on S1
-simulate(l1, s1)
-```
+Die Schleife läuft konzeptionell so:
 
-## 📈 Models
+1. Systemzustand lesen
+2. aktive Policy aufrufen
+3. Commands erzeugen
+4. Commands in die passenden `cmd_store`s legen
+5. kurzes Intervall warten
+6. erneut beginnen
 
-Here are some models explaining our overall idea:
+### `default_controller.py`
 
-### Configuration model
+`default_controller.py` enthält die erste konkrete Standardimplementierung.
 
-The configuration model contains the ***design-time* object model** of the application.
-The model comprises three submodels, namely a **definition model**, a **solution model**, and an **evaluation model**.
-The definition model includes the product type, machine type, tool type, and operation type classes.
-The solution model includes the layout, corridor, and machine classes.
-The evaluation model includes the scenario and order classes.
+Hier werden definiert:
 
-![Class model](./models/configuration-model-full.png)
+- `DefaultRoutingPolicy`
+- `DefaultDispatchPolicy`
+- `DefaultController`
 
-### Simulation model
+Die aktuelle Baseline arbeitet wie folgt:
 
-The simulation model contains the ***run-time* object model** of the application, which is based on the configuration model as well as the [Salabim](https://www.salabim.org/) package.
-The simulation scenario, order, and order job classes represent the evaluation model elements at run-time.
-The simulation layout, corridor, corridor arm, robot main, roboto corridor arm, and machine classes represent the solution model elements at run-time.
-The simulation tool class represents a definition model element at run-time.
+- `DefaultRoutingPolicy`
+  - berechnet mögliche Operations- und Maschinenfolgen
+  - wählt daraus eine gültige Folge aus
+- `DefaultDispatchPolicy`
+  - entscheidet für freie Main-Roboter, Arm-Roboter und Maschinen, welcher nächste Command erzeugt werden soll
+- `DefaultController`
+  - kombiniert diese beiden Policies mit dem `PolicyController`
 
-![Class model](./models/simulation-model-full.png)
+Damit ist bereits eine lauffähige, aber austauschbare Standard-Steuerung vorhanden.
+
+## Zusammenspiel mit dem Simulationskern
+
+Die neue Architektur funktioniert nur, weil der Simulationskern im Ordner `sources/SpineML/Simulation/` angepasst wurde.
+
+Die wichtigste Änderung ist:
+
+- Simulationskomponenten führen aus
+- der Controller entscheidet
+
+Früher lag Entscheidungslogik stärker in den Simulationsklassen selbst.
+Jetzt ist sie in den Policies ausgelagert.
+
+## Änderungen im `Simulation`-Ordner
+
+### `SimOrderJob`
+
+`SimOrderJob` wurde so erweitert, dass jeder Job bereits beim Erzeugen geplant wird.
+
+Beim Erzeugen eines Jobs passiert jetzt:
+
+1. Aufbau eines `JobPlanningRequest`
+2. Aufruf von `controller.plan_job(...)`
+3. Speichern des zurückgegebenen `JobPlan`
+
+Dadurch erhält jede Produktionseinheit ihre eigene:
+
+- `operation_sequence`
+- `machine_sequence`
+
+Diese Route ist also nicht mehr implizit im Simulationskern versteckt, sondern wird explizit über die Routing-Policy festgelegt.
+
+### `SimOrder` und `SimScenario`
+
+`SimOrder` und `SimScenario` wurden so angepasst, dass sie den Controller an die erzeugten Unterobjekte weiterreichen.
+
+Damit gilt:
+
+- `SimScenario` erzeugt `SimOrder`
+- `SimOrder` erzeugt `SimOrderJob`
+- der Controller wird entlang dieser Struktur nach unten durchgereicht
+
+So ist sichergestellt, dass jeder erzeugte Job direkt bei seiner Entstehung geplant werden kann.
+
+### `SimMachine`
+
+`SimMachine` wurde wesentlich verändert.
+
+Die Maschine besitzt jetzt:
+
+- einen eigenen `cmd_store`
+- einen Status, ob gerade ein Command aktiv verarbeitet wird
+- die Logik zur Ausführung eines `MachineCommand`
+
+Die Maschine entscheidet also nicht mehr selbst, welchen Job sie verarbeiten soll.
+Stattdessen:
+
+1. wartet sie auf einen Command im `cmd_store`
+2. liest den Command
+3. holt den passenden Job aus `store_in`
+4. prüft über `job_key`, ob Command und Job zusammenpassen
+5. führt Toolwechsel und Bearbeitung entsprechend des Commands aus
+6. legt den bearbeiteten Job in `store_out`
+
+Damit ist die Maschine zu einem ausführenden Actor geworden.
+
+### `SimRobotMain`
+
+Auch der Main-Roboter besitzt jetzt:
+
+- einen eigenen `cmd_store`
+- eine Command-Ausführungslogik für `MainRobotCommand`
+
+Er erhält vom Controller also nicht mehr nur indirekt eine Situation, sondern einen expliziten Befehl:
+
+- wo er einen Job aufnehmen soll
+- wohin er ihn transportieren soll
+
+Der Main-Roboter:
+
+1. liest einen Command aus dem `cmd_store`
+2. fährt zum angegebenen Quellort
+3. holt den passenden Job
+4. prüft die Job-Identität über `job_key`
+5. fährt zum Zielort
+6. legt den Job dort ab
+
+### `SimRobotCorridorArm`
+
+Der Arm-Roboter im Korridor wurde analog umgestellt.
+
+Auch er besitzt jetzt:
+
+- einen eigenen `cmd_store`
+- eine Ausführungslogik für `ArmRobotCommand`
+
+Er kann damit explizit vom Controller angewiesen werden:
+
+- einen Job aus dem Korridor-Store oder Maschinen-Output zu holen
+- ihn in einen Maschinen-Input oder in einen Ausgangsstore zu legen
+
+### `SimCorridorArm`, `SimCorridor`, `SimLayout`
+
+Diese Strukturklassen wurden so angepasst, dass sie den Controller an die von ihnen erzeugten Maschinen- und Roboterobjekte weiterreichen.
+
+Sie selbst treffen dabei keine Steuerungsentscheidungen, sondern sorgen dafür, dass:
+
+- alle Actor korrekt erzeugt werden
+- jeder Actor Zugriff auf den Controller bzw. seine Commands erhält
+
+### `SimRobot`
+
+`SimRobot` bleibt die gemeinsame Basisklasse für Roboter.
+
+Dort liegt weiterhin:
+
+- Bewegungslogik
+- Interpolation für Animation
+- Auslastungsberechnung
+- Plot- und Statistikfunktionalität
+
+Die eigentliche Entscheidung, welcher Transport als Nächstes erfolgen soll, liegt aber nicht mehr hier.
+
+## Einbindung über `simulate.py`
+
+Auch der Simulationsstart wurde an die neue Architektur angepasst.
+
+In `simulate.py` wird nun:
+
+1. ein Controller erzeugt
+2. ein Layout erzeugt
+3. ein Szenario erzeugt
+4. die Menge aller Maschinen, Jobs, Main-Roboter und Arm-Roboter gesammelt
+5. diese Actoren an den Controller angehängt
+6. die Simulation gestartet
+
+Standardmäßig wird dabei der `DefaultController` verwendet.
+
+Wichtig ist:
+
+- `simulate.py` nimmt eine `controller_class` entgegen
+- dadurch kann statt des `DefaultController` auch eine andere Controllerklasse eingesetzt werden
+
+Genau dadurch wird die Steuerungslogik austauschbar.
+
+## Zusammenspiel mit den Actoren
+
+Die Actoren im Simulationskern sind jetzt klar in die Controller-Architektur eingebunden.
+
+Das Zusammenspiel ist:
+
+1. der Controller beobachtet das System
+2. die aktive Policy entscheidet auf Basis dieser Beobachtung
+3. daraus entstehen Commands
+4. Commands werden in actor-spezifische `cmd_store`s gelegt
+5. der jeweilige Actor führt den Command aus
+
+Das bedeutet konkret:
+
+- der Controller entscheidet
+- die Actoren führen aus
+
+Diese Trennung ist die wichtigste architektonische Änderung des Refactorings.
+
+## Warum die Architektur jetzt austauschbar ist
+
+Die neue Architektur erlaubt es, die Entscheidungslogik auszutauschen, ohne die Simulationslogik neu zu schreiben.
+
+Das gilt, weil:
+
+- der Simulationskern nur noch typed observations liefert
+- der Controller nur noch typed commands verschickt
+- die Policies allein bestimmen, wie geplant und dispatcht wird
+
+Wenn also eine neue Strategie ausprobiert werden soll, muss nicht `SimMachine`, `SimRobotMain` oder `SimRobotCorridorArm` umgeschrieben werden.
+Stattdessen reicht es, neue Policy-Klassen zu implementieren.
+
+## Bedeutung für heuristische Verfahren
+
+Durch diese Trennung ist die Grundlage geschaffen, um neue Steuerungsverfahren einzusetzen.
+
+Das betrifft insbesondere:
+
+- heuristische Routing-Verfahren
+- heuristische Dispatching-Verfahren
+- Greedy-Strategien
+- score-basierte Prioritätsregeln
+- später auch aufwendigere Optimierungs- oder Lernverfahren
+
+Technisch bedeutet das:
+
+- eine neue Routing-Heuristik wird als neue `RoutingPolicy` implementiert
+- eine neue Dispatch-Heuristik wird als neue `DispatchPolicy` oder als neue Unterklasse von `RuleBasedDispatchPolicy` implementiert
+
+Die Simulation selbst bleibt dabei unverändert.
+
+## Zusammenfassung
+
+Mit der Erweiterung auf eine austauschbare Controller-Architektur wurde die Steuerung von SpineML klar vom Simulationskern getrennt.
+
+Die wichtigsten Ergebnisse sind:
+
+- ein neues `controller`-Modul als klare Steuerungsschicht
+- typed observations und typed commands als definierte Schnittstelle
+- ein periodisch laufender `PolicyController`
+- actor-spezifische `cmd_store`s für Main-Roboter, Arm-Roboter und Maschinen
+- eine Standard-Baseline mit `DefaultRoutingPolicy` und `DefaultDispatchPolicy`
+- angepasste Simulationsklassen, die Commands ausführen statt selbst zu entscheiden
+- eine Architektur, die gezielt für spätere heuristische Erweiterungen vorbereitet ist
+
+Damit ist die Grundlage geschaffen, unterschiedliche Steuerungsstrategien systematisch mit demselben Simulationskern zu vergleichen.

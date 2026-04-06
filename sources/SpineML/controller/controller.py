@@ -91,6 +91,19 @@ class PolicyController(sim.Component):
             job_number=job.number,
         )
 
+    def _remaining_processing_time_estimate(self, job: SimOrderJob) -> float:
+        estimate = 0.0
+        for index, operation in enumerate(job.operation_sequence):
+            estimate += operation.duration
+            if index < len(job.machine_sequence):
+                estimate += job.machine_sequence[index].dimension_processing_time(
+                    operation.consumes_product_type
+                )
+        return estimate
+
+    def _job_slack_time(self, job: SimOrderJob) -> float:
+        return job.order.latest_end_time - self.env.now() - self._remaining_processing_time_estimate(job)
+
     def _job_head_observation(self, job: SimOrderJob) -> JobHeadObservation:
         next_operation = job.operation_sequence[0] if len(job.operation_sequence) > 0 else None
         next_machine = job.machine_sequence[0] if len(job.machine_sequence) > 0 else None
@@ -101,11 +114,24 @@ class PolicyController(sim.Component):
         return JobHeadObservation(
             job_key=self._job_key(job),
             current_product_name=job.state.get(),
+            current_product_weight=job.current_product_type.weight,
+            current_product_length=job.current_product_type.length,
+            current_product_width=job.current_product_type.width,
+            current_product_depth=job.current_product_type.depth,
+            is_defective=job.is_defective,
+            release_time=job.order.earliest_start_time,
+            due_time=job.order.latest_end_time,
             remaining_operations=len(job.operation_sequence),
             remaining_machines=len(job.machine_sequence),
+            remaining_processing_time_estimate=self._remaining_processing_time_estimate(job),
+            slack_time=self._job_slack_time(job),
             next_operation_name=next_operation.name if next_operation is not None else None,
             next_tool_name=next_operation.tool_type.name if next_operation is not None else None,
-            next_operation_duration=next_operation.duration if next_operation is not None else None,
+            next_operation_duration=(
+                next_operation.duration + next_machine.dimension_processing_time(next_operation.consumes_product_type)
+                if next_operation is not None and next_machine is not None
+                else (next_operation.duration if next_operation is not None else None)
+            ),
             next_consumed_life_units=next_operation.consumes_life_units if next_operation is not None else None,
             next_produced_product_name=(
                 next_operation.produces_product_type.name if next_operation is not None else None
@@ -117,7 +143,13 @@ class PolicyController(sim.Component):
 
     def _queue_observation(self, queue_id: str, store: sim.Store) -> QueueObservation:
         head = self._job_head_observation(store[0]) if store.length() > 0 else None
-        return QueueObservation(queue_id=queue_id, length=store.length(), head=head)
+        return QueueObservation(
+            queue_id=queue_id,
+            length=store.length(),
+            capacity=float(store.capacity()),
+            free_capacity=float(store.available_quantity()),
+            head=head,
+        )
 
     def order_job_status(self, job: SimOrderJob) -> OrderJobObservation:
         next_operation = job.operation_sequence[0] if len(job.operation_sequence) > 0 else None
@@ -125,8 +157,21 @@ class PolicyController(sim.Component):
         return OrderJobObservation(
             job_key=self._job_key(job),
             current_product_name=job.state.get(),
+            current_product_weight=job.current_product_type.weight,
+            current_product_length=job.current_product_type.length,
+            current_product_width=job.current_product_type.width,
+            current_product_depth=job.current_product_type.depth,
+            is_defective=job.is_defective,
+            released=self.env.now() >= job.order.earliest_start_time,
+            completed=job.completion_time is not None,
+            completion_time=job.completion_time,
+            defect_time=job.defect_time,
+            release_time=job.order.earliest_start_time,
+            due_time=job.order.latest_end_time,
             remaining_operations=len(job.operation_sequence),
             remaining_machines=len(job.machine_sequence),
+            remaining_processing_time_estimate=self._remaining_processing_time_estimate(job),
+            slack_time=self._job_slack_time(job),
             next_operation_name=next_operation.name if next_operation is not None else None,
             next_machine_name=next_machine.name if next_machine is not None else None,
         )
@@ -270,4 +315,3 @@ class PolicyController(sim.Component):
                 yield self.to_store(cmd_store, ControllerCommand(command.payload, env=self.env))
 
             yield self.hold(self.interval)
-

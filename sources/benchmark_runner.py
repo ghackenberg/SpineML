@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import argparse
+
+from SpineML.benchmark import (
+    CONTROLLER_REGISTRY,
+    available_examples,
+    report_rows,
+    run_benchmark_suite,
+    save_report,
+)
+
+# Konfiguration fuer direkten Start ueber den IDE-Play-Button.
+# Diese Werte werden verwendet, wenn keine CLI-Argumente uebergeben werden.
+DEFAULT_EXAMPLES = ["example-0"]
+DEFAULT_CONTROLLERS = ["default", "greedy"]
+DEFAULT_SEED_TEXT = "0"
+DEFAULT_TILL = 100.0
+DEFAULT_OUTPUT = "benchmark-results.json"
+
+
+def _parse_seeds(seed_text: str) -> list[int]:
+    return [int(part.strip()) for part in seed_text.split(",") if part.strip()]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run SpineML controller benchmarks.")
+    parser.add_argument(
+        "--examples",
+        nargs="*",
+        default=DEFAULT_EXAMPLES,
+        help="Example scripts to benchmark.",
+    )
+    parser.add_argument(
+        "--controllers",
+        nargs="*",
+        default=DEFAULT_CONTROLLERS,
+        choices=sorted(CONTROLLER_REGISTRY.keys()),
+        help="Controller variants to benchmark.",
+    )
+    parser.add_argument(
+        "--seeds",
+        default=DEFAULT_SEED_TEXT,
+        help="Comma-separated RNG seeds.",
+    )
+    parser.add_argument(
+        "--till",
+        type=float,
+        default=DEFAULT_TILL,
+        help="Optional simulation cutoff time.",
+    )
+    parser.add_argument(
+        "--output",
+        default=DEFAULT_OUTPUT,
+        help="JSON file for the benchmark report.",
+    )
+    args = parser.parse_args()
+
+    report = run_benchmark_suite(
+        examples=args.examples,
+        controllers=args.controllers,
+        seeds=_parse_seeds(args.seeds),
+        till=args.till,
+    )
+    save_report(report, args.output)
+
+    print(f"Saved benchmark report to {args.output}")
+    for row in report_rows(report):
+        print(
+            f"{row['example_name']} | {row['controller_name']} | seed={row['seed']} | "
+            f"completed_jobs={row['completed_jobs']}/{row['total_jobs']} | "
+            f"tardiness={row['total_tardiness']:.3f} | makespan={row['makespan']} | "
+            f"throughput={row['throughput_jobs_per_time']:.3f} | "
+            f"robot_util={row['robot_utilization']:.3f} | "
+            f"machine_util={row['machine_utilization']:.3f} | "
+            f"defects={row['defective_jobs']} | "
+            f"queues[start/end/c_main/c_side/m_in/m_out]="
+            f"{row['start_queue_length']}/{row['end_queue_length']}/"
+            f"{row['corridor_main_queue_length']}/{row['corridor_side_queue_length']}/"
+            f"{row['machine_input_queue_length']}/{row['machine_output_queue_length']}"
+        )
+
+
+if __name__ == "__main__":
+    main()

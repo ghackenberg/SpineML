@@ -17,3 +17,7 @@ pyglet
 # ... Video production support
 opencv-python
 numpy
+
+# Benchmark dashboard support
+streamlit
+pandas

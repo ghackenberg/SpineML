@@ -42,8 +42,17 @@ class JobPlanningRequest:
 class JobHeadObservation:
     job_key: JobKey
     current_product_name: str
+    current_product_weight: float
+    current_product_length: float
+    current_product_width: float
+    current_product_depth: float
+    is_defective: bool
+    release_time: float
+    due_time: float
     remaining_operations: int
     remaining_machines: int
+    remaining_processing_time_estimate: float
+    slack_time: float
     next_operation_name: str | None
     next_tool_name: str | None
     next_operation_duration: float | None
@@ -61,6 +70,8 @@ class JobHeadObservation:
 class QueueObservation:
     queue_id: str
     length: int
+    capacity: float
+    free_capacity: float
     head: JobHeadObservation | None
 
 
@@ -143,8 +154,21 @@ class MachineObservation:
 class OrderJobObservation:
     job_key: JobKey
     current_product_name: str
+    current_product_weight: float
+    current_product_length: float
+    current_product_width: float
+    current_product_depth: float
+    is_defective: bool
+    released: bool
+    completed: bool
+    completion_time: float | None
+    defect_time: float | None
+    release_time: float
+    due_time: float
     remaining_operations: int
     remaining_machines: int
+    remaining_processing_time_estimate: float
+    slack_time: float
     next_operation_name: str | None
     next_machine_name: str | None
 

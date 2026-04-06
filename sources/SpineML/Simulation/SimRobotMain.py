@@ -10,6 +10,9 @@ from .SimRobot import SimRobot
 
 
 class SimRobotMain(SimRobot):
+    WEIGHT_SPEED_FACTOR = 0.05
+    MIN_LOADED_SPEED = 0.1
+
     def __init__(
         self,
         layout: Layout,
@@ -21,7 +24,6 @@ class SimRobotMain(SimRobot):
         z: float,
         controller=None,
         speed: float = 1.0,
-        poll_interval: float = 0.1,
         *args,
         **kwargs,
     ):
@@ -35,7 +37,6 @@ class SimRobotMain(SimRobot):
         self.controller = controller
 
         self.speed = speed
-        self.poll_interval = poll_interval
         self.corridor_count = len(self.layout.corridors)
         self.y_stock = 2 + self.corridor_count / 1.15
 
@@ -59,6 +60,12 @@ class SimRobotMain(SimRobot):
             and job.number == job_key.job_number
         )
 
+    def _loaded_speed(self, job: SimOrderJob) -> float:
+        return max(
+            self.MIN_LOADED_SPEED,
+            self.speed / (1 + job.current_product_type.weight * self.WEIGHT_SPEED_FACTOR),
+        )
+
     def move_to_layout_start_storage(self):
         if self.y != -self.y_stock:
             yield from self.move_y(-self.y_stock, self.speed)
@@ -78,6 +85,12 @@ class SimRobotMain(SimRobot):
     def move_up(self):
         yield from self.move_z(2.5, self.speed)
 
+    def move_down_loaded(self, loaded_speed: float):
+        yield from self.move_z(1.25, loaded_speed)
+
+    def move_up_loaded(self, loaded_speed: float):
+        yield from self.move_z(2.5, loaded_speed)
+
     def process(self):
         if self.controller is None:
             raise RuntimeError("SimRobotMain requires a controller for dispatched commands")
@@ -93,26 +106,34 @@ class SimRobotMain(SimRobot):
                 if cmd.pick.kind == "start":
                     yield from self.move_to_layout_start_storage()
                     source_store = self.store_start
+                    source_out_time = self.layout.storage_out_time
                 elif cmd.pick.kind == "corridor_main":
                     source_corridor = self._sim_corridor_by_name(cmd.pick.corridor_name)
                     yield from self.move_to_corridor_storage(source_corridor)
                     source_store = source_corridor.store_main
+                    source_out_time = source_corridor.corridor.storage_out_time
                 else:
                     raise ValueError(f"Unsupported main robot pick action: {cmd.pick.kind}")
 
+                yield from self.move_down()
                 job: SimOrderJob = yield self.from_store(source_store)
                 if not self._job_matches(job, cmd.job_key):
                     raise ValueError(
                         f"Main robot picked unexpected job {job.order.name}/{job.number}; expected {cmd.job_key}"
                     )
 
-                yield from self.move_down()
+                if source_out_time > 0:
+                    yield self.hold(source_out_time)
+                loaded_speed = self._loaded_speed(job)
+
                 self.state_load.set("loaded")
-                yield from self.move_up()
+                yield from self.move_up_loaded(loaded_speed)
 
                 if cmd.place.kind == "end":
-                    yield from self.move_to_layout_end_storage()
+                    if self.y != self.y_stock:
+                        yield from self.move_y(self.y_stock, loaded_speed)
                     target_store = self.store_end
+                    target_in_time = self.layout.storage_in_time
                 elif cmd.place.kind == "corridor_in":
                     target_corridor = self._sim_corridor_by_name(cmd.place.corridor_name)
                     if cmd.place.side == "left":
@@ -121,12 +142,22 @@ class SimRobotMain(SimRobot):
                         target_store = target_corridor.store_right
                     else:
                         raise ValueError(f"Missing side for main robot corridor placement: {cmd.place}")
-                    yield from self.move_to_corridor_storage(target_corridor)
+                    target_y = self._corridor_y(target_corridor)
+                    if self.y != target_y:
+                        yield from self.move_y(target_y, loaded_speed)
+                    target_in_time = target_corridor.corridor.storage_in_time
                 else:
                     raise ValueError(f"Unsupported main robot place action: {cmd.place.kind}")
 
-                yield from self.move_down()
+                yield from self.move_down_loaded(loaded_speed)
                 yield self.to_store(target_store, job)
+                if target_in_time > 0:
+                    yield self.hold(target_in_time)
+                if target_store is self.store_end:
+                    if job.sim_order is None:
+                        job.mark_completed()
+                    else:
+                        job.sim_order.mark_job_completed(job)
                 self.state_load.set("empty")
                 yield from self.move_up()
             finally:

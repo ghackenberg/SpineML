@@ -20,10 +20,10 @@ class SimLayout(sim.Component):
         # Start and end storage boxes
         y = 2 + len(layout.corridors) / 1.15
         # ... start
-        self.store_start = sim.Store("start", env=self.env)
+        self.store_start = sim.Store("start", capacity=layout.storage_capacity, env=self.env)
         sim.Animate3dBox(x_len=3, y_len=1, z_len=1, color="yellow", x=0, y=y, z=0.5)
         # ... end
-        self.store_end = sim.Store("end", env=self.env)
+        self.store_end = sim.Store("end", capacity=layout.storage_capacity, env=self.env)
         sim.Animate3dBox(x_len=3, y_len=1, z_len=1, color="yellow", x=0, y=-y, z=0.5)
 
         # Start and end vertical boxes /Erstellung

@@ -17,9 +17,9 @@ class SimCorridor(sim.Component):
         machines_right = corridor.machines_right
 
         # Corridor stores
-        store_main = sim.Store("Store main", env=self.env)
-        store_left = sim.Store("Store left", env=self.env)
-        store_right = sim.Store("Store right", env=self.env)
+        store_main = sim.Store("Store main", capacity=corridor.storage_capacity, env=self.env)
+        store_left = sim.Store("Store left", capacity=corridor.storage_capacity, env=self.env)
+        store_right = sim.Store("Store right", capacity=corridor.storage_capacity, env=self.env)
 
         self.store_main = store_main
         self.store_left = store_left

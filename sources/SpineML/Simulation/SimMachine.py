@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import matplotlib.pyplot as plt
 import salabim as sim
 
@@ -14,6 +16,7 @@ class SimMachine(sim.Component):
 
         self.machine = machine
         self.controller = controller
+        self.rng = random.Random()
 
         self.state = sim.State("State", value="waiting", env=self.env)
         self.tool_type: ToolType | None = None
@@ -31,8 +34,8 @@ class SimMachine(sim.Component):
             self.remaining_life_units_next[tool_type] = tool_type.total_life_units
             self.remaining_life_units_next_t[tool_type] = self.env.now()
 
-        self.store_in = sim.Store(f"{machine.name} in", env=self.env)
-        self.store_out = sim.Store(f"{machine.name} out", env=self.env)
+        self.store_in = sim.Store(f"{machine.name} in", capacity=machine.storage_capacity, env=self.env)
+        self.store_out = sim.Store(f"{machine.name} out", capacity=machine.storage_capacity, env=self.env)
         self.cmd_store = sim.Store(f"{machine.name} cmd", env=self.env)
         self.cmd_active = False
 
@@ -110,6 +113,7 @@ class SimMachine(sim.Component):
                         f"Machine command mismatch: expected {cmd.expected_machine_name}, got {self.machine.name}"
                     )
 
+                current_operation = job.operation_sequence[0]
                 tool_type = self.tool_type_by_name[cmd.tool_name]
                 job.machine_sequence.pop(0)
                 job.operation_sequence.pop(0)
@@ -128,7 +132,12 @@ class SimMachine(sim.Component):
 
                 yield self.hold(cmd.duration)
 
-                job.state.set(cmd.produced_product_name)
+                if self.rng.random() < current_operation.defect_probability:
+                    job.current_product_type = current_operation.produces_product_type
+                    job.mark_defective(cmd.produced_product_name, current_operation.name)
+                else:
+                    job.current_product_type = current_operation.produces_product_type
+                    job.state.set(cmd.produced_product_name)
 
                 self.remaining_life_units[tool_type] = cmd.remaining_life_units_after
                 self.remaining_life_units_t[tool_type] = self.env.now()

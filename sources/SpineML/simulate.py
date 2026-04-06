@@ -4,7 +4,12 @@ import salabim as sim
 
 from .Configuration import Layout, Scenario
 from .Simulation import SimLayout, SimScenario
-from .controller import DefaultController
+from .controller import DefaultController, GreedyController
+
+
+DEFAULT_2D_POSITION = (960, 100)
+DEFAULT_3D_POSITION = (0, 100)
+DEFAULT_WINDOW_SIZE = (950, 768)
 
 
 def _patch_salabim_minimized_3d_window() -> None:
@@ -50,7 +55,11 @@ def _simulate_core(
     scenario: Scenario,
     animate=True,
     till=sim.inf,
-    controller_class=DefaultController,
+    controller_class=GreedyController,
+    animate2d: bool | None = None,
+    animate3d: bool | None = None,
+    position2d: tuple[int, int] | None = None,
+    position3d: tuple[int, int] | None = None,
 ):
     sim.yieldless(False)
 
@@ -58,17 +67,30 @@ def _simulate_core(
     env = sim.Environment(time_unit="hours")
 
     if animate:
-        _patch_salabim_minimized_3d_window()
-        env.width(950)
-        env.height(768)
-        env.position((960, 100))
-        env.width3d(950)
-        env.height3d(768)
-        env.position3d((0, 100))
-        env.show_camera_position(True)
-        env.show_camera_position(over3d=True)
-        env.view(x_eye=0, y_eye=15, z_eye=5)
-        env.animation_parameters(animate=True, animate3d=True, show_fps=True)
+        animate2d = True if animate2d is None else animate2d
+        animate3d = True if animate3d is None else animate3d
+        position2d = position2d or DEFAULT_2D_POSITION
+        position3d = position3d or DEFAULT_3D_POSITION
+
+        if animate3d:
+            _patch_salabim_minimized_3d_window()
+
+        if animate2d:
+            env.width(DEFAULT_WINDOW_SIZE[0])
+            env.height(DEFAULT_WINDOW_SIZE[1])
+            env.position(position2d)
+
+        if animate3d:
+            env.width3d(DEFAULT_WINDOW_SIZE[0])
+            env.height3d(DEFAULT_WINDOW_SIZE[1])
+            env.position3d(position3d)
+            env.show_camera_position(over3d=True)
+            env.view(x_eye=0, y_eye=15, z_eye=5)
+
+        if animate2d:
+            env.show_camera_position(True)
+
+        env.animation_parameters(animate=animate2d, animate3d=animate3d, show_fps=True)
     print("Simulation environment created")
 
     sim_controller = controller_class(env=env)
@@ -115,7 +137,11 @@ def simulate(
     scenario: Scenario,
     animate=True,
     till=sim.inf,
-    controller_class=DefaultController,
+    controller_class=GreedyController,
+    animate2d: bool | None = None,
+    animate3d: bool | None = None,
+    position2d: tuple[int, int] | None = None,
+    position3d: tuple[int, int] | None = None,
 ):
     _simulate_core(
         layout,
@@ -123,4 +149,8 @@ def simulate(
         animate=animate,
         till=till,
         controller_class=controller_class,
+        animate2d=animate2d,
+        animate3d=animate3d,
+        position2d=position2d,
+        position3d=position3d,
     )

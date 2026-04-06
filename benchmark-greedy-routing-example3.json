@@ -1,0 +1,103 @@
+{
+  "created_at": "2026-04-05T19:56:37",
+  "runs": [
+    {
+      "example_name": "example-3",
+      "controller_name": "DefaultController",
+      "seed": 0,
+      "till": 120.0,
+      "final_simulation_time": 120.0,
+      "makespan": null,
+      "wall_clock_seconds": 56.679167499998584,
+      "all_orders_completed": false,
+      "total_orders": 2,
+      "completed_orders": 0,
+      "total_jobs": 70,
+      "completed_jobs": 0,
+      "defective_jobs": 0,
+      "total_tardiness": 0.0,
+      "average_tardiness": 0.0,
+      "max_tardiness": 0.0,
+      "throughput_jobs_per_time": 0.0,
+      "robot_utilization": 0.13124063146949974,
+      "machine_utilization": 0.005777777777777773,
+      "start_queue_length": 67,
+      "end_queue_length": 0,
+      "corridor_main_queue_length": 1,
+      "corridor_side_queue_length": 1,
+      "machine_input_queue_length": 0,
+      "machine_output_queue_length": 0,
+      "orders": [
+        {
+          "order_name": "Order 1.1",
+          "quantity": 30,
+          "release_time": 11,
+          "due_time": 20,
+          "completion_time": null,
+          "tardiness": 0.0,
+          "defective_jobs": 0,
+          "completed_jobs": 0
+        },
+        {
+          "order_name": "Order 1.2",
+          "quantity": 40,
+          "release_time": 15,
+          "due_time": 30,
+          "completion_time": null,
+          "tardiness": 0.0,
+          "defective_jobs": 0,
+          "completed_jobs": 0
+        }
+      ]
+    },
+    {
+      "example_name": "example-3",
+      "controller_name": "GreedyController",
+      "seed": 0,
+      "till": 120.0,
+      "final_simulation_time": 120.0,
+      "makespan": null,
+      "wall_clock_seconds": 57.36688340001274,
+      "all_orders_completed": false,
+      "total_orders": 2,
+      "completed_orders": 0,
+      "total_jobs": 70,
+      "completed_jobs": 0,
+      "defective_jobs": 0,
+      "total_tardiness": 0.0,
+      "average_tardiness": 0.0,
+      "max_tardiness": 0.0,
+      "throughput_jobs_per_time": 0.0,
+      "robot_utilization": 0.13632404244286,
+      "machine_utilization": 0.0056666666666666645,
+      "start_queue_length": 67,
+      "end_queue_length": 0,
+      "corridor_main_queue_length": 1,
+      "corridor_side_queue_length": 0,
+      "machine_input_queue_length": 0,
+      "machine_output_queue_length": 0,
+      "orders": [
+        {
+          "order_name": "Order 1.1",
+          "quantity": 30,
+          "release_time": 11,
+          "due_time": 20,
+          "completion_time": null,
+          "tardiness": 0.0,
+          "defective_jobs": 0,
+          "completed_jobs": 0
+        },
+        {
+          "order_name": "Order 1.2",
+          "quantity": 40,
+          "release_time": 15,
+          "due_time": 30,
+          "completion_time": null,
+          "tardiness": 0.0,
+          "defective_jobs": 0,
+          "completed_jobs": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 {
+    "python.defaultInterpreterPath": "C:/Users/s2410828005/Desktop/Hackenberg/.venv/Scripts/python.exe",
     "emeraldwalk.runonsave": {
         "commands": [
             {

@@ -91,9 +91,12 @@ class ScoredRoutingPolicy(RoutingPolicy, ABC):
         raise NotImplementedError
 
     def choose_operation_sequence(self, order: Order, operation_sequences: list[list[Any]]) -> list[Any]:
+        def _score_operation_sequence(operation_sequence: list[Any]) -> float | None:
+            return self.score_operation_sequence(order, operation_sequence)
+
         candidate = _select_best_candidate(
             list(operation_sequences),
-            lambda operation_sequence: self.score_operation_sequence(order, operation_sequence),
+            _score_operation_sequence,
             self.rng,
         )
         if candidate is None:
@@ -106,13 +109,16 @@ class ScoredRoutingPolicy(RoutingPolicy, ABC):
         operation_sequence: list[Any],
         machine_sequences: list[list[Any]],
     ) -> list[Any]:
-        candidate = _select_best_candidate(
-            list(machine_sequences),
-            lambda machine_sequence: self.score_machine_sequence(
+        def _score_machine_sequence(machine_sequence: list[Any]) -> float | None:
+            return self.score_machine_sequence(
                 request,
                 operation_sequence,
                 machine_sequence,
-            ),
+            )
+
+        candidate = _select_best_candidate(
+            list(machine_sequences),
+            _score_machine_sequence,
             self.rng,
         )
         if candidate is None:
@@ -229,13 +235,17 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
 
     def decide_main_robot_pick(self, robot: MainRobotObservation) -> MainRobotPickAction | None:
         candidates = list(self.main_robot_pick_candidates(robot))
-        return _select_best_candidate(
-            candidates,
-            lambda action: self.score_main_robot_pick(
+
+        def _score_main_robot_pick(action: MainRobotPickAction) -> float | None:
+            return self.score_main_robot_pick(
                 robot,
                 action,
                 self.main_robot_pick_source_queue(robot, action),
-            ),
+            )
+
+        return _select_best_candidate(
+            candidates,
+            _score_main_robot_pick,
             self.rng,
         )
 
@@ -273,14 +283,18 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         job: JobHeadObservation,
     ) -> MainRobotPlaceAction:
         candidates = list(self.main_robot_place_candidates(robot, job))
-        candidate = _select_best_candidate(
-            candidates,
-            lambda action: self.score_main_robot_place(
+
+        def _score_main_robot_place(action: MainRobotPlaceAction) -> float | None:
+            return self.score_main_robot_place(
                 robot,
                 job,
                 action,
                 self.main_robot_place_target_queue(robot, action),
-            ),
+            )
+
+        candidate = _select_best_candidate(
+            candidates,
+            _score_main_robot_place,
             self.rng,
         )
         if candidate is None:
@@ -312,13 +326,17 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
 
     def decide_arm_robot_pick(self, robot: ArmRobotObservation) -> ArmRobotPickAction | None:
         candidates = list(self.arm_robot_pick_candidates(robot))
-        return _select_best_candidate(
-            candidates,
-            lambda action: self.score_arm_robot_pick(
+
+        def _score_arm_robot_pick(action: ArmRobotPickAction) -> float | None:
+            return self.score_arm_robot_pick(
                 robot,
                 action,
                 self.arm_robot_pick_source_queue(robot, action),
-            ),
+            )
+
+        return _select_best_candidate(
+            candidates,
+            _score_arm_robot_pick,
             self.rng,
         )
 
@@ -357,14 +375,18 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         job: JobHeadObservation,
     ) -> ArmRobotPlaceAction:
         candidates = list(self.arm_robot_place_candidates(robot, job))
-        candidate = _select_best_candidate(
-            candidates,
-            lambda action: self.score_arm_robot_place(
+
+        def _score_arm_robot_place(action: ArmRobotPlaceAction) -> float | None:
+            return self.score_arm_robot_place(
                 robot,
                 job,
                 action,
                 self.arm_robot_place_target_queue(robot, action),
-            ),
+            )
+
+        candidate = _select_best_candidate(
+            candidates,
+            _score_arm_robot_place,
             self.rng,
         )
         if candidate is None:
@@ -451,9 +473,13 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         job: JobHeadObservation,
     ) -> MachineCommand | None:
         candidates = list(self.machine_process_candidates(machine, job))
+
+        def _score_machine_process(command: MachineCommand) -> float | None:
+            return self.score_machine_process(machine, job, command)
+
         return _select_best_candidate(
             candidates,
-            lambda command: self.score_machine_process(machine, job, command),
+            _score_machine_process,
             self.rng,
         )
 

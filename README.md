@@ -75,7 +75,7 @@ Damit entsteht eine klarere Schnittstelle zwischen Steuerung und Simulation und 
 
 ### Strukturdiagramm: Aufbau von Simulation und Controller
 
-Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, den abstrakten Policy-Schnittstellen in `policy.py`, den konkreten Policy-Implementierungen und den verdrahtenden Controller-Klassen.
+Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, der allgemeinen Controller-Logik in `controller.py`, den abstrakten Policy-Schnittstellen in `policy.py` und den konkreten Default- bzw. Greedy-Implementierungen in den jeweiligen Controller-Dateien.
 
 `types.py` erscheint dabei nicht als eigener Knoten, weil dort keine aktive Logik ausgeführt wird. Die in `types.py` definierten Datentypen beschreiben die Schnittstelle zwischen Simulation, Controller und Policies.
 
@@ -100,12 +100,12 @@ graph TD
 
     Def -->|erbt von| Ctrl
     Greedy -->|erbt von| Ctrl
-    Def -->|implementiert| Policy
-    Greedy -->|implementiert| Policy
-    Def -->|nutzt fuer Routing| Calc
-    Greedy -->|nutzt fuer Routing| Calc
-    Ctrl -->|plan_job, decide| Policy
-    Policy -->|JobPlan, DispatchCommands| Ctrl
+    Def -->|enthält konkrete Implementierungen zu| Policy
+    Greedy -->|enthält konkrete Implementierungen zu| Policy
+    Def -->|nutzt für Routing| Calc
+    Greedy -->|nutzt für Routing| Calc
+    Ctrl -->|nutzt plan_job und decide| Policy
+    Policy -->|JobPlan und DispatchCommands| Ctrl
 ```
 
 ## Überblick über die neue Struktur
@@ -124,32 +124,32 @@ Zusätzlich wurde der Simulationskern im Ordner `sources/SpineML/Simulation/` so
 
 Der zentrale Architekturgedanke hinter den unterschiedlichen Controllern ist dabei:
 
-- `calculate.py` erzeugt fuer das Routing den zulaessigen Suchraum
-  - also moegliche Operationsfolgen und dazu passende Maschinenfolgen
-- `RoutingPolicy` waehlt aus diesem Suchraum eine konkrete Route fuer einen Job aus
-- `DispatchPolicy` waehlt waehrend der laufenden Simulation aus den aktuell moeglichen Aktionen die naechsten Commands aus
+- `calculate.py` erzeugt für das Routing den zulässigen Suchraum
+  - also mögliche Operationsfolgen und dazu passende Maschinenfolgen
+- `RoutingPolicy` wählt aus diesem Suchraum eine konkrete Route für einen Job aus
+- `DispatchPolicy` wählt während der laufenden Simulation aus den aktuell möglichen Aktionen die nächsten Commands aus
   - dieser dynamische Aktionsraum ist damit ein zweiter, laufend neu entstehender Suchraum
 
 Damit ist die Aufgabenverteilung bewusst getrennt:
 
 - `calculate.py` beantwortet die Frage:
-  - welche Routing-Kandidaten sind im gegebenen Layout grundsaetzlich zulaessig?
+  - welche Routing-Kandidaten sind im gegebenen Layout grundsätzlich zulässig?
 - `RoutingPolicy` beantwortet die Frage:
-  - welcher dieser zulaessigen Kandidaten soll fuer den aktuellen Job gewaehlt werden?
+  - welcher dieser zulässigen Kandidaten soll für den aktuellen Job gewählt werden?
 - `DispatchPolicy` beantwortet die Frage:
-  - welche ausfuehrbare Aktion soll im aktuellen Simulationszustand als Naechstes erfolgen?
+  - welche ausführbare Aktion soll im aktuellen Simulationszustand als Nächstes erfolgen?
   - also welche aus der momentanen Queue-, Maschinen- und Roboterkonstellation ableitbare Aktion lokal am sinnvollsten ist
 
 Genau darin unterscheiden sich `DefaultController` und `GreedyController`:
 
 - beide nutzen dieselben Simulationsdaten und dieselbe Controller-Schnittstelle
-- beide nutzen fuer das Routing dieselben in `calculate.py` erzeugten zulaessigen Kandidaten
+- beide nutzen für das Routing dieselben in `calculate.py` erzeugten zulässigen Kandidaten
 - der Unterschied liegt in der Auswahlregel:
   - die Default-Policies bilden eine einfache Baseline
-  - die Greedy-Policies bewerten Kandidaten heuristisch ueber Score-Funktionen und waehlen jeweils die lokal beste Alternative
+  - die Greedy-Policies bewerten Kandidaten heuristisch über Score-Funktionen und wählen jeweils die lokal beste Alternative
 
 Die eigentliche Optimierung liegt also nicht in der Erzeugung des Suchraums, sondern in der Bewertung und Auswahl innerhalb dieses Suchraums.
-Fuer das Routing geschieht das einmalig pro Job, fuer das Dispatching fortlaufend waehrend der Simulation.
+Für das Routing geschieht das einmalig pro Job, für das Dispatching fortlaufend während der Simulation.
 
 ## Controller-Module
 
@@ -157,7 +157,7 @@ Fuer das Routing geschieht das einmalig pro Job, fuer das Dispatching fortlaufen
 
 `types.py` definiert die Datenschnittstelle zwischen Controller und Simulation.
 Hier werden die Objekte beschrieben, mit denen der Controller arbeitet.
-Die Typen sind dabei nicht auf einen bestimmten Controller zugeschnitten, sondern bilden den gemeinsamen Datenvertrag fuer `DefaultController`, `GreedyController` und spaetere weitere Steuerungsverfahren.
+Die Typen sind dabei nicht auf einen bestimmten Controller zugeschnitten, sondern bilden den gemeinsamen Datenvertrag für `DefaultController`, `GreedyController` und spätere weitere Steuerungsverfahren.
 
 Dazu gehören insbesondere:
 
@@ -169,13 +169,13 @@ Dazu gehören insbesondere:
   - Ergebnis der Jobplanung mit `operation_sequence` und `machine_sequence`
 - `JobHeadObservation`
   - detaillierte Beobachtung eines Jobs am Kopf einer Queue
-  - enthaelt neben Produkt- und Routendaten inzwischen auch heuristisch relevante Informationen wie `is_defective`, `release_time`, `due_time`, `remaining_processing_time_estimate`, `slack_time` sowie aktuelle Produktparameter wie Gewicht und Abmessungen
+  - enthält neben Produkt- und Routendaten inzwischen auch heuristisch relevante Informationen wie `is_defective`, `release_time`, `due_time`, `remaining_processing_time_estimate`, `slack_time` sowie aktuelle Produktparameter wie Gewicht und Abmessungen
 - `QueueObservation`
-  - Beobachtung einer Queue mit Laenge und Head-Job
-  - enthaelt zusaetzlich `capacity` und `free_capacity`
+  - Beobachtung einer Queue mit Länge und Head-Job
+  - enthält zusätzlich `capacity` und `free_capacity`
 - `OrderJobObservation`
   - detaillierte Beobachtung eines konkreten Jobs innerhalb einer Order
-  - enthaelt zusaetzlich `released`, `completed`, `completion_time` und `defect_time`
+  - enthält zusätzlich `released`, `completed`, `completion_time` und `defect_time`
 - `SystemObservation`
   - vollständige Beobachtung des Systems aus Sicht des Controllers
 - `DispatchCommand`
@@ -184,12 +184,12 @@ Dazu gehören insbesondere:
   - konkrete Commands für die jeweiligen Actoren
 
 Diese Typen bilden die eigentliche Schnittstelle zwischen Simulationskern und Steuerungslogik.
-Gleichzeitig stellen sie genau die Beobachtungen bereit, auf deren Basis spaeter heuristische oder lernbasierte Strategien Entscheidungen treffen koennen.
+Gleichzeitig stellen sie genau die Beobachtungen bereit, auf deren Basis später heuristische oder lernbasierte Strategien Entscheidungen treffen können.
 
 ### `calculate.py`
 
 `calculate.py` enthält die Logik zur Berechnung möglicher Operations- und Maschinenfolgen.
-Diese Funktionen erzeugen den zulaessigen Suchraum fuer das Routing und werden von Routing-Policies genutzt.
+Diese Funktionen erzeugen den zulässigen Suchraum für das Routing und werden von Routing-Policies genutzt.
 Die eigentliche Auswahlentscheidung wird dabei bewusst nicht in `calculate.py` getroffen, sondern in der jeweils aktiven Routing-Policy.
 
 Hier wird also berechnet:
@@ -197,13 +197,13 @@ Hier wird also berechnet:
 - welche Operationsfolgen für ein Produkt möglich sind
 - welche Maschinenfolgen für eine Operationsfolge im gegebenen Layout möglich sind
 
-Sowohl `DefaultRoutingPolicy` als auch `GreedyRoutingPolicy` greifen damit auf dieselbe Menge zulaessiger Routing-Kandidaten zu.
-Der Unterschied liegt nicht in der Erzeugung dieser Kandidaten, sondern in ihrer spaeteren Bewertung und Auswahl.
+Sowohl `DefaultRoutingPolicy` als auch `GreedyRoutingPolicy` greifen damit auf dieselbe Menge zulässiger Routing-Kandidaten zu.
+Der Unterschied liegt nicht in der Erzeugung dieser Kandidaten, sondern in ihrer späteren Bewertung und Auswahl.
 
 ### `policy.py`
 
 `policy.py` definiert die austauschbaren Steuerungsschnittstellen.
-Die Datei enthaelt dabei bewusst nur die abstrakten Vertraege und gemeinsame Basisklassen, nicht aber konkrete Default- oder Greedy-Strategien.
+Die Datei enthält dabei bewusst nur die abstrakten Verträge und gemeinsame Basisklassen, nicht aber konkrete Default- oder Greedy-Strategien.
 
 Es gibt zwei zentrale Policy-Arten:
 
@@ -213,7 +213,7 @@ Es gibt zwei zentrale Policy-Arten:
 - `DispatchPolicy`
   - entscheidet im laufenden Betrieb, welche Commands als Nächstes erzeugt werden sollen
 
-Die Routing-Policies nutzen dabei die von `calculate.py` berechneten zulaessigen Alternativen und treffen daraus die eigentliche Auswahlentscheidung.
+Die Routing-Policies nutzen dabei die von `calculate.py` berechneten zulässigen Alternativen und treffen daraus die eigentliche Auswahlentscheidung.
 Damit liegt die Entscheidungslogik bewusst in `policy.py` und nicht im Simulationskern oder in den Hilfsfunktionen zur Kandidatenerzeugung.
 
 Zusätzlich gibt es:
@@ -232,7 +232,7 @@ Damit muss eine neue Dispatch-Strategie nicht zwingend die gesamte Methode `deci
 Auf dieser Basis unterscheiden sich die konkreten Policies:
 
 - die Default-Policies bilden eine einfache Baseline
-- die Greedy-Policies bewerten Kandidaten heuristisch und waehlen jeweils die lokal beste Alternative
+- die Greedy-Policies bewerten Kandidaten heuristisch und wählen jeweils die lokal beste Alternative
 
 ### `controller.py`
 
@@ -255,7 +255,7 @@ Seine Aufgaben sind:
 
 Wichtig ist dabei, dass `controller.py` selbst keine fachliche Routing- oder Dispatch-Entscheidung trifft.
 Der Controller orchestriert nur den Ablauf zwischen Simulationskern und den aktuell eingesetzten Policies.
-Dadurch koennen unterschiedliche Steuerungsverfahren eingesetzt werden, ohne den Controller oder den Simulationskern selbst umschreiben zu muessen.
+Dadurch können unterschiedliche Steuerungsverfahren eingesetzt werden, ohne den Controller oder den Simulationskern selbst umschreiben zu müssen.
 
 Technisch wichtig ist dabei:
 
@@ -293,19 +293,19 @@ Definiert wird hier:
 Die aktuelle Baseline arbeitet wie folgt:
 
 - `DefaultRoutingPolicy`
-  - bewertet zulaessige Operationsfolgen und Maschinenfolgen rein zufaellig
-  - waehlt damit keine fachlich optimierte Route, sondern eine einfache Referenzloesung innerhalb des zulaessigen Suchraums
+  - bewertet zulässige Operationsfolgen und Maschinenfolgen rein zufällig
+  - wählt damit keine fachlich optimierte Route, sondern eine einfache Referenzlösung innerhalb des zulässigen Suchraums
 - `DefaultDispatchPolicy`
-  - bewertet moegliche Pick-Aktionen fuer Main-Roboter und Arm-Roboter ebenfalls zufaellig
-  - verwendet damit bewusst keine Prioritaeten bezueglich Due-Date, Stau, Restbearbeitungszeit oder Defektrisiko
-  - bildet dadurch eine einfache Baseline fuer spaetere heuristische Vergleiche
+  - bewertet mögliche Pick-Aktionen für Main-Roboter und Arm-Roboter ebenfalls zufällig
+  - verwendet damit bewusst keine Prioritäten bezüglich Due-Date, Stau, Restbearbeitungszeit oder Defektrisiko
+  - bildet dadurch eine einfache Baseline für spätere heuristische Vergleiche
 - `DefaultController`
   - erbt von `PolicyController`
-  - erzeugt standardmaessig eine `DefaultRoutingPolicy` und eine `DefaultDispatchPolicy`
-  - uebergibt beide an den allgemeinen Controller
+  - erzeugt standardmäßig eine `DefaultRoutingPolicy` und eine `DefaultDispatchPolicy`
+  - übergibt beide an den allgemeinen Controller
   - erlaubt bei Bedarf aber auch das Injizieren anderer Routing- und Dispatch-Policies
 
-Damit ist eine lauffaehige Baseline vorhanden, ohne dass die eigentliche Entscheidungslogik im Controller selbst dupliziert werden muss.
+Damit ist eine lauffähige Baseline vorhanden, ohne dass die eigentliche Entscheidungslogik im Controller selbst dupliziert werden muss.
 
 ### `greedy_controller.py`
 
@@ -321,17 +321,17 @@ Definiert wird hier:
 Dabei gilt:
 
 - `GreedyRoutingPolicy`
-  - bewertet moegliche Operations- und Maschinenfolgen ueber Score-Funktionen
+  - bewertet mögliche Operations- und Maschinenfolgen über Score-Funktionen
   - bevorzugt kurze Bearbeitungszeiten, geringe Defektrisiken, wenige Korridorwechsel und kurze Transferwege
-  - waehlt aus dem von `calculate.py` erzeugten Suchraum jeweils die lokal beste Route
+  - wählt aus dem von `calculate.py` erzeugten Suchraum jeweils die lokal beste Route
 - `GreedyDispatchPolicy`
-  - bewertet moegliche naechste Aktionen im aktuell verfuegbaren Dispatch-Suchraum fuer Main-Roboter, Arm-Roboter und Maschinen
-  - nutzt dafuer unter anderem `slack_time`, freie Zielkapazitaet, Restbearbeitungsdauer und verbleibende Bearbeitungsschritte
-  - bevorzugt zusaetzlich das Leeren von `machine_out` und `corridor_main`, um Blockierungen zu reduzieren
-  - laesst Bearbeitungsschritte fuer bereits defekte Jobs nicht mehr zu
+  - bewertet mögliche nächste Aktionen im aktuell verfügbaren Dispatch-Suchraum für Main-Roboter, Arm-Roboter und Maschinen
+  - nutzt dafür unter anderem `slack_time`, freie Zielkapazität, Restbearbeitungsdauer und verbleibende Bearbeitungsschritte
+  - bevorzugt zusätzlich das Leeren von `machine_out` und `corridor_main`, um Blockierungen zu reduzieren
+  - lässt Bearbeitungsschritte für bereits defekte Jobs nicht mehr zu
 - `GreedyController`
   - erbt von `PolicyController`
-  - erzeugt standardmaessig eine `GreedyRoutingPolicy` und eine `GreedyDispatchPolicy`
+  - erzeugt standardmäßig eine `GreedyRoutingPolicy` und eine `GreedyDispatchPolicy`
   - übergibt beide an den allgemeinen Controller
   - erlaubt ebenso das Injizieren alternativer Policy-Instanzen
 
@@ -339,29 +339,29 @@ Damit steht neben der Standard-Baseline bereits eine erste austauschbare Greedy-
 
 ## Benchmarking und Dashboard
 
-Mit der Einfuehrung austauschbarer Controller reicht es nicht mehr aus, eine neue Strategie nur zu implementieren.
-Sobald neben `DefaultController` auch weitere Varianten wie `GreedyController` existieren, stellt sich unmittelbar die Frage, ob diese Strategien unter gleichen Bedingungen tatsaechlich andere oder bessere Ergebnisse liefern.
+Mit der Einführung austauschbarer Controller reicht es nicht mehr aus, eine neue Strategie nur zu implementieren.
+Sobald neben `DefaultController` auch weitere Varianten wie `GreedyController` existieren, stellt sich unmittelbar die Frage, ob diese Strategien unter gleichen Bedingungen tatsächlich andere oder bessere Ergebnisse liefern.
 
-Genau aus diesem Grund wurden zusaetzlich eine Benchmark-Schicht und ein Dashboard implementiert:
+Genau aus diesem Grund wurden zusätzlich eine Benchmark-Schicht und ein Dashboard implementiert:
 
-- unterschiedliche Controller sollen auf denselben Beispielen vergleichbar ausgefuehrt werden koennen
-- Zufallseinfluesse sollen ueber gemeinsame Seeds kontrollierbar bleiben
+- unterschiedliche Controller sollen auf denselben Beispielen vergleichbar ausgeführt werden können
+- Zufallseinflüsse sollen über gemeinsame Seeds kontrollierbar bleiben
 - Ergebnisse sollen nicht nur beobachtet, sondern auch als Kennzahlen gespeichert und ausgewertet werden
 - die Austauschbarkeit der Controller soll damit nicht nur architektonisch, sondern auch experimentell nachweisbar sein
 
-Die Benchmarking-Schicht ermoeglicht damit den Uebergang von einer rein lauffaehigen Architektur zu einer auswertbaren Versuchsplattform fuer Baselines, Greedy-Heuristiken und spaetere weitere Verfahren.
+Die Benchmarking-Schicht ermöglicht damit den Übergang von einer rein lauffähigen Architektur zu einer auswertbaren Versuchsplattform für Baselines, Greedy-Heuristiken und spätere weitere Verfahren.
 
 ### `benchmark.py`
 
-`benchmark.py` enthaelt die eigentliche Benchmark-Logik.
+`benchmark.py` enthält die eigentliche Benchmark-Logik.
 Die Datei ist damit die fachliche Vergleichsschicht zwischen Simulationskern und den konkreten Auswertungswerkzeugen.
 
 Ihre Aufgaben sind insbesondere:
 
-- Laden von Beispielmodellen ueber `build_example()`
-- Zuruecksetzen des globalen Konfigurationszustands zwischen Benchmark-Laeufen
-- Erzeugen und Ausfuehren von Simulationslaeufen mit unterschiedlichen Controllerklassen
-- Setzen gemeinsamer Seeds fuer faire und reproduzierbare Vergleiche
+- Laden von Beispielmodellen über `build_example()`
+- Zurücksetzen des globalen Konfigurationszustands zwischen Benchmark-Läufen
+- Erzeugen und Ausführen von Simulationsläufen mit unterschiedlichen Controllerklassen
+- Setzen gemeinsamer Seeds für faire und reproduzierbare Vergleiche
 - Sammeln strukturierter Kennzahlen pro Run und pro Order
 - Serialisieren der Ergebnisse in einen JSON-Report
 
@@ -373,43 +373,43 @@ Dabei werden unter anderem folgende Kennzahlen erfasst:
 - `makespan`
 - `throughput_jobs_per_time`
 - `robot_utilization`, `machine_utilization`
-- Queue-Laengen fuer Start, Ende, Corridor und Maschinenpuffer
+- Queue-Längen für Start, Ende, Corridor und Maschinenpuffer
 
-Damit bildet `benchmark.py` die technische Grundlage fuer reproduzierbare Controller-Vergleiche.
+Damit bildet `benchmark.py` die technische Grundlage für reproduzierbare Controller-Vergleiche.
 
 ### `benchmark_runner.py`
 
-`benchmark_runner.py` ist die schlanke Kommandozeilen-Schnittstelle fuer die Benchmark-Schicht.
-Die Datei dient dazu, Benchmark-Laeufe schnell auszufuehren, ohne den Python-Code jedes Mal manuell anpassen zu muessen.
+`benchmark_runner.py` ist die schlanke Kommandozeilen-Schnittstelle für die Benchmark-Schicht.
+Die Datei dient dazu, Benchmark-Läufe schnell auszuführen, ohne den Python-Code jedes Mal manuell anpassen zu müssen.
 
-Der Runner uebernimmt dabei:
+Der Runner übernimmt dabei:
 
 - Auswahl von Beispielskripten
 - Auswahl der zu vergleichenden Controller, z. B. `default` und `greedy`
-- Uebergabe von Seeds
+- Übergabe von Seeds
 - Setzen einer optionalen Simulationsgrenze `till`
 - Speichern des Reports als JSON-Datei
 - kompakte Konsolenausgabe der wichtigsten Kennzahlen pro Run
 
-Dadurch eignet sich `benchmark_runner.py` vor allem fuer:
+Dadurch eignet sich `benchmark_runner.py` vor allem für:
 
 - schnelle Vergleiche im Terminal
 - wiederholbare Benchmark-Experimente
-- das Erzeugen von JSON-Reports fuer spaetere Auswertung
+- das Erzeugen von JSON-Reports für spätere Auswertung
 
 ### `benchmark_dashboard.py`
 
-`benchmark_dashboard.py` stellt auf Basis von Streamlit eine grafische Oberflaeche fuer die Benchmark-Ergebnisse bereit.
-Die Datei wurde implementiert, damit die Auswertung nicht nur ueber rohe JSON-Dateien oder Konsolenzeilen erfolgen muss.
+`benchmark_dashboard.py` stellt auf Basis von Streamlit eine grafische Oberfläche für die Benchmark-Ergebnisse bereit.
+Die Datei wurde implementiert, damit die Auswertung nicht nur über rohe JSON-Dateien oder Konsolenzeilen erfolgen muss.
 
-Das Dashboard ermoeglicht:
+Das Dashboard ermöglicht:
 
 - bestehende JSON-Reports zu laden
-- neue Benchmark-Laeufe direkt aus der Oberflaeche zu starten
-- Controller, Beispiele, Seeds und `till` interaktiv auszuwaehlen
+- neue Benchmark-Läufe direkt aus der Oberfläche zu starten
+- Controller, Beispiele, Seeds und `till` interaktiv auszuwählen
 - aggregierte Kennzahlen pro Controller zu vergleichen
 - Run-Details und Order-Details tabellarisch anzuzeigen
 - Reports erneut als JSON im Projektordner zu speichern oder herunterzuladen
 
-Damit bildet das Dashboard die visuelle Auswertungsebene ueber der eigentlichen Benchmark-Logik.
-Es ersetzt nicht den Benchmark selbst, sondern macht dessen Ergebnisse fuer Vergleiche und Analyse deutlich leichter nutzbar.
+Damit bildet das Dashboard die visuelle Auswertungsebene über der eigentlichen Benchmark-Logik.
+Es ersetzt nicht den Benchmark selbst, sondern macht dessen Ergebnisse für Vergleiche und Analyse deutlich leichter nutzbar.

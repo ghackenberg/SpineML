@@ -82,18 +82,18 @@ graph TD
     Sim["Simulationskern<br/>SimOrderJob, SimRobotMain,<br/>SimRobotCorridorArm, SimMachine"]
     Ctrl["controller.py<br/>PolicyController"]
     Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>ScoredRoutingPolicy<br/>RuleBasedDispatchPolicy"]
-    Calc["calculate.py<br/>Routing-Kandidaten<br/>und Remaining-Routes"]
+    Calc["calculate.py<br/>Operationsfolgen,<br/>Maschinenfolgen und<br/>verbleibende Operationsfolgen"]
     Def["default_controller.py<br/>DefaultController<br/>DefaultRoutingPolicy<br/>DefaultDispatchPolicy"]
     Greedy["greedy_controller.py<br/>GreedyController<br/>GreedyRoutingPolicy<br/>GreedyDispatchPolicy"]
 
     Sim -->|Stores und Zustände| Ctrl
     Ctrl -->|JobPlanningRequest<br/>und Statusanfrage| Policy
-    Policy -->|nutzt zulässige Routing-Kandidaten| Calc
+    Policy -->|nutzt zulässige Operations- und Maschinenfolgen| Calc
     Def -->|erbt von| Ctrl
     Greedy -->|erbt von| Ctrl
     Def -->|verdrahtet konkrete Policies| Policy
     Greedy -->|verdrahtet konkrete Policies| Policy
-    Policy -->|bewertete RoutingCandidate,<br/>JobPlan und DispatchCommands| Ctrl
+    Policy -->|bewertete Routing-Kandidaten,<br/>JobPlan und DispatchCommands| Ctrl
     Ctrl -->|legt Commands in cmd_stores| Sim
 ```
 

@@ -81,21 +81,19 @@ Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, der all
 graph TD
     Sim["Simulationskern<br/>SimOrderJob, SimRobotMain,<br/>SimRobotCorridorArm, SimMachine"]
     Ctrl["controller.py<br/>PolicyController"]
-    Types["JobPlanningRequest<br/>JobHeadObservation<br/>RoutingCandidate<br/>QueueObject<br/>DispatchCommands"]
     Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>ScoredRoutingPolicy<br/>RuleBasedDispatchPolicy"]
     Calc["calculate.py<br/>Routing-Kandidaten<br/>und Remaining-Routes"]
     Def["default_controller.py<br/>DefaultController<br/>DefaultRoutingPolicy<br/>DefaultDispatchPolicy"]
     Greedy["greedy_controller.py<br/>GreedyController<br/>GreedyRoutingPolicy<br/>GreedyDispatchPolicy"]
 
     Sim -->|Stores und Zustände| Ctrl
-    Ctrl -->|erzeugt Beobachtungen| Types
-    Types -->|JobPlanningRequest,<br/>SystemObservation,<br/>RoutingCandidate| Policy
+    Ctrl -->|JobPlanningRequest<br/>und Statusanfrage| Policy
     Policy -->|nutzt zulässige Routing-Kandidaten| Calc
     Def -->|erbt von| Ctrl
     Greedy -->|erbt von| Ctrl
     Def -->|verdrahtet konkrete Policies| Policy
     Greedy -->|verdrahtet konkrete Policies| Policy
-    Policy -->|JobPlan und DispatchCommands<br/>mit gewählter Route| Ctrl
+    Policy -->|bewertete RoutingCandidate,<br/>JobPlan und DispatchCommands| Ctrl
     Ctrl -->|legt Commands in cmd_stores| Sim
 ```
 

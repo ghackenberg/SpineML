@@ -21,7 +21,7 @@ from .types import (
     MainRobotObservation,
     MainRobotPickAction,
     MainRobotPlaceAction,
-    QueueObservation,
+    QueueObject,
 )
 
 if TYPE_CHECKING:
@@ -149,48 +149,21 @@ class GreedyDispatchPolicy(RuleBasedDispatchPolicy):
             score += self.DEFECTIVE_EXIT_BONUS
         return score
 
-    def _main_target_queue_for_job(
-        self,
-        robot: MainRobotObservation,
-        job: JobHeadObservation,
-    ) -> QueueObservation:
-        if job.next_machine_name is None or job.next_machine_corridor_name is None:
-            return robot.end_queue
-
-        corridor = self._corridor_by_name(robot.corridors, job.next_machine_corridor_name)
-        if job.next_machine_side == "left":
-            return corridor.left_queue
-        return corridor.right_queue
-
-    def _arm_target_queue_for_job(
-        self,
-        robot: ArmRobotObservation,
-        job: JobHeadObservation,
-    ) -> QueueObservation:
-        if job.next_machine_name is not None and job.next_machine_corridor_name == robot.corridor_name:
-            for machine_slot in robot.machine_slots:
-                if machine_slot.machine_name == job.next_machine_name:
-                    return machine_slot.input_queue
-            return robot.out_arm_queue
-
-        return robot.out_main_queue
-
     def score_main_robot_pick(
         self,
         robot: MainRobotObservation,
         action: MainRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
         job = source_queue.head
         if job is None:
             return None
 
-        target_queue = self._main_target_queue_for_job(robot, job)
-        if target_queue.free_capacity <= 0:
+        best_place_score = self.best_main_robot_place_score(robot, job)
+        if best_place_score is None:
             return None
 
-        score = self._job_priority(job)
-        score += self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        score = best_place_score
         if action.kind == "corridor_main":
             score += self.CORRIDOR_CLEAR_BONUS
         return score
@@ -200,26 +173,31 @@ class GreedyDispatchPolicy(RuleBasedDispatchPolicy):
         robot: MainRobotObservation,
         job: JobHeadObservation,
         action: MainRobotPlaceAction,
-        target_queue: QueueObservation,
+        target_queue: QueueObject,
     ) -> float | None:
-        return self._job_priority(job) + self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        if target_queue.free_capacity <= 0:
+            return None
+        return (
+            self._job_priority(job)
+            + action.route.route_score
+            + self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        )
 
     def score_arm_robot_pick(
         self,
         robot: ArmRobotObservation,
         action: ArmRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
         job = source_queue.head
         if job is None:
             return None
 
-        target_queue = self._arm_target_queue_for_job(robot, job)
-        if target_queue.free_capacity <= 0:
+        best_place_score = self.best_arm_robot_place_score(robot, job)
+        if best_place_score is None:
             return None
 
-        score = self._job_priority(job)
-        score += self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        score = best_place_score
         if action.kind == "machine_out":
             score += self.MACHINE_OUTPUT_CLEAR_BONUS
         return score
@@ -229,9 +207,15 @@ class GreedyDispatchPolicy(RuleBasedDispatchPolicy):
         robot: ArmRobotObservation,
         job: JobHeadObservation,
         action: ArmRobotPlaceAction,
-        target_queue: QueueObservation,
+        target_queue: QueueObject,
     ) -> float | None:
-        return self._job_priority(job) + self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        if target_queue.free_capacity <= 0:
+            return None
+        return (
+            self._job_priority(job)
+            + action.route.route_score
+            + self.TARGET_FREE_CAPACITY_WEIGHT * target_queue.free_capacity
+        )
 
     def score_machine_process(
         self,
@@ -247,16 +231,15 @@ class GreedyDispatchPolicy(RuleBasedDispatchPolicy):
 class GreedyController(PolicyController):
     def __init__(
         self,
-        routing_policy: RoutingPolicy | None = None,
-        dispatch_policy: DispatchPolicy | None = None,
+
         rng_seed: int | None = None,
         *args,
         **kwargs,
     ):
         rng = random.Random(rng_seed)
         super().__init__(
-            routing_policy=routing_policy or GreedyRoutingPolicy(rng=rng),
-            dispatch_policy=dispatch_policy or GreedyDispatchPolicy(rng=rng),
+            routing_policy=GreedyRoutingPolicy(rng=rng),
+            dispatch_policy=GreedyDispatchPolicy(rng=rng),
             *args,
             **kwargs,
         )

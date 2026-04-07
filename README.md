@@ -75,37 +75,28 @@ Damit entsteht eine klarere Schnittstelle zwischen Steuerung und Simulation und 
 
 ### Strukturdiagramm: Aufbau von Simulation und Controller
 
-Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, der allgemeinen Controller-Logik in `controller.py`, den abstrakten Policy-Schnittstellen in `policy.py` und den konkreten Default- bzw. Greedy-Implementierungen in den jeweiligen Controller-Dateien.
-
-`types.py` erscheint dabei nicht als eigener Knoten, weil dort keine aktive Logik ausgeführt wird. Die in `types.py` definierten Datentypen beschreiben die Schnittstelle zwischen Simulation, Controller und Policies.
+Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, der allgemeinen Controller-Logik in `controller.py`, den abstrakten Policy-Schnittstellen in `policy.py`, den Routing-Hilfsfunktionen in `calculate.py`, den Beobachtungs- und Command-Typen aus `types.py` sowie den konkreten Default- bzw. Greedy-Implementierungen.
 
 ```mermaid
 graph TD
-    Sim[Simulationskern]
-
+    Sim["Simulationskern<br/>SimOrderJob, SimRobotMain,<br/>SimRobotCorridorArm, SimMachine"]
+    Ctrl["controller.py<br/>PolicyController"]
+    Types["JobPlanningRequest<br/>JobHeadObservation<br/>RoutingCandidate<br/>QueueObject<br/>DispatchCommands"]
+    Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>ScoredRoutingPolicy<br/>RuleBasedDispatchPolicy"]
+    Calc["calculate.py<br/>Routing-Kandidaten<br/>und Remaining-Routes"]
     Def["default_controller.py<br/>DefaultController<br/>DefaultRoutingPolicy<br/>DefaultDispatchPolicy"]
     Greedy["greedy_controller.py<br/>GreedyController<br/>GreedyRoutingPolicy<br/>GreedyDispatchPolicy"]
 
-    Ctrl["controller.py<br/>PolicyController<br/>[Simulationsobjekt]"]
-
-    Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>RuleBasedDispatchPolicy<br/>ScoredRoutingPolicy"]
-
-    Calc["calculate.py<br/>Routing-Hilfslogik"]
-
-    Sim -->|JobPlanningRequest, SystemObservation| Def
-    Def -->|JobPlan, MainRobotCommand, ArmRobotCommand, MachineCommand| Sim
-
-    Sim -->|JobPlanningRequest, SystemObservation| Greedy
-    Greedy -->|JobPlan, MainRobotCommand, ArmRobotCommand, MachineCommand| Sim
-
+    Sim -->|Stores und Zustände| Ctrl
+    Ctrl -->|erzeugt Beobachtungen| Types
+    Types -->|JobPlanningRequest,<br/>SystemObservation,<br/>RoutingCandidate| Policy
+    Policy -->|nutzt zulässige Routing-Kandidaten| Calc
     Def -->|erbt von| Ctrl
     Greedy -->|erbt von| Ctrl
-    Def -->|enthält konkrete Implementierungen zu| Policy
-    Greedy -->|enthält konkrete Implementierungen zu| Policy
-    Def -->|nutzt für Routing| Calc
-    Greedy -->|nutzt für Routing| Calc
-    Ctrl -->|nutzt plan_job und decide| Policy
-    Policy -->|JobPlan und DispatchCommands| Ctrl
+    Def -->|verdrahtet konkrete Policies| Policy
+    Greedy -->|verdrahtet konkrete Policies| Policy
+    Policy -->|JobPlan und DispatchCommands<br/>mit gewählter Route| Ctrl
+    Ctrl -->|legt Commands in cmd_stores| Sim
 ```
 
 ## Überblick über die neue Struktur
@@ -126,18 +117,20 @@ Der zentrale Architekturgedanke hinter den unterschiedlichen Controllern ist dab
 
 - `calculate.py` erzeugt für das Routing den zulässigen Suchraum
   - also mögliche Operationsfolgen und dazu passende Maschinenfolgen
-- `RoutingPolicy` wählt aus diesem Suchraum eine konkrete Route für einen Job aus
+- `RoutingPolicy` bewertet diese Routing-Kandidaten initial und später erneut aus dem aktuellen Produktzustand eines Jobs
 - `DispatchPolicy` wählt während der laufenden Simulation aus den aktuell möglichen Aktionen die nächsten Commands aus
   - dieser dynamische Aktionsraum ist damit ein zweiter, laufend neu entstehender Suchraum
+- die beim `place` ausgewählte Route wird erst in diesem Transport-Schritt am echten Job festgeschrieben
+- Maschinen können zusätzlich aus allen Jobs ihrer `input_queue` den aktuell besten Bearbeitungskandidaten auswählen
 
 Damit ist die Aufgabenverteilung bewusst getrennt:
 
 - `calculate.py` beantwortet die Frage:
   - welche Routing-Kandidaten sind im gegebenen Layout grundsätzlich zulässig?
 - `RoutingPolicy` beantwortet die Frage:
-  - welcher dieser zulässigen Kandidaten soll für den aktuellen Job gewählt werden?
+  - welche verbleibenden Routen sind für den aktuellen Job zulässig und wie gut sind sie?
 - `DispatchPolicy` beantwortet die Frage:
-  - welche ausführbare Aktion soll im aktuellen Simulationszustand als Nächstes erfolgen?
+  - welche ausführbare Aktion inklusive zugehöriger Route im aktuellen Simulationszustand als Nächstes erfolgen soll?
   - also welche aus der momentanen Queue-, Maschinen- und Roboterkonstellation ableitbare Aktion lokal am sinnvollsten ist
 
 Genau darin unterscheiden sich `DefaultController` und `GreedyController`:
@@ -149,7 +142,30 @@ Genau darin unterscheiden sich `DefaultController` und `GreedyController`:
   - die Greedy-Policies bewerten Kandidaten heuristisch über Score-Funktionen und wählen jeweils die lokal beste Alternative
 
 Die eigentliche Optimierung liegt also nicht in der Erzeugung des Suchraums, sondern in der Bewertung und Auswahl innerhalb dieses Suchraums.
-Für das Routing geschieht das einmalig pro Job, für das Dispatching fortlaufend während der Simulation.
+Für das Routing geschieht das nicht mehr nur einmalig pro Job, sondern initial und danach erneut zwischen Bearbeitungsschritten.
+Für das Dispatching geschieht die Auswahl fortlaufend während der Simulation.
+
+### Rolle der Heuristik
+
+Aus Sicht der Heuristik existieren in der Architektur zwei verschiedene Suchräume:
+
+- ein Routing-Suchraum bei der Initialplanung und später erneut für beobachtete Transportjobs
+  - bestehend aus möglichen `operation_sequence`- und `machine_sequence`-Kandidaten sowie daraus abgeleiteten `RoutingCandidate`s
+- ein dynamischer Dispatch-Suchraum während der laufenden Simulation
+  - bestehend aus den aktuell ausführbaren Aktionen für Main-Roboter, Arm-Roboter und Maschinen einschließlich der Jobs in `machine.input_queue.jobs`
+
+Die Rolle der Heuristik besteht darin, in beiden Suchräumen zulässige Alternativen nicht nur zu erzeugen, sondern zu bewerten und daraus eine sinnvolle Auswahl zu treffen.
+
+Konkret bedeutet das:
+
+- beim Routing:
+  - welcher verbleibende Bearbeitungsweg für einen Job im aktuellen Produktzustand gewählt werden soll
+- beim Dispatching:
+  - welche im aktuellen Systemzustand ausführbare Aktion als Nächstes erfolgen soll und welche Route dabei commitet wird
+
+Die Heuristik übernimmt damit in der Fabrik nicht die Modellierung der Welt, sondern die Entscheidungslogik innerhalb dieser modellierten Welt.
+Der Simulationskern beschreibt, welche Zustände, Ressourcen und Restriktionen existieren.
+Die Heuristik entscheidet, welche der jeweils möglichen Optionen unter diesen Bedingungen bevorzugt werden sollen.
 
 ## Controller-Module
 
@@ -165,14 +181,18 @@ Dazu gehören insbesondere:
   - eindeutige Identifikation einer Produktionseinheit über Szenario, Order und Jobnummer
 - `JobPlanningRequest`
   - Anfrage an die Routing-Logik für die Planung eines Jobs
+  - enthält zusätzlich `current_product_type` für die verbleibende Online-Planung ab dem aktuellen Produktzustand
 - `JobPlan`
   - Ergebnis der Jobplanung mit `operation_sequence` und `machine_sequence`
+- `RoutingCandidate`
+  - beschreibt eine zulässige verbleibende Route mit Operationsfolge, Maschinenfolge, Score und den daraus abgeleiteten nächsten Bearbeitungsschritten
 - `JobHeadObservation`
   - detaillierte Beobachtung eines Jobs am Kopf einer Queue
   - enthält neben Produkt- und Routendaten inzwischen auch heuristisch relevante Informationen wie `is_defective`, `release_time`, `due_time`, `remaining_processing_time_estimate`, `slack_time` sowie aktuelle Produktparameter wie Gewicht und Abmessungen
-- `QueueObservation`
-  - Beobachtung einer Queue mit Länge und Head-Job
-  - enthält zusätzlich `capacity` und `free_capacity`
+  - enthält zusätzlich `routing_candidates`, also mehrere aktuell mögliche verbleibende Routen
+- `QueueObject`
+  - Beobachtung einer Queue mit Länge, Head-Job und allen aktuell sichtbaren Jobs
+  - enthält zusätzlich `capacity`, `free_capacity` und `jobs`
 - `OrderJobObservation`
   - detaillierte Beobachtung eines konkreten Jobs innerhalb einer Order
   - enthält zusätzlich `released`, `completed`, `completion_time` und `defect_time`
@@ -196,6 +216,7 @@ Hier wird also berechnet:
 
 - welche Operationsfolgen für ein Produkt möglich sind
 - welche Maschinenfolgen für eine Operationsfolge im gegebenen Layout möglich sind
+- welche verbleibenden Operationsfolgen vom aktuellen Produktzustand bis zum Zielprodukt möglich sind
 
 Sowohl `DefaultRoutingPolicy` als auch `GreedyRoutingPolicy` greifen damit auf dieselbe Menge zulässiger Routing-Kandidaten zu.
 Der Unterschied liegt nicht in der Erzeugung dieser Kandidaten, sondern in ihrer späteren Bewertung und Auswahl.
@@ -208,8 +229,8 @@ Die Datei enthält dabei bewusst nur die abstrakten Verträge und gemeinsame Bas
 Es gibt zwei zentrale Policy-Arten:
 
 - `RoutingPolicy`
-  - plant einen einzelnen Job beim Erzeugen
-  - liefert ein `JobPlan`
+  - stellt zulässige Routing-Kandidaten für einen Job bereit
+  - kann daraus weiterhin ein konkretes `JobPlan` ableiten
 - `DispatchPolicy`
   - entscheidet im laufenden Betrieb, welche Commands als Nächstes erzeugt werden sollen
 
@@ -226,6 +247,8 @@ Zusätzlich gibt es:
     - `decide_arm_robot_pick(...)`
     - `decide_arm_robot_place(...)`
     - `decide_machine_process(...)`
+  - baut dabei `place`-Kandidaten aus mehreren `RoutingCandidate`s auf
+  - erlaubt Maschinen zusätzlich, mehrere Jobs aus ihrer `input_queue` gegeneinander zu vergleichen, statt strikt FIFO zu arbeiten
 
 Damit muss eine neue Dispatch-Strategie nicht zwingend die gesamte Methode `decide(...)` selbst schreiben, sondern kann auf diesem Gerüst aufbauen.
 
@@ -249,7 +272,8 @@ Seine Aufgaben sind:
 - Speichern der aktiven `RoutingPolicy`
 - Speichern der aktiven `DispatchPolicy`
 - Beobachten aller relevanten Simulationsobjekte
-- Umwandeln von Simulationszuständen in typed observations
+- Umwandeln von Simulationszuständen in typisierte Beobachtungen
+- Erzeugen dynamischer `routing_candidates` für beobachtete Transportjobs
 - periodisches Aufrufen der Dispatch-Logik
 - Verteilen der resultierenden Commands auf die jeweiligen Actoren
 
@@ -269,6 +293,9 @@ Der `PolicyController` enthält dafür insbesondere:
 - `read_status()` zum Erzeugen eines `SystemObservation`
 - `build_commands()` zum Aufruf der aktiven Dispatch-Policy
 - `process()` als periodische Controller-Schleife
+
+Für Jobs in Transport-Queues werden dabei mehrere Routing-Kandidaten beobachtet.
+Für Jobs in einer Maschinen-`input_queue` bleibt dagegen die bereits festgeschriebene Route sichtbar, damit die Maschinenbearbeitung konsistent auf einer konkret gewählten nächsten Operation basiert.
 
 Die Schleife läuft konzeptionell so:
 
@@ -294,16 +321,17 @@ Die aktuelle Baseline arbeitet wie folgt:
 
 - `DefaultRoutingPolicy`
   - bewertet zulässige Operationsfolgen und Maschinenfolgen rein zufällig
+  - erzeugt daraus auch im Online-Routing lediglich zufällige `RoutingCandidate`s
   - wählt damit keine fachlich optimierte Route, sondern eine einfache Referenzlösung innerhalb des zulässigen Suchraums
 - `DefaultDispatchPolicy`
-  - bewertet mögliche Pick-Aktionen für Main-Roboter und Arm-Roboter ebenfalls zufällig
+  - bewertet mögliche Pick-, Place- und Maschinenaktionen ebenfalls zufällig
+  - vergleicht dabei dieselben Online-Routing-Kandidaten und dieselben Maschinen-Queue-Kandidaten wie die Greedy-Variante
   - verwendet damit bewusst keine Prioritäten bezüglich Due-Date, Stau, Restbearbeitungszeit oder Defektrisiko
   - bildet dadurch eine einfache Baseline für spätere heuristische Vergleiche
 - `DefaultController`
   - erbt von `PolicyController`
   - erzeugt standardmäßig eine `DefaultRoutingPolicy` und eine `DefaultDispatchPolicy`
   - übergibt beide an den allgemeinen Controller
-  - erlaubt bei Bedarf aber auch das Injizieren anderer Routing- und Dispatch-Policies
 
 Damit ist eine lauffähige Baseline vorhanden, ohne dass die eigentliche Entscheidungslogik im Controller selbst dupliziert werden muss.
 
@@ -322,18 +350,19 @@ Dabei gilt:
 
 - `GreedyRoutingPolicy`
   - bewertet mögliche Operations- und Maschinenfolgen über Score-Funktionen
+  - erzeugt daraus sortierte `RoutingCandidate`s für die aktuelle Restplanung eines Jobs
   - bevorzugt kurze Bearbeitungszeiten, geringe Defektrisiken, wenige Korridorwechsel und kurze Transferwege
-  - wählt aus dem von `calculate.py` erzeugten Suchraum jeweils die lokal beste Route
+  - stellt diese Kandidaten für Main- und Arm-Roboter beim `place` online zur Verfügung
 - `GreedyDispatchPolicy`
   - bewertet mögliche nächste Aktionen im aktuell verfügbaren Dispatch-Suchraum für Main-Roboter, Arm-Roboter und Maschinen
-  - nutzt dafür unter anderem `slack_time`, freie Zielkapazität, Restbearbeitungsdauer und verbleibende Bearbeitungsschritte
+  - nutzt dafür unter anderem `slack_time`, freie Zielkapazität, Restbearbeitungsdauer, verbleibende Bearbeitungsschritte und den Score der jeweils ausgewählten Route
   - bevorzugt zusätzlich das Leeren von `machine_out` und `corridor_main`, um Blockierungen zu reduzieren
+  - wählt bei Maschinen den besten Job aus der gesamten `input_queue` statt nur den Head-Job
   - lässt Bearbeitungsschritte für bereits defekte Jobs nicht mehr zu
 - `GreedyController`
   - erbt von `PolicyController`
   - erzeugt standardmäßig eine `GreedyRoutingPolicy` und eine `GreedyDispatchPolicy`
   - übergibt beide an den allgemeinen Controller
-  - erlaubt ebenso das Injizieren alternativer Policy-Instanzen
 
 Damit steht neben der Standard-Baseline bereits eine erste austauschbare Greedy-Heuristik zur Verfügung.
 

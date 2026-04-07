@@ -138,6 +138,10 @@ class SimRobotCorridorArm(SimRobot):
                 if source_out_time > 0:
                     yield self.hold(source_out_time)
                 loaded_speed = self._loaded_speed(job)
+                job.apply_route(
+                    list(cmd.place.route.operation_sequence),
+                    list(cmd.place.route.machine_sequence),
+                )
 
                 self.state_load.set("loaded")
                 if source_machine is not None:

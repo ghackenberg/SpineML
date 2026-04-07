@@ -13,10 +13,15 @@ from .policy import (
 from .types import (
     ArmRobotObservation,
     ArmRobotPickAction,
+    ArmRobotPlaceAction,
+    JobHeadObservation,
     JobPlanningRequest,
+    MachineCommand,
+    MachineObservation,
     MainRobotObservation,
     MainRobotPickAction,
-    QueueObservation,
+    MainRobotPlaceAction,
+    QueueObject,
 )
 
 if TYPE_CHECKING:
@@ -41,32 +46,77 @@ class DefaultDispatchPolicy(RuleBasedDispatchPolicy):
         self,
         robot: MainRobotObservation,
         action: MainRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
+        job = source_queue.head
+        if job is None:
+            return None
+
+        if self.best_main_robot_place_score(robot, job) is None:
+            return None
+
         return self.rng.random()
 
     def score_arm_robot_pick(
         self,
         robot: ArmRobotObservation,
         action: ArmRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
+        job = source_queue.head
+        if job is None:
+            return None
+
+        if self.best_arm_robot_place_score(robot, job) is None:
+            return None
+
+        return self.rng.random()
+
+    def score_main_robot_place(
+        self,
+        robot: MainRobotObservation,
+        job: JobHeadObservation,
+        action: MainRobotPlaceAction,
+        target_queue: QueueObject,
+    ) -> float | None:
+        if target_queue.free_capacity <= 0:
+            return None
+        return self.rng.random()
+
+    def score_arm_robot_place(
+        self,
+        robot: ArmRobotObservation,
+        job: JobHeadObservation,
+        action: ArmRobotPlaceAction,
+        target_queue: QueueObject,
+    ) -> float | None:
+        if target_queue.free_capacity <= 0:
+            return None
+        return self.rng.random()
+
+    def score_machine_process(
+        self,
+        machine: MachineObservation,
+        job: JobHeadObservation,
+        command: MachineCommand,
+    ) -> float | None:
+        if job.is_defective:
+            return None
         return self.rng.random()
 
 
 class DefaultController(PolicyController):
     def __init__(
         self,
-        routing_policy: RoutingPolicy | None = None,
-        dispatch_policy: DispatchPolicy | None = None,
+
         rng_seed: int | None = None,
         *args,
         **kwargs,
     ):
         rng = random.Random(rng_seed)
         super().__init__(
-            routing_policy=routing_policy or DefaultRoutingPolicy(rng=rng),
-            dispatch_policy=dispatch_policy or DefaultDispatchPolicy(rng=rng),
+            routing_policy=DefaultRoutingPolicy(rng=rng),
+            dispatch_policy=DefaultDispatchPolicy(rng=rng),
             *args,
             **kwargs,
         )

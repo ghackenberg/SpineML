@@ -42,3 +42,27 @@ def calculateOperationSequences(objectType: ProductType):
                 prefix.append(operationType)
                 result.append(prefix)
     return result
+
+
+def calculateRemainingOperationSequences(
+    current_object_type: ProductType,
+    target_object_type: ProductType,
+) -> list[list[OperationType]]:
+    if current_object_type == target_object_type:
+        return [[]]
+
+    result: list[list[OperationType]] = []
+    for operation_type in target_object_type.producing_operations:
+        if operation_type.consumes_product_type == current_object_type:
+            result.append([operation_type])
+            continue
+
+        prefixes = calculateRemainingOperationSequences(
+            current_object_type,
+            operation_type.consumes_product_type,
+        )
+        for prefix in prefixes:
+            route = list(prefix)
+            route.append(operation_type)
+            result.append(route)
+    return result

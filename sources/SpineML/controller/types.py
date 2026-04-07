@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from ..Configuration import Layout, Order
+    from ..Configuration import Layout, Order, ProductType
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +34,30 @@ class JobPlanningRequest:
     job_key: JobKey
     layout: Layout
     order: Order
+    current_product_type: ProductType | None = None
 
 
 @dataclass(frozen=True, slots=True)
 
 ## Zustandsbeobachtung eines Jobs am Kopf einer Queue.
+class RoutingCandidate:
+    operation_sequence: tuple[Any, ...]
+    machine_sequence: tuple[Any, ...]
+    route_score: float
+    remaining_operations: int
+    remaining_machines: int
+    remaining_processing_time_estimate: float
+    next_operation_name: str | None
+    next_tool_name: str | None
+    next_operation_duration: float | None
+    next_consumed_life_units: int | None
+    next_produced_product_name: str | None
+    next_machine_name: str | None
+    next_machine_corridor_name: str | None
+    next_machine_side: Literal["left", "right"] | None
+
+
+@dataclass(frozen=True, slots=True)
 class JobHeadObservation:
     job_key: JobKey
     current_product_name: str
@@ -53,6 +72,7 @@ class JobHeadObservation:
     remaining_machines: int
     remaining_processing_time_estimate: float
     slack_time: float
+    routing_candidates: tuple[RoutingCandidate, ...]
     next_operation_name: str | None
     next_tool_name: str | None
     next_operation_duration: float | None
@@ -67,28 +87,29 @@ class JobHeadObservation:
 
 ## Beobachtung einer Queue mit ihrem Namen, ihrer Laenge
 # und dem Job am Kopf der Warteschlange.
-class QueueObservation:
+class QueueObject:
     queue_id: str
     length: int
     capacity: float
     free_capacity: float
     head: JobHeadObservation | None
+    jobs: tuple[JobHeadObservation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class CorridorObservation:
     corridor_name: str
-    main_queue: QueueObservation
-    left_queue: QueueObservation
-    right_queue: QueueObservation
+    main_queue: QueueObject
+    left_queue: QueueObject
+    right_queue: QueueObject
 
 
 @dataclass(frozen=True, slots=True)
 class ArmMachineObservation:
     machine_num: int
     machine_name: str
-    input_queue: QueueObservation
-    output_queue: QueueObservation
+    input_queue: QueueObject
+    output_queue: QueueObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +131,8 @@ class MainRobotObservation:
     z: float
     busy: bool
     pending_commands: int
-    start_queue: QueueObservation
-    end_queue: QueueObservation
+    start_queue: QueueObject
+    end_queue: QueueObject
     corridors: tuple[CorridorObservation, ...]
 
 
@@ -128,9 +149,9 @@ class ArmRobotObservation:
     z: float
     busy: bool
     pending_commands: int
-    input_queue: QueueObservation
-    out_arm_queue: QueueObservation
-    out_main_queue: QueueObservation
+    input_queue: QueueObject
+    out_arm_queue: QueueObject
+    out_main_queue: QueueObject
     machine_slots: tuple[ArmMachineObservation, ...]
 
 
@@ -144,8 +165,8 @@ class MachineObservation:
     current_tool_name: str | None
     busy: bool
     pending_commands: int
-    input_queue: QueueObservation
-    output_queue: QueueObservation
+    input_queue: QueueObject
+    output_queue: QueueObject
     remaining_life_units: dict[str, int]
     available_tools: tuple[ToolSpec, ...]
 
@@ -192,6 +213,7 @@ class MainRobotPickAction:
 @dataclass(frozen=True, slots=True)
 class MainRobotPlaceAction:
     kind: Literal["end", "corridor_in"]
+    route: RoutingCandidate
     corridor_name: str | None = None
     side: Literal["left", "right"] | None = None
 
@@ -205,6 +227,7 @@ class ArmRobotPickAction:
 @dataclass(frozen=True, slots=True)
 class ArmRobotPlaceAction:
     kind: Literal["machine_in", "arm_out", "main_out"]
+    route: RoutingCandidate
     machine_num: int | None = None
 
 

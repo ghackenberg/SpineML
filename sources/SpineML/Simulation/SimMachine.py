@@ -89,6 +89,16 @@ class SimMachine(sim.Component):
             and job.number == job_key.job_number
         )
 
+    def _take_job_from_input_store(self, job_key: JobKey) -> SimOrderJob:
+        for queued_job in self.store_in:
+            if self._job_matches(queued_job, job_key):
+                self.store_in.remove(queued_job)
+                return queued_job
+        raise ValueError(
+            f"Machine {self.machine.name} could not find selected job "
+            f"{job_key.order_name}/{job_key.job_number} in input queue"
+        )
+
     def process(self):
         if self.controller is None:
             raise RuntimeError("SimMachine requires a controller for dispatched commands")
@@ -101,11 +111,7 @@ class SimMachine(sim.Component):
 
             self.cmd_active = True
             try:
-                job: SimOrderJob = yield self.from_store(self.store_in)
-                if not self._job_matches(job, cmd.job_key):
-                    raise ValueError(
-                        f"Machine {self.machine.name} picked unexpected job {job.order.name}/{job.number}; expected {cmd.job_key}"
-                    )
+                job = self._take_job_from_input_store(cmd.job_key)
 
                 next_machine = job.machine_sequence[0]
                 if next_machine.name != cmd.expected_machine_name or self.machine.name != cmd.expected_machine_name:
@@ -138,6 +144,7 @@ class SimMachine(sim.Component):
                 else:
                     job.current_product_type = current_operation.produces_product_type
                     job.state.set(cmd.produced_product_name)
+                    job.replan_route()
 
                 self.remaining_life_units[tool_type] = cmd.remaining_life_units_after
                 self.remaining_life_units_t[tool_type] = self.env.now()

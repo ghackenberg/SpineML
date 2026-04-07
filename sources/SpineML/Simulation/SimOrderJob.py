@@ -39,6 +39,44 @@ class SimOrderJob(sim.Component):
         if self.controller is None:
             raise ValueError("Controller is required for SimOrderJob planning")
 
+        self.operation_sequence: list = []
+        self.machine_sequence: list = []
+        self.current_product_type: ProductType = self.order.product_type
+        self.completion_time: float | None = None
+        self.is_defective = False
+        self.defect_time: float | None = None
+        self.defect_operation_name: str | None = None
+        self.released = sim_order is None
+
+        self.replan_route(initial=True)
+
+        value = self.current_product_type.name
+        self.state = sim.State("State", value=value, env=self.env)
+
+    def apply_route(
+        self,
+        operation_sequence: list,
+        machine_sequence: list,
+        *,
+        allow_initial_reset: bool = False,
+    ) -> None:
+        self.operation_sequence = list(operation_sequence)
+        self.machine_sequence = list(machine_sequence)
+
+        if len(self.operation_sequence) == 0:
+            return
+
+        first_input_product = self.operation_sequence[0].consumes_product_type
+        if first_input_product != self.current_product_type and not (
+            allow_initial_reset and self.current_product_type == self.order.product_type
+        ):
+            raise ValueError(
+                f"Applied route for job {self.order.name}/{self.number} does not match current product "
+                f"{self.current_product_type.name}; got {first_input_product.name}"
+            )
+        self.current_product_type = first_input_product
+
+    def replan_route(self, *, initial: bool = False) -> None:
         plan_request = JobPlanningRequest(
             job_key=JobKey(
                 scenario_name=self.scenario.name,
@@ -47,19 +85,14 @@ class SimOrderJob(sim.Component):
             ),
             layout=self.layout,
             order=self.order,
+            current_product_type=None if initial else self.current_product_type,
         )
         plan = self.controller.plan_job(plan_request)
-        self.operation_sequence = plan.operation_sequence
-        self.machine_sequence = plan.machine_sequence
-
-        value = self.operation_sequence[0].consumes_product_type.name
-        self.state = sim.State("State", value=value, env=self.env)
-        self.current_product_type: ProductType = self.operation_sequence[0].consumes_product_type
-        self.completion_time: float | None = None
-        self.is_defective = False
-        self.defect_time: float | None = None
-        self.defect_operation_name: str | None = None
-        self.released = sim_order is None
+        self.apply_route(
+            plan.operation_sequence,
+            plan.machine_sequence,
+            allow_initial_reset=initial,
+        )
 
     def mark_completed(self) -> None:
         if self.completion_time is not None:

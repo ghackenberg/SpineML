@@ -125,6 +125,10 @@ class SimRobotMain(SimRobot):
                 if source_out_time > 0:
                     yield self.hold(source_out_time)
                 loaded_speed = self._loaded_speed(job)
+                job.apply_route(
+                    list(cmd.place.route.operation_sequence),
+                    list(cmd.place.route.machine_sequence),
+                )
 
                 self.state_load.set("loaded")
                 yield from self.move_up_loaded(loaded_speed)

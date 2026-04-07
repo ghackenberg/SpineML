@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from .calculate import (
     calculateMachineSequencesFromOperationSequence,
     calculateOperationSequences,
+    calculateRemainingOperationSequences,
 )
 from .types import (
     ArmMachineObservation,
@@ -25,7 +26,8 @@ from .types import (
     MainRobotObservation,
     MainRobotPickAction,
     MainRobotPlaceAction,
-    QueueObservation,
+    QueueObject,
+    RoutingCandidate,
     SystemObservation,
     ToolAction,
 )
@@ -62,6 +64,10 @@ def _select_best_candidate(
 
 
 class RoutingPolicy(ABC):
+    @abstractmethod
+    def plan_job_candidates(self, request: JobPlanningRequest) -> tuple[RoutingCandidate, ...]:
+        raise NotImplementedError
+
     @abstractmethod
     def plan_job(self, request: JobPlanningRequest) -> JobPlan:
         raise NotImplementedError
@@ -125,11 +131,105 @@ class ScoredRoutingPolicy(RoutingPolicy, ABC):
             raise ValueError(f"No scored machine sequence found for order {request.order.name}")
         return list(candidate)
 
+    def _operation_sequences(self, request: JobPlanningRequest) -> list[list[Any]]:
+        order = request.order
+        if request.current_product_type is None:
+            return calculateOperationSequences(order.product_type)
+        return calculateRemainingOperationSequences(
+            request.current_product_type,
+            order.product_type,
+        )
+
+    def _remaining_processing_time_estimate(
+        self,
+        operation_sequence: list[Any],
+        machine_sequence: list[Any],
+    ) -> float:
+        estimate = 0.0
+        for index, operation in enumerate(operation_sequence):
+            estimate += operation.duration
+            if index < len(machine_sequence):
+                estimate += machine_sequence[index].dimension_processing_time(
+                    operation.consumes_product_type
+                )
+        return estimate
+
+    def _build_routing_candidate(
+        self,
+        operation_sequence: list[Any],
+        machine_sequence: list[Any],
+        operation_score: float,
+        machine_score: float,
+    ) -> RoutingCandidate:
+        next_operation = operation_sequence[0] if len(operation_sequence) > 0 else None
+        next_machine = machine_sequence[0] if len(machine_sequence) > 0 else None
+        next_side = None
+        if next_machine is not None:
+            next_side = "left" if next_machine.left else "right"
+
+        return RoutingCandidate(
+            operation_sequence=tuple(operation_sequence),
+            machine_sequence=tuple(machine_sequence),
+            route_score=operation_score + machine_score,
+            remaining_operations=len(operation_sequence),
+            remaining_machines=len(machine_sequence),
+            remaining_processing_time_estimate=self._remaining_processing_time_estimate(
+                operation_sequence,
+                machine_sequence,
+            ),
+            next_operation_name=next_operation.name if next_operation is not None else None,
+            next_tool_name=next_operation.tool_type.name if next_operation is not None else None,
+            next_operation_duration=(
+                next_operation.duration + next_machine.dimension_processing_time(next_operation.consumes_product_type)
+                if next_operation is not None and next_machine is not None
+                else (next_operation.duration if next_operation is not None else None)
+            ),
+            next_consumed_life_units=next_operation.consumes_life_units if next_operation is not None else None,
+            next_produced_product_name=(
+                next_operation.produces_product_type.name if next_operation is not None else None
+            ),
+            next_machine_name=next_machine.name if next_machine is not None else None,
+            next_machine_corridor_name=(next_machine.corridor.name if next_machine is not None else None),
+            next_machine_side=next_side,
+        )
+
+    def plan_job_candidates(self, request: JobPlanningRequest) -> tuple[RoutingCandidate, ...]:
+        order = request.order
+        layout = request.layout
+        operation_sequences = self._operation_sequences(request)
+        if len(operation_sequences) == 0:
+            return ()
+
+        scored_candidates: list[RoutingCandidate] = []
+        for operation_sequence in operation_sequences:
+            operation_score = self.score_operation_sequence(order, operation_sequence)
+            if operation_score is None:
+                continue
+
+            machine_sequences = calculateMachineSequencesFromOperationSequence(list(operation_sequence), layout)
+            for machine_sequence in machine_sequences:
+                machine_score = self.score_machine_sequence(request, operation_sequence, machine_sequence)
+                if machine_score is None:
+                    continue
+                scored_candidates.append(
+                    self._build_routing_candidate(
+                        operation_sequence,
+                        machine_sequence,
+                        operation_score,
+                        machine_score,
+                    )
+                )
+
+        scored_candidates.sort(
+            key=lambda candidate: (candidate.route_score, self.rng.random()),
+            reverse=True,
+        )
+        return tuple(scored_candidates)
+
     def plan_job(self, request: JobPlanningRequest) -> JobPlan:
         order = request.order
         layout = request.layout
-
-        operation_sequences = calculateOperationSequences(order.product_type)
+        operation_sequences = self._operation_sequences(request)
         if len(operation_sequences) == 0:
             raise ValueError(f"No operation sequence found for order {order.name}")
         operation_sequence = self.choose_operation_sequence(order, operation_sequences)
@@ -151,7 +251,7 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         self,
         robot: MainRobotObservation,
         action: MainRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
         raise NotImplementedError
 
@@ -160,27 +260,29 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         self,
         robot: ArmRobotObservation,
         action: ArmRobotPickAction,
-        source_queue: QueueObservation,
+        source_queue: QueueObject,
     ) -> float | None:
         raise NotImplementedError
 
+    @abstractmethod
     def score_main_robot_place(
         self,
         robot: MainRobotObservation,
         job: JobHeadObservation,
         action: MainRobotPlaceAction,
-        target_queue: QueueObservation,
+        target_queue: QueueObject,
     ) -> float | None:
-        return 0.0
+        raise NotImplementedError
 
+    @abstractmethod
     def score_arm_robot_place(
         self,
         robot: ArmRobotObservation,
         job: JobHeadObservation,
         action: ArmRobotPlaceAction,
-        target_queue: QueueObservation,
+        target_queue: QueueObject,
     ) -> float | None:
-        return 0.0
+        raise NotImplementedError
 
     def score_machine_process(
         self,
@@ -228,7 +330,7 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         self,
         robot: MainRobotObservation,
         action: MainRobotPickAction,
-    ) -> QueueObservation:
+    ) -> QueueObject:
         if action.kind == "start":
             return robot.start_queue
         return self._corridor_by_name(robot.corridors, action.corridor_name).main_queue
@@ -254,21 +356,26 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         robot: MainRobotObservation,
         job: JobHeadObservation,
     ) -> tuple[MainRobotPlaceAction, ...]:
-        if job.next_machine_name is None or job.next_machine_corridor_name is None:
-            return (MainRobotPlaceAction(kind="end"),)
-        return (
-            MainRobotPlaceAction(
-                kind="corridor_in",
-                corridor_name=job.next_machine_corridor_name,
-                side=job.next_machine_side,
-            ),
-        )
+        candidates: list[MainRobotPlaceAction] = []
+        for route in job.routing_candidates:
+            if route.next_machine_name is None or route.next_machine_corridor_name is None:
+                candidates.append(MainRobotPlaceAction(kind="end", route=route))
+                continue
+            candidates.append(
+                MainRobotPlaceAction(
+                    kind="corridor_in",
+                    route=route,
+                    corridor_name=route.next_machine_corridor_name,
+                    side=route.next_machine_side,
+                )
+            )
+        return tuple(candidates)
 
     def main_robot_place_target_queue(
         self,
         robot: MainRobotObservation,
         action: MainRobotPlaceAction,
-    ) -> QueueObservation:
+    ) -> QueueObject:
         if action.kind == "end":
             return robot.end_queue
 
@@ -301,6 +408,25 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
             raise ValueError(f"No main robot place action found for job {job.job_key}")
         return candidate
 
+    def best_main_robot_place_score(
+        self,
+        robot: MainRobotObservation,
+        job: JobHeadObservation,
+    ) -> float | None:
+        best_score: float | None = None
+        for action in self.main_robot_place_candidates(robot, job):
+            score = self.score_main_robot_place(
+                robot,
+                job,
+                action,
+                self.main_robot_place_target_queue(robot, action),
+            )
+            if score is None:
+                continue
+            if best_score is None or score > best_score:
+                best_score = score
+        return best_score
+
     def arm_robot_pick_candidates(self, robot: ArmRobotObservation) -> tuple[ArmRobotPickAction, ...]:
         if robot.load_state != "empty":
             return ()
@@ -319,7 +445,7 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         self,
         robot: ArmRobotObservation,
         action: ArmRobotPickAction,
-    ) -> QueueObservation:
+    ) -> QueueObject:
         if action.kind == "store_in":
             return robot.input_queue
         return self._machine_slot_by_num(robot.machine_slots, action.machine_num).output_queue
@@ -345,24 +471,32 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         robot: ArmRobotObservation,
         job: JobHeadObservation,
     ) -> tuple[ArmRobotPlaceAction, ...]:
-        if job.next_machine_name is not None and job.next_machine_corridor_name == robot.corridor_name:
-            candidates: list[ArmRobotPlaceAction] = []
-            for machine_slot in robot.machine_slots:
-                if machine_slot.machine_name == job.next_machine_name:
-                    candidates.append(
-                        ArmRobotPlaceAction(kind="machine_in", machine_num=machine_slot.machine_num)
-                    )
-            if len(candidates) == 0:
-                candidates.append(ArmRobotPlaceAction(kind="arm_out"))
-            return tuple(candidates)
+        candidates: list[ArmRobotPlaceAction] = []
+        for route in job.routing_candidates:
+            if route.next_machine_name is not None and route.next_machine_corridor_name == robot.corridor_name:
+                local_candidates: list[ArmRobotPlaceAction] = []
+                for machine_slot in robot.machine_slots:
+                    if machine_slot.machine_name == route.next_machine_name:
+                        local_candidates.append(
+                            ArmRobotPlaceAction(
+                                kind="machine_in",
+                                route=route,
+                                machine_num=machine_slot.machine_num,
+                            )
+                        )
+                if len(local_candidates) == 0:
+                    local_candidates.append(ArmRobotPlaceAction(kind="arm_out", route=route))
+                candidates.extend(local_candidates)
+                continue
 
-        return (ArmRobotPlaceAction(kind="main_out"),)
+            candidates.append(ArmRobotPlaceAction(kind="main_out", route=route))
+        return tuple(candidates)
 
     def arm_robot_place_target_queue(
         self,
         robot: ArmRobotObservation,
         action: ArmRobotPlaceAction,
-    ) -> QueueObservation:
+    ) -> QueueObject:
         if action.kind == "machine_in":
             return self._machine_slot_by_num(robot.machine_slots, action.machine_num).input_queue
         if action.kind == "arm_out":
@@ -392,6 +526,25 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         if candidate is None:
             raise ValueError(f"No arm robot place action found for job {job.job_key}")
         return candidate
+
+    def best_arm_robot_place_score(
+        self,
+        robot: ArmRobotObservation,
+        job: JobHeadObservation,
+    ) -> float | None:
+        best_score: float | None = None
+        for action in self.arm_robot_place_candidates(robot, job):
+            score = self.score_arm_robot_place(
+                robot,
+                job,
+                action,
+                self.arm_robot_place_target_queue(robot, action),
+            )
+            if score is None:
+                continue
+            if best_score is None or score > best_score:
+                best_score = score
+        return best_score
 
     def build_machine_command(
         self,
@@ -463,25 +616,30 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
     def machine_process_candidates(
         self,
         machine: MachineObservation,
-        job: JobHeadObservation,
-    ) -> tuple[MachineCommand, ...]:
-        return (self.build_machine_command(machine, job),)
+    ) -> tuple[tuple[JobHeadObservation, MachineCommand], ...]:
+        candidates: list[tuple[JobHeadObservation, MachineCommand]] = []
+        for job in machine.input_queue.jobs:
+            candidates.append((job, self.build_machine_command(machine, job)))
+        return tuple(candidates)
 
     def decide_machine_process(
         self,
         machine: MachineObservation,
-        job: JobHeadObservation,
     ) -> MachineCommand | None:
-        candidates = list(self.machine_process_candidates(machine, job))
+        candidates = list(self.machine_process_candidates(machine))
 
-        def _score_machine_process(command: MachineCommand) -> float | None:
+        def _score_machine_process(candidate: tuple[JobHeadObservation, MachineCommand]) -> float | None:
+            job, command = candidate
             return self.score_machine_process(machine, job, command)
 
-        return _select_best_candidate(
+        best_candidate = _select_best_candidate(
             candidates,
             _score_machine_process,
             self.rng,
         )
+        if best_candidate is None:
+            return None
+        return best_candidate[1]
 
     def decide(self, system_status: SystemObservation) -> tuple[DispatchCommand, ...]:
         commands: list[DispatchCommand] = []
@@ -537,10 +695,9 @@ class RuleBasedDispatchPolicy(DispatchPolicy, ABC):
         for machine in system_status.machines:
             if machine.busy or machine.pending_commands > 0:
                 continue
-            head = machine.input_queue.head
-            if head is None:
+            if len(machine.input_queue.jobs) == 0:
                 continue
-            machine_command = self.decide_machine_process(machine, head)
+            machine_command = self.decide_machine_process(machine)
             if machine_command is None:
                 continue
             commands.append(

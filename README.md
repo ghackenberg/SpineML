@@ -1,398 +1,345 @@
 # SpineML
 
-## Erweiterung des Simulationskerns
+SpineML ist eine produktionsnahe Fabriksimulation auf Basis von `salabim`.
+Der aktuelle Stand trennt den Simulationskern strikt von der Entscheidungslogik:
 
-Im Projekt wurde der Simulationskern zunächst so erweitert, dass mehrere zuvor bereits konfigurierbare, aber im Laufzeitverhalten noch nicht wirksame Modellparameter direkt in die Simulation integriert werden.
+- der Simulationskern führt nur Zustände und Commands aus
+- `SimulationBridge` beobachtet das System periodisch und verteilt Commands
+- `RoutingPolicy` erzeugt und bewertet mögliche Routen
+- `DispatchPolicy` wählt im aktuellen Zustand die nächsten Aktionen
 
-### Zeitparameter auf Order-Ebene
+Damit ist das Projekt nicht mehr nur eine feste Ablaufsimulation, sondern eine Versuchsplattform für:
 
-Die Parameter `earliest_start_time` und `latest_end_time` aus `Order` wirken jetzt direkt im Ablauf der Simulation:
+- Baselines
+- heuristische Dispatch- und Routingverfahren
+- spätere RL- oder lernbasierte Steuerungen
 
-- `earliest_start_time`
-  - bestimmt die Freigabe einer gesamten Order
-  - Jobs einer Order werden erst ab diesem Zeitpunkt in das Startlager eingebracht
-- `latest_end_time`
-  - definiert den Soll-Fertigstellungszeitpunkt einer gesamten Order
-  - nach Abschluss des letzten Jobs einer Order werden `completion_time`, `lateness` und `tardiness` berechnet
+## Simulationskern
 
-Damit werden Aufträge zeitlich nicht mehr sofort und implizit behandelt, sondern explizit über Release- und Due-Date-Logik modelliert.
+Der Simulationskern bildet inzwischen mehrere zuvor nur konfigurierte Einflussgrößen auch im Laufzeitverhalten ab:
 
-### Speicher- und Pufferparameter
+- `earliest_start_time` und `latest_end_time`
+  - Release- und Due-Date-Logik auf Order-Ebene
+- `storage_capacity`, `storage_in_time`, `storage_out_time`
+  - reale Puffergrenzen und Lagerzeiten
+- `defect_probability`
+  - Ausschuss und frühes Beenden von Bearbeitungsrouten
+- Produktparameter wie `weight`, `length`, `width`, `depth`
+  - Einfluss auf Robotergeschwindigkeit und Bearbeitungsdauer
 
-Die bisher nur in der Konfiguration vorhandenen Speicherparameter wirken nun ebenfalls im Simulationskern:
+Damit kann die Steuerung auf einem Kern optimieren, der Zeit, Kapazität, Qualität und Produktunterschiede wirklich berücksichtigt.
 
-- `storage_capacity`
-  - für `Layout`, `Corridor` und `Machine`
-  - begrenzt die Kapazität der jeweiligen Stores
-- `storage_in_time`
-  - modelliert die Zeit für Einlagerungsvorgänge
-- `storage_out_time`
-  - modelliert die Zeit für Auslagerungsvorgänge
+## Architektur
 
-Dadurch entstehen erstmals reale Pufferbegrenzungen und zusätzliche Lagerzeiten im Materialfluss.
+Die zentrale Struktur liegt im Paket `sources/SpineML/controller/`.
 
-### Qualitätsparameter
-
-Der Parameter `defect_probability` aus `OperationType` wurde in die Maschinenlogik integriert:
-
-- nach einer Bearbeitung kann ein Job mit der angegebenen Wahrscheinlichkeit defekt werden
-- defekte Jobs werden als Ausschuss markiert
-- die weitere Bearbeitungsroute wird beendet
-- der Ausschuss wird anschließend regulär aus dem System ausgeschleust
-
-Damit wird Qualitätsunsicherheit erstmals explizit im Simulationskern abgebildet.
-
-### Produktparameter
-
-Auch zuvor ungenutzte Produktparameter wurden in Verhalten übersetzt:
-
-- `weight`
-  - beeinflusst die Bewegungsgeschwindigkeit beladener Roboter
-- `length`, `width`, `depth`
-  - beeinflussen zusätzliche dimensionsabhängige Bearbeitungszeit an Maschinen
-
-Dadurch wirken Produkte nicht mehr nur als logische Typen, sondern auch über physische Eigenschaften auf den Simulationsablauf.
-
-### Bedeutung der Erweiterung
-
-Mit diesen Änderungen beschreibt der Simulationskern nicht mehr nur die Struktur des Spine-Layouts, sondern auch zentrale zeitliche, kapazitive, qualitative und produktspezifische Effekte.
-
-Diese Erweiterung ist wichtig, weil spätere heuristische oder lernbasierte Steuerungsverfahren nur dann sinnvoll optimieren können, wenn die zugrunde liegende Simulation diese Einflussgrößen auch tatsächlich berücksichtigt.
-
-## Erweiterung auf eine austauschbare Controller-Architektur
-
-Auf Basis dieses erweiterten Simulationskerns wurde die Steuerungslogik von der eigentlichen Simulationslogik getrennt.
-Ziel dieser Erweiterung ist es, unterschiedliche Steuerungsverfahren einsetzen zu können, ohne den Simulationskern für Roboter, Maschinen, Queues und Layouts jeweils neu anpassen zu müssen.
-
-Die zentrale Idee ist:
-
-- der Simulationskern beschreibt nur noch Zustände und Ausführung
-- der Controller liest den Systemzustand periodisch ein
-- die eigentliche Entscheidungslogik liegt in austauschbaren Policies
-- Maschinen und Roboter führen nur noch die vom Controller erzeugten Commands aus
-
-Damit entsteht eine klarere Schnittstelle zwischen Steuerung und Simulation und gleichzeitig eine Grundlage für spätere heuristische oder lernbasierte Verfahren.
-
-### Strukturdiagramm: Aufbau von Simulation und Controller
-
-Das folgende Diagramm zeigt die grobe Struktur zwischen Simulationskern, der allgemeinen Controller-Logik in `controller.py`, den abstrakten Policy-Schnittstellen in `policy.py`, den Routing-Hilfsfunktionen in `calculate.py`, den Beobachtungs- und Command-Typen aus `types.py` sowie den konkreten Default- bzw. Greedy-Implementierungen.
-
-```mermaid
-graph TD
-    Sim["Simulationskern<br/>SimOrderJob, SimRobotMain,<br/>SimRobotCorridorArm, SimMachine"]
-    Ctrl["controller.py<br/>PolicyController"]
-    Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>ScoredRoutingPolicy<br/>RuleBasedDispatchPolicy"]
-    Calc["calculate.py<br/>Operationsfolgen,<br/>Maschinenfolgen und<br/>verbleibende Operationsfolgen"]
-    Def["default_controller.py<br/>DefaultController<br/>DefaultRoutingPolicy<br/>DefaultDispatchPolicy"]
-    Greedy["greedy_controller.py<br/>GreedyController<br/>GreedyRoutingPolicy<br/>GreedyDispatchPolicy"]
-
-    Sim -->|Stores und Zustände| Ctrl
-    Ctrl -->|JobPlanningRequest<br/>und Statusanfrage| Policy
-    Policy -->|nutzt zulässige Operations- und Maschinenfolgen| Calc
-    Def -->|erbt von| Ctrl
-    Greedy -->|erbt von| Ctrl
-    Def -->|verdrahtet konkrete Policies| Policy
-    Greedy -->|verdrahtet konkrete Policies| Policy
-    Policy -->|bewertete Routing-Kandidaten,<br/>JobPlan und DispatchCommands| Ctrl
-    Ctrl -->|legt Commands in cmd_stores| Sim
-```
-
-## Überblick über die neue Struktur
-
-Die Erweiterung konzentriert sich auf das Paket `sources/SpineML/controller/`.
-Dort wurde die Steuerung in mehrere Bausteine aufgeteilt:
+Wichtige Dateien:
 
 - `types.py`
 - `calculate.py`
 - `policy.py`
-- `controller.py`
+- `simulation_bridge.py`
 - `default_controller.py`
 - `greedy_controller.py`
 
-Zusätzlich wurde der Simulationskern im Ordner `sources/SpineML/Simulation/` so angepasst, dass Roboter und Maschinen ihre Entscheidungen nicht mehr selbst treffen, sondern Commands aus actor-spezifischen Command-Stores verarbeiten.
+Die grobe Architektur ist:
 
-Der zentrale Architekturgedanke hinter den unterschiedlichen Controllern ist dabei:
+```mermaid
+graph TD
+    Sim["Simulationskern<br/>SimOrderJob, SimRobotMain,<br/>SimRobotCorridorArm, SimMachine"]
+    Bridge["simulation_bridge.py<br/>SimulationBridge"]
+    Policy["policy.py<br/>RoutingPolicy<br/>DispatchPolicy<br/>ScoredRoutingPolicy<br/>RuleBasedDispatchPolicy"]
+    Calc["calculate.py<br/>Operationsfolgen,<br/>Maschinenfolgen,<br/>verbleibende Operationsfolgen"]
+    Def["default_controller.py<br/>DefaultController"]
+    Greedy["greedy_controller.py<br/>GreedyController"]
 
-- `calculate.py` erzeugt für das Routing den zulässigen Suchraum
-  - also mögliche Operationsfolgen und dazu passende Maschinenfolgen
-- `RoutingPolicy` bewertet diese Routing-Kandidaten initial und später erneut aus dem aktuellen Produktzustand eines Jobs
-- `DispatchPolicy` wählt während der laufenden Simulation aus den aktuell möglichen Aktionen die nächsten Commands aus
-  - dieser dynamische Aktionsraum ist damit ein zweiter, laufend neu entstehender Suchraum
-- die beim `place` ausgewählte Route wird erst in diesem Transport-Schritt am echten Job festgeschrieben
-- Maschinen können zusätzlich aus allen Jobs ihrer `input_queue` den aktuell besten Bearbeitungskandidaten auswählen
+    Sim -->|Stores, Actor-Zustände| Bridge
+    Bridge -->|SystemObservation| Policy
+    Bridge -->|JobPlanningRequest| Policy
+    Policy -->|DispatchCommands<br/>und JobPlan| Bridge
+    Bridge -->|legt Commands in cmd_stores| Sim
+    Policy -->|nutzt zulässige Routing-Bausteine| Calc
+    Def -->|erbt von| Bridge
+    Greedy -->|erbt von| Bridge
+    Def -->|implementiert konkrete<br/>Routing- und Dispatch-Policies aus| Policy
+    Greedy -->|implementiert konkrete<br/>Routing- und Dispatch-Policies aus| Policy
+```
 
-Damit ist die Aufgabenverteilung bewusst getrennt:
+Wichtig ist die Rollenverteilung:
 
-- `calculate.py` beantwortet die Frage:
-  - welche Routing-Kandidaten sind im gegebenen Layout grundsätzlich zulässig?
-- `RoutingPolicy` beantwortet die Frage:
-  - welche verbleibenden Routen sind für den aktuellen Job zulässig und wie gut sind sie?
-- `DispatchPolicy` beantwortet die Frage:
-  - welche ausführbare Aktion inklusive zugehöriger Route im aktuellen Simulationszustand als Nächstes erfolgen soll?
-  - also welche aus der momentanen Queue-, Maschinen- und Roboterkonstellation ableitbare Aktion lokal am sinnvollsten ist
+- `SimulationBridge`
+  - ist Middleware zwischen Simulation und Policies
+  - trifft selbst keine Routing- oder Dispatch-Entscheidung
+- `RoutingPolicy`
+  - erzeugt mögliche verbleibende Routen für einen Job
+  - bewertet diese Routen
+- `DispatchPolicy`
+  - entscheidet, welche konkrete Aktion jetzt auszuführen ist
+  - verknüpft Queue-Zustand, Actor-Zustand und Routing-Kandidaten
 
-Genau darin unterscheiden sich `DefaultController` und `GreedyController`:
+## Aktuelles Entscheidungsmodell
 
-- beide nutzen dieselben Simulationsdaten und dieselbe Controller-Schnittstelle
-- beide nutzen für das Routing dieselben in `calculate.py` erzeugten zulässigen Kandidaten
-- der Unterschied liegt in der Auswahlregel:
-  - die Default-Policies bilden eine einfache Baseline
-  - die Greedy-Policies bewerten Kandidaten heuristisch über Score-Funktionen und wählen jeweils die lokal beste Alternative
+Das aktuelle Modell ist bewusst dynamisch und nicht mehr streng FIFO.
 
-Die eigentliche Optimierung liegt also nicht in der Erzeugung des Suchraums, sondern in der Bewertung und Auswahl innerhalb dieses Suchraums.
-Für das Routing geschieht das nicht mehr nur einmalig pro Job, sondern initial und danach erneut zwischen Bearbeitungsschritten.
-Für das Dispatching geschieht die Auswahl fortlaufend während der Simulation.
+### Zentrale Idee
 
-### Rolle der Heuristik
+Es gibt zwei getrennte Auswahlprobleme:
 
-Aus Sicht der Heuristik existieren in der Architektur zwei verschiedene Suchräume:
+1. **Welcher Job soll als Nächstes behandelt oder transportiert werden?**
+2. **Welche Route soll dieser Job als Nächstes nehmen?**
 
-- ein Routing-Suchraum bei der Initialplanung und später erneut für beobachtete Transportjobs
-  - bestehend aus möglichen `operation_sequence`- und `machine_sequence`-Kandidaten sowie daraus abgeleiteten `RoutingCandidate`s
-- ein dynamischer Dispatch-Suchraum während der laufenden Simulation
-  - bestehend aus den aktuell ausführbaren Aktionen für Main-Roboter, Arm-Roboter und Maschinen einschließlich der Jobs in `machine.input_queue.jobs`
+Diese Trennung ist wichtig, weil ein Job oft mehrere zulässige Bearbeitungswege hat, während gleichzeitig mehrere Jobs in Queues konkurrieren.
 
-Die Rolle der Heuristik besteht darin, in beiden Suchräumen zulässige Alternativen nicht nur zu erzeugen, sondern zu bewerten und daraus eine sinnvolle Auswahl zu treffen.
+### Queue-Auswahl
 
-Konkret bedeutet das:
+Normale Queues werden nicht mehr strikt FIFO behandelt.
 
-- beim Routing:
-  - welcher verbleibende Bearbeitungsweg für einen Job im aktuellen Produktzustand gewählt werden soll
-- beim Dispatching:
-  - welche im aktuellen Systemzustand ausführbare Aktion als Nächstes erfolgen soll und welche Route dabei commitet wird
+- für Main- und Arm-Roboter werden Pick-Kandidaten über die sichtbaren Jobs in den relevanten Quellqueues gebildet
+- bei Maschinen werden alle Jobs in `machine.input_queue` miteinander verglichen
 
-Die Heuristik übernimmt damit in der Fabrik nicht die Modellierung der Welt, sondern die Entscheidungslogik innerhalb dieser modellierten Welt.
-Der Simulationskern beschreibt, welche Zustände, Ressourcen und Restriktionen existieren.
-Die Heuristik entscheidet, welche der jeweils möglichen Optionen unter diesen Bedingungen bevorzugt werden sollen.
+Damit können:
+
+- Roboter mehrere Pick-Kandidaten haben
+- Roboter mehrere Place-Kandidaten haben
+- Maschinen mehrere Bearbeitungskandidaten haben
+
+### Routing-Auswahl
+
+Außerhalb von `machine_in` ist die Route eines Jobs offen.
+
+- für diese Jobs berechnet die Policy Online-`RoutingCandidate`s
+- jeder `RoutingCandidate` enthält:
+  - `operation_sequence`
+  - `machine_sequence`
+  - `route_score`
+  - nächste Operation
+  - nächste Maschine
+  - Restdauer
+
+Innerhalb von `machine_in` ist die Route bereits festgeschrieben:
+
+- dort wird keine freie Routenwahl mehr zugelassen
+- die Maschine arbeitet auf einer konkret commiteten nächsten Operation
+
+### Route-Commit
+
+Die Route wird nicht mehr früh fest auf den Job geschrieben.
+
+Aktuelles Verhalten:
+
+- außerhalb von `machine_in` bleibt die Route offen
+- beim Place nach `machine_in` commitet der Arm-Roboter die gewählte Route am echten Job
+- nach erfolgreicher Bearbeitung wird:
+  - `current_product_type` auf das erzeugte Produkt gesetzt
+  - die alte commitete Route gelöscht
+- in `machine_out` ist der Job danach wieder offen für neue Routing-Kandidaten
+
+### Laufzeitablauf
+
+Der Laufzeitzyklus sieht damit so aus:
+
+1. `SimulationBridge` liest den Zustand und baut `SystemObservation`
+2. `DispatchPolicy` bildet Pick-Kandidaten aus Queues und Jobs
+3. für den ausgewählten Job bildet die Policy Place-Kandidaten aus Routing-Kandidaten
+4. der beste Command wird an den jeweiligen Actor geschickt
+5. bei `machine_in` wird die Route commitet
+6. die Maschine vergleicht Jobs in ihrer Eingangsqueue und bearbeitet den besten
+7. nach `machine_out` ist die Route wieder offen und wird später erneut online bewertet
 
 ## Controller-Module
 
 ### `types.py`
 
-`types.py` definiert die Datenschnittstelle zwischen Controller und Simulation.
-Hier werden die Objekte beschrieben, mit denen der Controller arbeitet.
-Die Typen sind dabei nicht auf einen bestimmten Controller zugeschnitten, sondern bilden den gemeinsamen Datenvertrag für `DefaultController`, `GreedyController` und spätere weitere Steuerungsverfahren.
+`types.py` definiert die Datenschnittstelle zwischen Simulation und Policies.
 
-Dazu gehören insbesondere:
+Wichtige Typen:
 
 - `JobKey`
-  - eindeutige Identifikation einer Produktionseinheit über Szenario, Order und Jobnummer
+  - eindeutige Identifikation eines Jobs
 - `JobPlanningRequest`
-  - Anfrage an die Routing-Logik für die Planung eines Jobs
-  - enthält zusätzlich `current_product_type` für die verbleibende Online-Planung ab dem aktuellen Produktzustand
+  - Request für Routing-Berechnung ab einem aktuellen Produktzustand
 - `JobPlan`
-  - Ergebnis der Jobplanung mit `operation_sequence` und `machine_sequence`
+  - konkrete ausgewählte Route
 - `RoutingCandidate`
-  - beschreibt eine zulässige verbleibende Route mit Operationsfolge, Maschinenfolge, Score und den daraus abgeleiteten nächsten Bearbeitungsschritten
+  - ein gescorter verbleibender Bearbeitungspfad
 - `JobHeadObservation`
-  - detaillierte Beobachtung eines Jobs am Kopf einer Queue
-  - enthält neben Produkt- und Routendaten inzwischen auch heuristisch relevante Informationen wie `is_defective`, `release_time`, `due_time`, `remaining_processing_time_estimate`, `slack_time` sowie aktuelle Produktparameter wie Gewicht und Abmessungen
-  - enthält zusätzlich `routing_candidates`, also mehrere aktuell mögliche verbleibende Routen
+  - beobachteter Job in einer Queue
 - `QueueObject`
-  - Beobachtung einer Queue mit Länge, Head-Job und allen aktuell sichtbaren Jobs
-  - enthält zusätzlich `capacity`, `free_capacity` und `jobs`
+  - Queue mit Länge, Kapazität, Head und sichtbaren Jobs
 - `OrderJobObservation`
-  - detaillierte Beobachtung eines konkreten Jobs innerhalb einer Order
-  - enthält zusätzlich `released`, `completed`, `completion_time` und `defect_time`
+  - globale Statussicht auf einen Job
 - `SystemObservation`
-  - vollständige Beobachtung des Systems aus Sicht des Controllers
-- `DispatchCommand`
-  - allgemeiner Command an einen Actor
+  - vollständiger Snapshot für die Dispatch-Policy
 - `MainRobotCommand`, `ArmRobotCommand`, `MachineCommand`
-  - konkrete Commands für die jeweiligen Actoren
+  - actor-spezifische Commands
 
-Diese Typen bilden die eigentliche Schnittstelle zwischen Simulationskern und Steuerungslogik.
-Gleichzeitig stellen sie genau die Beobachtungen bereit, auf deren Basis später heuristische oder lernbasierte Strategien Entscheidungen treffen können.
+Zusatzinformationen wie `queue_wait_time`, `slack_time`, Produktabmessungen und commitete Sequenzen werden ebenfalls hier transportiert.
 
 ### `calculate.py`
 
-`calculate.py` enthält die Logik zur Berechnung möglicher Operations- und Maschinenfolgen.
-Diese Funktionen erzeugen den zulässigen Suchraum für das Routing und werden von Routing-Policies genutzt.
-Die eigentliche Auswahlentscheidung wird dabei bewusst nicht in `calculate.py` getroffen, sondern in der jeweils aktiven Routing-Policy.
+`calculate.py` erzeugt den zulässigen Routing-Suchraum, aber trifft selbst keine Auswahl.
 
-Hier wird also berechnet:
+Berechnet werden:
 
-- welche Operationsfolgen für ein Produkt möglich sind
-- welche Maschinenfolgen für eine Operationsfolge im gegebenen Layout möglich sind
-- welche verbleibenden Operationsfolgen vom aktuellen Produktzustand bis zum Zielprodukt möglich sind
+- mögliche `operation_sequence`s
+- mögliche `machine_sequence`s zu einer Operationsfolge
+- verbleibende Operationsfolgen vom aktuellen Produktzustand bis zum Zielprodukt
 
-Sowohl `DefaultRoutingPolicy` als auch `GreedyRoutingPolicy` greifen damit auf dieselbe Menge zulässiger Routing-Kandidaten zu.
-Der Unterschied liegt nicht in der Erzeugung dieser Kandidaten, sondern in ihrer späteren Bewertung und Auswahl.
+Die eigentliche Bewertung liegt bewusst in den Policies.
 
 ### `policy.py`
 
-`policy.py` definiert die austauschbaren Steuerungsschnittstellen.
-Die Datei enthält dabei bewusst nur die abstrakten Verträge und gemeinsame Basisklassen, nicht aber konkrete Default- oder Greedy-Strategien.
+`policy.py` enthält die abstrakten Verträge und gemeinsamen Gerüste.
 
-Es gibt zwei zentrale Policy-Arten:
+Wichtige Klassen:
 
 - `RoutingPolicy`
-  - stellt zulässige Routing-Kandidaten für einen Job bereit
-  - kann daraus weiterhin ein konkretes `JobPlan` ableiten
 - `DispatchPolicy`
-  - entscheidet im laufenden Betrieb, welche Commands als Nächstes erzeugt werden sollen
-
-Die Routing-Policies nutzen dabei die von `calculate.py` berechneten zulässigen Alternativen und treffen daraus die eigentliche Auswahlentscheidung.
-Damit liegt die Entscheidungslogik bewusst in `policy.py` und nicht im Simulationskern oder in den Hilfsfunktionen zur Kandidatenerzeugung.
-
-Zusätzlich gibt es:
-
+- `ScoredRoutingPolicy`
 - `RuleBasedDispatchPolicy`
-  - ein regelbasiertes Gerüst für Dispatching
-  - zerlegt die Gesamtentscheidung in kleinere Teilentscheidungen:
-    - `decide_main_robot_pick(...)`
-    - `decide_main_robot_place(...)`
-    - `decide_arm_robot_pick(...)`
-    - `decide_arm_robot_place(...)`
-    - `decide_machine_process(...)`
-  - baut dabei `place`-Kandidaten aus mehreren `RoutingCandidate`s auf
-  - erlaubt Maschinen zusätzlich, mehrere Jobs aus ihrer `input_queue` gegeneinander zu vergleichen, statt strikt FIFO zu arbeiten
 
-Damit muss eine neue Dispatch-Strategie nicht zwingend die gesamte Methode `decide(...)` selbst schreiben, sondern kann auf diesem Gerüst aufbauen.
+`ScoredRoutingPolicy` bietet das gemeinsame Muster für scorebasiertes Routing:
 
-Auf dieser Basis unterscheiden sich die konkreten Policies:
+- Kandidaten erzeugen
+- scoren
+- sortieren
+- entweder alle Kandidaten zurückgeben oder einen Plan wählen
 
-- die Default-Policies bilden eine einfache Baseline
-- die Greedy-Policies bewerten Kandidaten heuristisch und wählen jeweils die lokal beste Alternative
+`RuleBasedDispatchPolicy` bildet das Dispatch-Gerüst:
 
-### `controller.py`
+- `main_robot_pick_candidates(...)`
+- `main_robot_place_candidates(...)`
+- `arm_robot_pick_candidates(...)`
+- `arm_robot_place_candidates(...)`
+- `machine_process_candidates(...)`
 
-`controller.py` enthält den eigentlichen Laufzeit-Controller.
+Dabei entscheidet die Policy selbst:
 
-Die zentrale Klasse ist:
+- ob für einen beobachteten Job Online-Routing gerechnet wird
+- oder ob die commitete Route verwendet wird
 
-- `PolicyController`
+### `simulation_bridge.py`
 
-`PolicyController` ist selbst eine `salabim.Component` und übernimmt die Vermittlung zwischen Simulation und Policies.
+`SimulationBridge` ist die periodische Laufzeit-Bridge.
 
-Seine Aufgaben sind:
+Sie übernimmt:
 
-- Speichern der aktiven `RoutingPolicy`
-- Speichern der aktiven `DispatchPolicy`
 - Beobachten aller relevanten Simulationsobjekte
-- Umwandeln von Simulationszuständen in typisierte Beobachtungen
-- Erzeugen dynamischer `routing_candidates` für beobachtete Transportjobs
-- periodisches Aufrufen der Dispatch-Logik
-- Verteilen der resultierenden Commands auf die jeweiligen Actoren
+- Umwandeln in typisierte Observations
+- Aufruf der aktiven Dispatch-Policy
+- Verteilen der resultierenden Commands auf `cmd_store`s
 
-Wichtig ist dabei, dass `controller.py` selbst keine fachliche Routing- oder Dispatch-Entscheidung trifft.
-Der Controller orchestriert nur den Ablauf zwischen Simulationskern und den aktuell eingesetzten Policies.
-Dadurch können unterschiedliche Steuerungsverfahren eingesetzt werden, ohne den Controller oder den Simulationskern selbst umschreiben zu müssen.
+Die Bridge ist bewusst dumm gehalten:
 
-Technisch wichtig ist dabei:
+- keine eigene fachliche Priorisierung
+- keine eigene Routingentscheidung
+- keine Queue- oder Maschinenwahl
 
-- jeder Actor besitzt einen eigenen `cmd_store`
-- der Controller verwaltet eine Zuordnung `actor_id -> cmd_store`
-- neue Commands werden über diese Zuordnung an den richtigen Actor geschickt
-
-Der `PolicyController` enthält dafür insbesondere:
-
-- Statusfunktionen für Jobs, Roboter und Maschinen
-- `read_status()` zum Erzeugen eines `SystemObservation`
-- `build_commands()` zum Aufruf der aktiven Dispatch-Policy
-- `process()` als periodische Controller-Schleife
-
-Für Jobs in Transport-Queues werden dabei mehrere Routing-Kandidaten beobachtet.
-Für Jobs in einer Maschinen-`input_queue` bleibt dagegen die bereits festgeschriebene Route sichtbar, damit die Maschinenbearbeitung konsistent auf einer konkret gewählten nächsten Operation basiert.
-
-Die Schleife läuft konzeptionell so:
-
-1. Systemzustand lesen
-2. aktive Policy aufrufen
-3. Commands erzeugen
-4. Commands in die passenden `cmd_store`s legen
-5. kurzes Intervall warten
-6. erneut beginnen
+Sie ist damit tatsächlich die Middleware zwischen Simulationskern und Policy-Schicht.
 
 ### `default_controller.py`
 
-`default_controller.py` enthält die erste konkrete Standardimplementierung.
-In dieser Datei liegen neben `DefaultController` auch die konkreten Baseline-Implementierungen `DefaultRoutingPolicy` und `DefaultDispatchPolicy`.
-
-Definiert wird hier:
+`DefaultController` ist die Baseline.
 
 - `DefaultRoutingPolicy`
+  - scored Routen zufällig
 - `DefaultDispatchPolicy`
-- `DefaultController`
+  - scored Pick, Place und Maschinenwahl zufällig
 
-Die aktuelle Baseline arbeitet wie folgt:
-
-- `DefaultRoutingPolicy`
-  - bewertet zulässige Operationsfolgen und Maschinenfolgen rein zufällig
-  - erzeugt daraus auch im Online-Routing lediglich zufällige `RoutingCandidate`s
-  - wählt damit keine fachlich optimierte Route, sondern eine einfache Referenzlösung innerhalb des zulässigen Suchraums
-- `DefaultDispatchPolicy`
-  - bewertet mögliche Pick-, Place- und Maschinenaktionen ebenfalls zufällig
-  - vergleicht dabei dieselben Online-Routing-Kandidaten und dieselben Maschinen-Queue-Kandidaten wie die Greedy-Variante
-  - verwendet damit bewusst keine Prioritäten bezüglich Due-Date, Stau, Restbearbeitungszeit oder Defektrisiko
-  - bildet dadurch eine einfache Baseline für spätere heuristische Vergleiche
-- `DefaultController`
-  - erbt von `PolicyController`
-  - erzeugt standardmäßig eine `DefaultRoutingPolicy` und eine `DefaultDispatchPolicy`
-  - übergibt beide an den allgemeinen Controller
-
-Damit ist eine lauffähige Baseline vorhanden, ohne dass die eigentliche Entscheidungslogik im Controller selbst dupliziert werden muss.
+Die Baseline ist wichtig, um spätere Heuristiken gegen eine einfache Referenz zu vergleichen.
 
 ### `greedy_controller.py`
 
-`greedy_controller.py` enthält eine erste heuristische Variante der Steuerung.
-Analog zu `default_controller.py` liegen in dieser Datei sowohl die heuristischen Policy-Implementierungen als auch der verdrahtende Controller.
+`GreedyController` ist die aktuelle heuristische Variante.
 
-Definiert wird hier:
+`GreedyRoutingPolicy` scored verbleibende Routen heuristisch.
 
-- `GreedyRoutingPolicy`
-- `GreedyDispatchPolicy`
-- `GreedyController`
+`GreedyDispatchPolicy` scored Pick-, Place- und Maschinenkandidaten unter anderem mit:
 
-Dabei gilt:
+- `slack_time`
+- `queue_wait_time`
+- Queue-Druck
+- Roboterdistanz
+- Routing-Score
+- freie Zielkapazität
+- Maschinenbereitschaft und erwartete Zielverzögerung
+- Toolwechselaufwand
+- Aging / Anti-Starvation
 
-- `GreedyRoutingPolicy`
-  - bewertet mögliche Operations- und Maschinenfolgen über Score-Funktionen
-  - erzeugt daraus sortierte `RoutingCandidate`s für die aktuelle Restplanung eines Jobs
-  - bevorzugt kurze Bearbeitungszeiten, geringe Defektrisiken, wenige Korridorwechsel und kurze Transferwege
-  - stellt diese Kandidaten für Main- und Arm-Roboter beim `place` online zur Verfügung
-- `GreedyDispatchPolicy`
-  - bewertet mögliche nächste Aktionen im aktuell verfügbaren Dispatch-Suchraum für Main-Roboter, Arm-Roboter und Maschinen
-  - nutzt dafür unter anderem `slack_time`, freie Zielkapazität, Restbearbeitungsdauer, verbleibende Bearbeitungsschritte und den Score der jeweils ausgewählten Route
-  - bevorzugt zusätzlich das Leeren von `machine_out` und `corridor_main`, um Blockierungen zu reduzieren
-  - wählt bei Maschinen den besten Job aus der gesamten `input_queue` statt nur den Head-Job
-  - lässt Bearbeitungsschritte für bereits defekte Jobs nicht mehr zu
-- `GreedyController`
-  - erbt von `PolicyController`
-  - erzeugt standardmäßig eine `GreedyRoutingPolicy` und eine `GreedyDispatchPolicy`
-  - übergibt beide an den allgemeinen Controller
+Dadurch ist die Greedy-Variante deutlich dynamischer als eine einfache FIFO- oder Random-Baseline.
 
-Damit steht neben der Standard-Baseline bereits eine erste austauschbare Greedy-Heuristik zur Verfügung.
+## Beispiele und Generator
 
-## Benchmarking und Dashboard
+Im Projekt gibt es zwei Arten von Instanzen:
 
-Mit der Einführung austauschbarer Controller reicht es nicht mehr aus, eine neue Strategie nur zu implementieren.
-Sobald neben `DefaultController` auch weitere Varianten wie `GreedyController` existieren, stellt sich unmittelbar die Frage, ob diese Strategien unter gleichen Bedingungen tatsächlich andere oder bessere Ergebnisse liefern.
+- feste, handgeschriebene Beispiele
+  - `example-0` bis `example-4`
+- generierte Beispiele
+  - über `example_generator.py`
 
-Genau aus diesem Grund wurden zusätzlich eine Benchmark-Schicht und ein Dashboard implementiert:
+### `example_generator.py`
 
-- unterschiedliche Controller sollen auf denselben Beispielen vergleichbar ausgeführt werden können
-- Zufallseinflüsse sollen über gemeinsame Seeds kontrollierbar bleiben
-- Ergebnisse sollen nicht nur beobachtet, sondern auch als Kennzahlen gespeichert und ausgewertet werden
-- die Austauschbarkeit der Controller soll damit nicht nur architektonisch, sondern auch experimentell nachweisbar sein
+Der Generator erzeugt parametrische Fabrikinstanzen.
 
-Die Benchmarking-Schicht ermöglicht damit den Übergang von einer rein lauffähigen Architektur zu einer auswertbaren Versuchsplattform für Baselines, Greedy-Heuristiken und spätere weitere Verfahren.
+Eine Instanz besteht wie ein normales Example aus:
+
+- `Layout`
+- `Scenario`
+
+Die zentrale Funktion ist:
+
+- `build_generated_example(seed=..., scale=..., profile=...)`
+
+Ein Aufruf erzeugt genau **eine** Instanz.
+Viele Instanzen entstehen durch unterschiedliche Kombinationen aus:
+
+- `profile`
+- `scale`
+- `instance_seed`
+
+Aktuelle Profile:
+
+- `balanced`
+- `routing_heavy`
+- `bottleneck_machine`
+- `tool_change_heavy`
+- `due_date_pressure`
+- `defect_heavy`
+
+Diese Profile steuern unterschiedliche Problemstrukturen, z. B.:
+
+- mehr Routing-Alternativen
+- stärkere Maschinenengpässe
+- mehr Toolwechsel
+- mehr Termindruck
+- mehr Defektdruck
+
+### Direktes Starten eines generierten Beispiels
+
+Das Skript `sources/example-generated.py` startet eine einzelne generierte Instanz direkt.
+
+Beispiel:
+
+```powershell
+$env:PYTHONPATH='sources'
+python sources/example-generated.py --profile routing_heavy --scale 3 --seed 7
+```
+
+## Benchmarking
+
+Die Benchmark-Schicht macht Controller-Vergleiche reproduzierbar und auswertbar.
+
+Wichtige Dateien:
+
+- `sources/SpineML/benchmark.py`
+- `sources/benchmark_runner.py`
+- `sources/benchmark_dashboard.py`
 
 ### `benchmark.py`
 
-`benchmark.py` enthält die eigentliche Benchmark-Logik.
-Die Datei ist damit die fachliche Vergleichsschicht zwischen Simulationskern und den konkreten Auswertungswerkzeugen.
+`benchmark.py` lädt Beispiele oder generierte Instanzen, startet Simulationsläufe und sammelt strukturierte Kennzahlen.
 
-Ihre Aufgaben sind insbesondere:
-
-- Laden von Beispielmodellen über `build_example()`
-- Zurücksetzen des globalen Konfigurationszustands zwischen Benchmark-Läufen
-- Erzeugen und Ausführen von Simulationsläufen mit unterschiedlichen Controllerklassen
-- Setzen gemeinsamer Seeds für faire und reproduzierbare Vergleiche
-- Sammeln strukturierter Kennzahlen pro Run und pro Order
-- Serialisieren der Ergebnisse in einen JSON-Report
-
-Dabei werden unter anderem folgende Kennzahlen erfasst:
+Erfasst werden unter anderem:
 
 - `completed_jobs`, `completed_orders`
 - `defective_jobs`
@@ -400,43 +347,109 @@ Dabei werden unter anderem folgende Kennzahlen erfasst:
 - `makespan`
 - `throughput_jobs_per_time`
 - `robot_utilization`, `machine_utilization`
-- Queue-Längen für Start, Ende, Corridor und Maschinenpuffer
+- Queue-Längen für Start, Ende, Corridore und Maschinenpuffer
+- `average_wip`
+- `average_queue_wait_time`
+- `max_queue_wait_time`
+- `tool_change_count`
+- `tool_change_time`
 
-Damit bildet `benchmark.py` die technische Grundlage für reproduzierbare Controller-Vergleiche.
+Bei generierten Instanzen werden zusätzlich gespeichert:
+
+- `generated_profile`
+- `generated_scale`
+- `generated_instance_seed`
+
+### Benchmark-Matrix über den Generator
+
+Der Benchmark kann automatisch Matrizen aus generierten Instanzen erzeugen.
+
+Das Format für generierte Instanzen ist:
+
+- `generated:<profile>:scale=<n>:seed=<n>`
+
+Beispiel:
+
+- `generated:balanced:scale=2:seed=1`
 
 ### `benchmark_runner.py`
 
-`benchmark_runner.py` ist die schlanke Kommandozeilen-Schnittstelle für die Benchmark-Schicht.
-Die Datei dient dazu, Benchmark-Läufe schnell auszuführen, ohne den Python-Code jedes Mal manuell anpassen zu müssen.
+Der CLI-Runner unterstützt:
 
-Der Runner übernimmt dabei:
+- feste Beispiele über `--examples`
+- generierte Beispielmatrizen über:
+  - `--generated-profiles`
+  - `--generated-scales`
+  - `--generated-instance-seeds`
+- Controller-Zufallsseeds über `--seeds`
 
-- Auswahl von Beispielskripten
-- Auswahl der zu vergleichenden Controller, z. B. `default` und `greedy`
-- Übergabe von Seeds
-- Setzen einer optionalen Simulationsgrenze `till`
-- Speichern des Reports als JSON-Datei
-- kompakte Konsolenausgabe der wichtigsten Kennzahlen pro Run
+Beispiel:
 
-Dadurch eignet sich `benchmark_runner.py` vor allem für:
+```powershell
+$env:PYTHONPATH='sources'
+python sources/benchmark_runner.py `
+  --controllers default greedy `
+  --generated-profiles balanced routing_heavy `
+  --generated-scales 1,2 `
+  --generated-instance-seeds 0,1,2 `
+  --seeds 0,1 `
+  --till 100 `
+  --output benchmark-generated.json
+```
 
-- schnelle Vergleiche im Terminal
-- wiederholbare Benchmark-Experimente
-- das Erzeugen von JSON-Reports für spätere Auswertung
+Dabei gilt:
+
+- `generated-instance-seeds`
+  - bestimmen, welche Fabrikinstanzen erzeugt werden
+- `seeds`
+  - bestimmen die Controller-/Simulationszufälligkeit pro Run
 
 ### `benchmark_dashboard.py`
 
-`benchmark_dashboard.py` stellt auf Basis von Streamlit eine grafische Oberfläche für die Benchmark-Ergebnisse bereit.
-Die Datei wurde implementiert, damit die Auswertung nicht nur über rohe JSON-Dateien oder Konsolenzeilen erfolgen muss.
+Das Dashboard basiert auf Streamlit.
 
-Das Dashboard ermöglicht:
+Es kann:
 
-- bestehende JSON-Reports zu laden
-- neue Benchmark-Läufe direkt aus der Oberfläche zu starten
-- Controller, Beispiele, Seeds und `till` interaktiv auszuwählen
-- aggregierte Kennzahlen pro Controller zu vergleichen
-- Run-Details und Order-Details tabellarisch anzuzeigen
-- Reports erneut als JSON im Projektordner zu speichern oder herunterzuladen
+- vorhandene JSON-Reports laden
+- neue Benchmark-Läufe starten
+- feste Beispiele auswählen
+- Generator-Profile, Scales und Instanz-Seeds auswählen
+- Controller und Seeds konfigurieren
+- aggregierte Kennzahlen visualisieren
+- Reports speichern oder herunterladen
 
-Damit bildet das Dashboard die visuelle Auswertungsebene über der eigentlichen Benchmark-Logik.
-Es ersetzt nicht den Benchmark selbst, sondern macht dessen Ergebnisse für Vergleiche und Analyse deutlich leichter nutzbar.
+Wichtig:
+
+- `example-generated` ist nicht mehr nur ein einzelner fester Dashboard-Eintrag
+- stattdessen gibt es im Dashboard eigene Generator-Felder für:
+  - `Generator-Profile`
+  - `Generator-Scales`
+  - `Generator-Instanz-Seeds`
+
+## Warum der Generator wichtig ist
+
+Der Generator ist vor allem für zwei Dinge wertvoll:
+
+### Heuristikentwicklung
+
+Mit nur wenigen festen Examples besteht die Gefahr von Overfitting:
+
+- eine Heuristik wird zu stark auf genau diese wenigen Fälle angepasst
+- auf neuen Instanzen ist sie dann deutlich schlechter
+
+Der Generator reduziert dieses Risiko, weil:
+
+- mehr Instanzvielfalt entsteht
+- Seeds reproduzierbar bleiben
+- Profile gezielt bestimmte Problemstrukturen erzeugen
+
+### Späteres Reinforcement Learning
+
+Für RL ist der Generator ebenfalls nützlich:
+
+- jede Episode kann auf einer neuen Instanz laufen
+- Training und Evaluation können auf unterschiedlichen Seeds erfolgen
+- `scale` erlaubt eine Art Curriculum
+- Profile erlauben gezielte Trainingsverteilungen
+
+Damit ist der Generator nicht nur Komfortfunktion, sondern ein wichtiger Baustein für spätere experimentelle Arbeit.

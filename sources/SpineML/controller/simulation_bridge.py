@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC
 from typing import TYPE_CHECKING
 
 import salabim as sim
 
-from .policy import DispatchPolicy, RoutingPolicy, RuleBasedDispatchPolicy
+from .policy import DispatchPolicy, RoutingPolicy
 from .types import (
     ArmMachineObservation,
     ArmRobotObservation,
@@ -19,7 +18,6 @@ from .types import (
     MainRobotObservation,
     OrderJobObservation,
     QueueObject,
-    RoutingCandidate,
     SystemObservation,
     ToolSpec,
 )
@@ -37,7 +35,7 @@ class ControllerCommand(sim.Component):
         self.payload = payload
 
 
-class PolicyController(sim.Component):
+class SimulationBridge(sim.Component):
     def __init__(
         self,
         routing_policy: RoutingPolicy,
@@ -106,45 +104,51 @@ class PolicyController(sim.Component):
                 )
         return estimate
 
-    def _empty_routing_candidate(self) -> RoutingCandidate:
-        return RoutingCandidate(
-            operation_sequence=(),
-            machine_sequence=(),
-            route_score=0.0,
-            remaining_operations=0,
-            remaining_machines=0,
-            remaining_processing_time_estimate=0.0,
-            next_operation_name=None,
-            next_tool_name=None,
-            next_operation_duration=None,
-            next_consumed_life_units=None,
-            next_produced_product_name=None,
-            next_machine_name=None,
-            next_machine_corridor_name=None,
-            next_machine_side=None,
+    def _job_slack_time(self, job: SimOrderJob) -> float:
+        return (
+            job.order.latest_end_time
+            - self.env.now()
+            - self._remaining_processing_time_estimate_from_sequences(
+                job.operation_sequence,
+                job.machine_sequence,
+            )
         )
 
-    def _routing_candidate_from_sequences(
-        self,
-        operation_sequence: list,
-        machine_sequence: list,
-    ) -> RoutingCandidate:
+    def _job_head_observation(self, job: SimOrderJob) -> JobHeadObservation:
+        operation_sequence = job.operation_sequence
+        machine_sequence = job.machine_sequence
         next_operation = operation_sequence[0] if len(operation_sequence) > 0 else None
         next_machine = machine_sequence[0] if len(machine_sequence) > 0 else None
         next_side = None
         if next_machine is not None:
             next_side = "left" if next_machine.left else "right"
 
-        return RoutingCandidate(
-            operation_sequence=tuple(operation_sequence),
-            machine_sequence=tuple(machine_sequence),
-            route_score=0.0,
+        return JobHeadObservation(
+            job_key=self._job_key(job),
+            routing_request=JobPlanningRequest(
+                job_key=self._job_key(job),
+                layout=job.layout,
+                order=job.order,
+                current_product_type=job.current_product_type,
+            ),
+            current_product_name=job.state.get(),
+            current_product_weight=job.current_product_type.weight,
+            current_product_length=job.current_product_type.length,
+            current_product_width=job.current_product_type.width,
+            current_product_depth=job.current_product_type.depth,
+            is_defective=job.is_defective,
+            release_time=job.order.earliest_start_time,
+            due_time=job.order.latest_end_time,
+            queue_wait_time=max(0.0, self.env.now() - job.current_queue_entry_time),
             remaining_operations=len(operation_sequence),
             remaining_machines=len(machine_sequence),
             remaining_processing_time_estimate=self._remaining_processing_time_estimate_from_sequences(
                 operation_sequence,
                 machine_sequence,
             ),
+            slack_time=self._job_slack_time(job),
+            committed_operation_sequence=tuple(operation_sequence),
+            committed_machine_sequence=tuple(machine_sequence),
             next_operation_name=next_operation.name if next_operation is not None else None,
             next_tool_name=next_operation.tool_type.name if next_operation is not None else None,
             next_operation_duration=(
@@ -161,72 +165,12 @@ class PolicyController(sim.Component):
             next_machine_side=next_side,
         )
 
-    def _routing_candidates(
-        self,
-        job: SimOrderJob,
-        *,
-        dynamic_routing: bool,
-    ) -> tuple[RoutingCandidate, ...]:
-        if job.is_defective:
-            return (self._empty_routing_candidate(),)
-        if not dynamic_routing:
-            if len(job.operation_sequence) == 0 and len(job.machine_sequence) == 0:
-                return (self._empty_routing_candidate(),)
-            return (
-                self._routing_candidate_from_sequences(
-                    job.operation_sequence,
-                    job.machine_sequence,
-                ),
-            )
-
-        plan_request = JobPlanningRequest(
-            job_key=self._job_key(job),
-            layout=job.layout,
-            order=job.order,
-            current_product_type=job.current_product_type,
-        )
-        candidates = self.routing_policy.plan_job_candidates(plan_request)
-        if len(candidates) > 0:
-            return candidates
-        return (self._empty_routing_candidate(),)
-
-    def _job_slack_time(self, job: SimOrderJob, routing_candidate: RoutingCandidate) -> float:
-        return job.order.latest_end_time - self.env.now() - routing_candidate.remaining_processing_time_estimate
-
-    def _job_head_observation(self, job: SimOrderJob, *, dynamic_routing: bool) -> JobHeadObservation:
-        routing_candidates = self._routing_candidates(job, dynamic_routing=dynamic_routing)
-        primary_route = routing_candidates[0]
-
-        return JobHeadObservation(
-            job_key=self._job_key(job),
-            current_product_name=job.state.get(),
-            current_product_weight=job.current_product_type.weight,
-            current_product_length=job.current_product_type.length,
-            current_product_width=job.current_product_type.width,
-            current_product_depth=job.current_product_type.depth,
-            is_defective=job.is_defective,
-            release_time=job.order.earliest_start_time,
-            due_time=job.order.latest_end_time,
-            remaining_operations=primary_route.remaining_operations,
-            remaining_machines=primary_route.remaining_machines,
-            remaining_processing_time_estimate=primary_route.remaining_processing_time_estimate,
-            slack_time=self._job_slack_time(job, primary_route),
-            routing_candidates=routing_candidates,
-            next_operation_name=primary_route.next_operation_name,
-            next_tool_name=primary_route.next_tool_name,
-            next_operation_duration=primary_route.next_operation_duration,
-            next_consumed_life_units=primary_route.next_consumed_life_units,
-            next_produced_product_name=primary_route.next_produced_product_name,
-            next_machine_name=primary_route.next_machine_name,
-            next_machine_corridor_name=primary_route.next_machine_corridor_name,
-            next_machine_side=primary_route.next_machine_side,
-        )
-
-    def _queue_object(self, queue_id: str, store: sim.Store, *, dynamic_routing: bool = True) -> QueueObject:
-        jobs = tuple(self._job_head_observation(job, dynamic_routing=dynamic_routing) for job in store)
+    def _queue_object(self, queue_id: str, queue_kind: str, store: sim.Store) -> QueueObject:
+        jobs = tuple(self._job_head_observation(job) for job in store)
         head = jobs[0] if len(jobs) > 0 else None
         return QueueObject(
             queue_id=queue_id,
+            queue_kind=queue_kind,
             length=store.length(),
             capacity=float(store.capacity()),
             free_capacity=float(store.available_quantity()),
@@ -235,7 +179,8 @@ class PolicyController(sim.Component):
         )
 
     def order_job_status(self, job: SimOrderJob) -> OrderJobObservation:
-        primary_route = self._routing_candidates(job, dynamic_routing=True)[0]
+        next_operation = job.operation_sequence[0] if len(job.operation_sequence) > 0 else None
+        next_machine = job.machine_sequence[0] if len(job.machine_sequence) > 0 else None
         return OrderJobObservation(
             job_key=self._job_key(job),
             current_product_name=job.state.get(),
@@ -250,29 +195,40 @@ class PolicyController(sim.Component):
             defect_time=job.defect_time,
             release_time=job.order.earliest_start_time,
             due_time=job.order.latest_end_time,
-            remaining_operations=primary_route.remaining_operations,
-            remaining_machines=primary_route.remaining_machines,
-            remaining_processing_time_estimate=primary_route.remaining_processing_time_estimate,
-            slack_time=self._job_slack_time(job, primary_route),
-            next_operation_name=primary_route.next_operation_name,
-            next_machine_name=primary_route.next_machine_name,
+            remaining_operations=len(job.operation_sequence),
+            remaining_machines=len(job.machine_sequence),
+            remaining_processing_time_estimate=self._remaining_processing_time_estimate_from_sequences(
+                job.operation_sequence,
+                job.machine_sequence,
+            ),
+            slack_time=self._job_slack_time(job),
+            next_operation_name=next_operation.name if next_operation is not None else None,
+            next_machine_name=next_machine.name if next_machine is not None else None,
         )
 
     def main_robot_status(self, robot: SimRobotMain) -> MainRobotObservation:
         corridors = []
         for sim_corridor in robot.sim_corridors:
             corridor_name = sim_corridor.corridor.name
+            corridor_y = robot._corridor_y(sim_corridor)
             corridors.append(
                 CorridorObservation(
                     corridor_name=corridor_name,
+                    y=corridor_y,
                     main_queue=self._queue_object(
-                        f"corridor:{corridor_name}:main", sim_corridor.store_main
+                        f"corridor:{corridor_name}:main",
+                        "corridor_main",
+                        sim_corridor.store_main,
                     ),
                     left_queue=self._queue_object(
-                        f"corridor:{corridor_name}:left", sim_corridor.store_left
+                        f"corridor:{corridor_name}:left",
+                        "corridor_left",
+                        sim_corridor.store_left,
                     ),
                     right_queue=self._queue_object(
-                        f"corridor:{corridor_name}:right", sim_corridor.store_right
+                        f"corridor:{corridor_name}:right",
+                        "corridor_right",
+                        sim_corridor.store_right,
                     ),
                 )
             )
@@ -288,10 +244,14 @@ class PolicyController(sim.Component):
             busy=robot.cmd_active,
             pending_commands=robot.cmd_store.length(),
             start_queue=self._queue_object(
-                f"layout:{robot.layout.name}:start", robot.store_start
+                f"layout:{robot.layout.name}:start",
+                "layout_start",
+                robot.store_start,
             ),
             end_queue=self._queue_object(
-                f"layout:{robot.layout.name}:end", robot.store_end
+                f"layout:{robot.layout.name}:end",
+                "layout_end",
+                robot.store_end,
             ),
             corridors=tuple(corridors),
         )
@@ -304,11 +264,16 @@ class PolicyController(sim.Component):
                 ArmMachineObservation(
                     machine_num=machine_num,
                     machine_name=machine_name,
+                    x=robot._machine_x(machine_num),
                     input_queue=self._queue_object(
-                        f"machine:{machine_name}:in", sim_machine.store_in, dynamic_routing=False
+                        f"machine:{machine_name}:in",
+                        "machine_in",
+                        sim_machine.store_in,
                     ),
                     output_queue=self._queue_object(
-                        f"machine:{machine_name}:out", sim_machine.store_out
+                        f"machine:{machine_name}:out",
+                        "machine_out",
+                        sim_machine.store_out,
                     ),
                 )
             )
@@ -317,6 +282,7 @@ class PolicyController(sim.Component):
             actor_id=self._actor_id(robot),
             name=robot.label,
             corridor_name=robot.corridor.name,
+            corridor_x=robot.dx,
             direction=robot.direction,
             move_state=robot.state_move.get(),
             load_state=robot.state_load.get(),
@@ -326,13 +292,19 @@ class PolicyController(sim.Component):
             busy=robot.cmd_active,
             pending_commands=robot.cmd_store.length(),
             input_queue=self._queue_object(
-                f"arm:{robot.corridor.name}:{robot.direction}:in", robot.store_in
+                f"arm:{robot.corridor.name}:{robot.direction}:in",
+                "arm_in",
+                robot.store_in,
             ),
             out_arm_queue=self._queue_object(
-                f"arm:{robot.corridor.name}:{robot.direction}:arm_out", robot.store_out_arm
+                f"arm:{robot.corridor.name}:{robot.direction}:arm_out",
+                "arm_out",
+                robot.store_out_arm,
             ),
             out_main_queue=self._queue_object(
-                f"arm:{robot.corridor.name}:{robot.direction}:main_out", robot.store_out_main
+                f"arm:{robot.corridor.name}:{robot.direction}:main_out",
+                "main_out",
+                robot.store_out_main,
             ),
             machine_slots=tuple(machine_slots),
         )
@@ -361,10 +333,14 @@ class PolicyController(sim.Component):
             busy=machine.cmd_active,
             pending_commands=machine.cmd_store.length(),
             input_queue=self._queue_object(
-                f"machine:{machine.machine.name}:in", machine.store_in, dynamic_routing=False
+                f"machine:{machine.machine.name}:in",
+                "machine_in",
+                machine.store_in,
             ),
             output_queue=self._queue_object(
-                f"machine:{machine.machine.name}:out", machine.store_out
+                f"machine:{machine.machine.name}:out",
+                "machine_out",
+                machine.store_out,
             ),
             remaining_life_units=remaining_life_units,
             available_tools=tool_specs,
@@ -381,6 +357,9 @@ class PolicyController(sim.Component):
 
     def plan_job(self, request: JobPlanningRequest) -> JobPlan:
         return self.routing_policy.plan_job(request)
+
+    def plan_job_candidates(self, request: JobPlanningRequest):
+        return self.routing_policy.plan_job_candidates(request)
 
     def build_commands(self, system_status: SystemObservation) -> tuple[DispatchCommand, ...]:
         return self.dispatch_policy.decide(system_status)

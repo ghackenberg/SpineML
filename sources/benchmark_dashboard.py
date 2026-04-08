@@ -17,6 +17,8 @@ import streamlit as st
 from SpineML.benchmark import (
     CONTROLLER_REGISTRY,
     available_examples,
+    available_generated_profiles,
+    generated_example_names,
     order_rows,
     report_rows,
     run_benchmark_suite,
@@ -98,6 +100,10 @@ def _render_report(run_df: pd.DataFrame, order_df: pd.DataFrame, report_data: di
             avg_makespan=("final_simulation_time", "mean"),
             avg_machine_utilization=("machine_utilization", "mean"),
             avg_robot_utilization=("robot_utilization", "mean"),
+            avg_wip=("average_wip", "mean"),
+            avg_queue_wait_time=("average_queue_wait_time", "mean"),
+            avg_max_queue_wait_time=("max_queue_wait_time", "mean"),
+            avg_tool_change_count=("tool_change_count", "mean"),
             avg_defective_jobs=("defective_jobs", "mean"),
         )
         .sort_values("avg_total_tardiness")
@@ -113,6 +119,11 @@ def _render_report(run_df: pd.DataFrame, order_df: pd.DataFrame, report_data: di
             "final_simulation_time",
             "machine_utilization",
             "robot_utilization",
+            "average_wip",
+            "average_queue_wait_time",
+            "max_queue_wait_time",
+            "tool_change_count",
+            "tool_change_time",
             "defective_jobs",
         ],
     )
@@ -161,15 +172,25 @@ with st.sidebar:
         )
         run_clicked = st.button("Report anzeigen", use_container_width=True)
         selected_examples = []
+        generated_profiles = []
+        generated_scales = ""
+        generated_instance_seeds = ""
         selected_controllers = []
         seed_text = ""
         till_text = ""
     else:
         selected_examples = st.multiselect(
-            "Beispiele",
+            "Feste Beispiele",
             options=list(available_examples()),
             default=list(available_examples())[:2],
         )
+        generated_profiles = st.multiselect(
+            "Generator-Profile",
+            options=list(available_generated_profiles()),
+            default=[],
+        )
+        generated_scales = st.text_input("Generator-Scales", value="1,2")
+        generated_instance_seeds = st.text_input("Generator-Instanz-Seeds", value="0,1,2")
         selected_controllers = st.multiselect(
             "Controller",
             options=sorted(CONTROLLER_REGISTRY.keys()),
@@ -185,6 +206,10 @@ def _parse_seeds(seed_text_value: str) -> list[int]:
     return [int(part.strip()) for part in seed_text_value.split(",") if part.strip()]
 
 
+def _parse_int_list(text_value: str) -> list[int]:
+    return [int(part.strip()) for part in text_value.split(",") if part.strip()]
+
+
 def _parse_till(till_text_value: str) -> float:
     return float(till_text_value) if till_text_value.strip() else float("inf")
 
@@ -197,14 +222,26 @@ if run_clicked:
             run_df, order_df, report_data = _load_report_frames(PROJECT_ROOT / selected_report)
             _store_report_in_session(report_data, f"Geladen aus: {selected_report}")
     else:
-        if not selected_examples:
-            st.error("Mindestens ein Beispiel auswählen.")
+        generated_examples = []
+        if generated_profiles:
+            generated_examples = list(
+                generated_example_names(
+                    generated_profiles,
+                    _parse_int_list(generated_scales),
+                    _parse_int_list(generated_instance_seeds),
+                )
+            )
+
+        combined_examples = list(selected_examples) + generated_examples
+
+        if not combined_examples:
+            st.error("Mindestens ein festes Beispiel oder ein Generator-Profil auswählen.")
         elif not selected_controllers:
             st.error("Mindestens einen Controller auswählen.")
         else:
             with st.spinner("Benchmarks laufen..."):
                 report = run_benchmark_suite(
-                    examples=selected_examples,
+                    examples=combined_examples,
                     controllers=selected_controllers,
                     seeds=_parse_seeds(seed_text),
                     till=_parse_till(till_text),
@@ -218,4 +255,6 @@ else:
     if data_source == "Vorhandenen Report laden":
         st.info("Links eine vorhandene JSON-Report-Datei auswählen und dann anzeigen.")
     else:
-        st.info("Links Beispiele, Controller und Seeds waehlen und dann die Benchmarks starten.")
+        st.info(
+            "Links feste Beispiele oder Generator-Profile, Controller und Seeds waehlen und dann die Benchmarks starten."
+        )

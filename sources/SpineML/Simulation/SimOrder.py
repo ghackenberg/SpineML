@@ -6,7 +6,7 @@ from ..Configuration import Layout, Scenario, Order
 from .SimOrderJob import SimOrderJob
 
 if TYPE_CHECKING:
-    from ..controller import PolicyController
+    from ..controller.simulation_bridge import SimulationBridge
 
 
 class SimOrder(sim.Component):
@@ -16,7 +16,7 @@ class SimOrder(sim.Component):
         scenario: Scenario,
         order: Order,
         store_start: sim.Store,
-        controller: Optional["PolicyController"] = None,
+        controller: Optional["SimulationBridge"] = None,
         *args,
         **kwargs,
     ):

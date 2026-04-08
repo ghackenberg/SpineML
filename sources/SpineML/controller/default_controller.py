@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING, Any
 
-from .controller import PolicyController
+from .simulation_bridge import SimulationBridge
 from .policy import (
     DispatchPolicy,
     RuleBasedDispatchPolicy,
@@ -47,12 +47,9 @@ class DefaultDispatchPolicy(RuleBasedDispatchPolicy):
         robot: MainRobotObservation,
         action: MainRobotPickAction,
         source_queue: QueueObject,
+        job: JobHeadObservation,
     ) -> float | None:
-        job = source_queue.head
-        if job is None:
-            return None
-
-        if self.best_main_robot_place_score(robot, job) is None:
+        if self.best_main_robot_place_score(robot, job, source_queue) is None:
             return None
 
         return self.rng.random()
@@ -62,12 +59,9 @@ class DefaultDispatchPolicy(RuleBasedDispatchPolicy):
         robot: ArmRobotObservation,
         action: ArmRobotPickAction,
         source_queue: QueueObject,
+        job: JobHeadObservation,
     ) -> float | None:
-        job = source_queue.head
-        if job is None:
-            return None
-
-        if self.best_arm_robot_place_score(robot, job) is None:
+        if self.best_arm_robot_place_score(robot, job, source_queue) is None:
             return None
 
         return self.rng.random()
@@ -105,7 +99,7 @@ class DefaultDispatchPolicy(RuleBasedDispatchPolicy):
         return self.rng.random()
 
 
-class DefaultController(PolicyController):
+class DefaultController(SimulationBridge):
     def __init__(
         self,
 
@@ -114,9 +108,10 @@ class DefaultController(PolicyController):
         **kwargs,
     ):
         rng = random.Random(rng_seed)
+        routing_policy = DefaultRoutingPolicy(rng=rng)
         super().__init__(
-            routing_policy=DefaultRoutingPolicy(rng=rng),
-            dispatch_policy=DefaultDispatchPolicy(rng=rng),
+            routing_policy=routing_policy,
+            dispatch_policy=DefaultDispatchPolicy(rng=rng, routing_policy=routing_policy),
             *args,
             **kwargs,
         )

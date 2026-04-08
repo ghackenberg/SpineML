@@ -4,7 +4,8 @@ import salabim as sim
 
 from .Configuration import Layout, Scenario
 from .Simulation import SimLayout, SimScenario
-from .controller import DefaultController, GreedyController
+from .controller.default_controller import DefaultController
+from .controller.greedy_controller import GreedyController
 
 
 DEFAULT_2D_POSITION = (960, 100)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import salabim as sim
 
 from ..Configuration import Corridor, Machine
-from ..controller import ArmRobotCommand, JobKey
+from ..controller.types import ArmRobotCommand, JobKey
 from .SimMachine import SimMachine
 from .SimOrderJob import SimOrderJob
 from .SimRobot import SimRobot
@@ -62,6 +62,15 @@ class SimRobotCorridorArm(SimRobot):
             job.scenario.name == job_key.scenario_name
             and job.order.name == job_key.order_name
             and job.number == job_key.job_number
+        )
+
+    def _take_job_from_store(self, store: sim.Store, job_key: JobKey) -> SimOrderJob:
+        for queued_job in store:
+            if self._job_matches(queued_job, job_key):
+                store.remove(queued_job)
+                return queued_job
+        raise ValueError(
+            f"Arm robot could not find selected job {job_key.order_name}/{job_key.job_number} in source queue"
         )
 
     def _loaded_speed(self, job: SimOrderJob) -> float:
@@ -129,19 +138,17 @@ class SimRobotCorridorArm(SimRobot):
                 else:
                     raise ValueError(f"Unsupported arm robot pick action: {cmd.pick.kind}")
 
-                job: SimOrderJob = yield self.from_store(source_store)
-                if not self._job_matches(job, cmd.job_key):
-                    raise ValueError(
-                        f"Arm robot picked unexpected job {job.order.name}/{job.number}; expected {cmd.job_key}"
-                    )
+                job = self._take_job_from_store(source_store, cmd.job_key)
+                job.mark_queue_exit()
 
                 if source_out_time > 0:
                     yield self.hold(source_out_time)
                 loaded_speed = self._loaded_speed(job)
-                job.apply_route(
-                    list(cmd.place.route.operation_sequence),
-                    list(cmd.place.route.machine_sequence),
-                )
+                if cmd.place.kind == "machine_in":
+                    job.apply_route(
+                        list(cmd.place.route.operation_sequence),
+                        list(cmd.place.route.machine_sequence),
+                    )
 
                 self.state_load.set("loaded")
                 if source_machine is not None:
@@ -171,6 +178,7 @@ class SimRobotCorridorArm(SimRobot):
                 else:
                     raise ValueError(f"Unsupported arm robot place action: {cmd.place.kind}")
 
+                job.mark_queue_entry()
                 yield self.to_store(target_store, job)
                 if target_in_time > 0:
                     yield self.hold(target_in_time)

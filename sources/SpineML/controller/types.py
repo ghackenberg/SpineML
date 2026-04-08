@@ -60,6 +60,7 @@ class RoutingCandidate:
 @dataclass(frozen=True, slots=True)
 class JobHeadObservation:
     job_key: JobKey
+    routing_request: JobPlanningRequest
     current_product_name: str
     current_product_weight: float
     current_product_length: float
@@ -68,11 +69,13 @@ class JobHeadObservation:
     is_defective: bool
     release_time: float
     due_time: float
+    queue_wait_time: float
     remaining_operations: int
     remaining_machines: int
     remaining_processing_time_estimate: float
     slack_time: float
-    routing_candidates: tuple[RoutingCandidate, ...]
+    committed_operation_sequence: tuple[Any, ...]
+    committed_machine_sequence: tuple[Any, ...]
     next_operation_name: str | None
     next_tool_name: str | None
     next_operation_duration: float | None
@@ -89,6 +92,18 @@ class JobHeadObservation:
 # und dem Job am Kopf der Warteschlange.
 class QueueObject:
     queue_id: str
+    queue_kind: Literal[
+        "layout_start",
+        "layout_end",
+        "corridor_main",
+        "corridor_left",
+        "corridor_right",
+        "arm_in",
+        "arm_out",
+        "main_out",
+        "machine_in",
+        "machine_out",
+    ]
     length: int
     capacity: float
     free_capacity: float
@@ -99,6 +114,7 @@ class QueueObject:
 @dataclass(frozen=True, slots=True)
 class CorridorObservation:
     corridor_name: str
+    y: float
     main_queue: QueueObject
     left_queue: QueueObject
     right_queue: QueueObject
@@ -108,6 +124,7 @@ class CorridorObservation:
 class ArmMachineObservation:
     machine_num: int
     machine_name: str
+    x: float
     input_queue: QueueObject
     output_queue: QueueObject
 
@@ -141,6 +158,7 @@ class ArmRobotObservation:
     actor_id: str
     name: str
     corridor_name: str
+    corridor_x: float
     direction: str
     move_state: str
     load_state: str

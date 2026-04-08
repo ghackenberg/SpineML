@@ -6,7 +6,7 @@ from ..Configuration import Layout, Scenario
 from .SimOrder import SimOrder
 
 if TYPE_CHECKING:
-    from ..controller import PolicyController
+    from ..controller.simulation_bridge import SimulationBridge
 
 
 class SimScenario(sim.Component):
@@ -15,7 +15,7 @@ class SimScenario(sim.Component):
         layout: Layout,
         scenario: Scenario,
         store_start: sim.Store,
-        controller: Optional["PolicyController"] = None,
+        controller: Optional["SimulationBridge"] = None,
         *args,
         **kwargs,
     ):
@@ -45,4 +45,3 @@ class SimScenario(sim.Component):
             plt.subplot(rows, columns, col)
             sim_order.plot(legend)
             col = col + 1
-

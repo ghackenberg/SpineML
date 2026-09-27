@@ -1,22 +1,22 @@
-# Plotting support for the built-in simulation statistics
+# Normal simulation and built-in statistics
 matplotlib
-streamlit
-
-# Simulation support
 salabim
 greenlet
 
-# Test support
-pytest
-
-# ... 3D animation support
+# 3D animation support used by normal simulation runs
 pyopengl
 pyopengl_accelerate
-
-# ... OBJ Wavefront support
 pywavefront
 pyglet
 
-# ... Video production support
-opencv-python
+# Optimization web interface
+streamlit
+pandas
+altair
+
+# Numerical/video support used by the simulation environment
 numpy
+opencv-python
+
+# Development/test support (not needed to run the application)
+pytest

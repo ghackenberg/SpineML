@@ -17,6 +17,9 @@ dependencies = [
     "pyglet",
     "opencv-python",
     "numpy",
+    "streamlit",
+    "pandas",
+    "altair",
 ]
 
 [project.optional-dependencies]

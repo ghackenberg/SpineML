@@ -21,7 +21,7 @@ class SimCorridor(sim.Component):
         super().__init__(*args, **kwargs)
 
         self.corridor = corridor
-        self.controller = controller
+        self.bridge = bridge
 
         machines_left = corridor.machines_left
         machines_right = corridor.machines_right

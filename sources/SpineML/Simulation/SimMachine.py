@@ -129,8 +129,8 @@ class SimMachine(sim.Component):
 
     # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
-        if self.controller is None:
-            raise RuntimeError("SimMachine requires a controller for dispatched commands")
+        if self.bridge is None:
+            raise RuntimeError("SimMachine requires a SimulationBridge for dispatched commands")
 
         while True:
             if self.store_out.available_quantity() <= 0:

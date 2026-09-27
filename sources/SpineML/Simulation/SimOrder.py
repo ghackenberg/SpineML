@@ -1,14 +1,10 @@
 import salabim as sim
 import matplotlib.pyplot as plt
-from typing import TYPE_CHECKING, Optional
 
 from ..Configuration import Layout, Scenario, Order
 from ..Control import SimulationBridge
 
 from .SimOrderJob import SimOrderJob
-
-if TYPE_CHECKING:
-    from ..controller.simulation_bridge import SimulationBridge
 
 
 class SimOrder(sim.Component):

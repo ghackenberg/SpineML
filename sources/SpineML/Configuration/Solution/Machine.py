@@ -2,7 +2,10 @@ class Machine:
 
     """Representation of machines."""
 
+    DIMENSION_PROCESSING_TIME_FACTOR = 0.01
+
     from ..Definition import MachineType
+    from ..Definition import ProductType
     from ..Definition import ToolType
     
     from .Corridor import Corridor

@@ -7,7 +7,6 @@ from ..Configuration import Layout, Scenario, Order, Machine, OperationType
 from ..Control import SimulationBridge
 
 if TYPE_CHECKING:
-    from ..controller.simulation_bridge import SimulationBridge
     from .SimOrder import SimOrder
 
 

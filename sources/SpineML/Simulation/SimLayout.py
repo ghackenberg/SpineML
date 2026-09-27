@@ -14,7 +14,7 @@ class SimLayout(sim.Component):
         super().__init__(*args, **kwargs)
 
         self.layout = layout
-        self.controller = controller
+        self.bridge = bridge
 
         self.max_product_weight = 1.0
         self.max_product_volume = 1.0

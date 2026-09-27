@@ -1,0 +1,51 @@
+{
+    "emeraldwalk.runonsave": {
+        "commands": [
+            {
+                "match": ".mmd",
+                "cmd": "mmdc -i \"${file}\" -o \"${fileDirname}/${fileBasenameNoExt}.png\""
+            },{
+                "match": ".mmd",
+                "cmd": "mmdc -i \"${file}\" -o \"${fileDirname}/${fileBasenameNoExt}.svg\""
+            }
+        ]
+    },
+    "editor.tokenColorCustomizations": {
+        "comments": "#FFFF00",
+        "textMateRules": [
+            {
+                "scope": [
+                    "comment",
+                    "comment.line.number-sign.python",
+                    "comment.block.python",
+                    "punctuation.definition.comment"
+                ],
+                "settings": {
+                    "foreground": "#FFFF00",
+                    "fontStyle": "italic"
+                }
+            }
+        ]
+    },
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.languageServer": "Pylance",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}\\sources"
+    ],
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.indexing": true,
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "basic",
+    "workbench.editorAssociations": {
+        "*.md": "cweijan.markdownViewer"
+    },
+    "vscode-office.editMode": "ir",
+    "editor.gotoLocation.multipleDefinitions": "peek",
+    "editor.gotoLocation.multipleReferences": "peek",
+    "editor.gotoLocation.multipleImplementations": "peek"
+}

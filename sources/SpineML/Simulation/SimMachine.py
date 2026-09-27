@@ -1,47 +1,76 @@
-from __future__ import annotations
-
+import hashlib
 import random
-
+import salabim as sim
 import matplotlib.pyplot as plt
 import salabim as sim
 
 from ..Configuration import Machine, ToolType
-from ..controller.types import JobKey, MachineCommand
+from ..Control import SimulationBridge
+
 from .SimOrderJob import SimOrderJob
 
 
 class SimMachine(sim.Component):
-    def __init__(self, machine: Machine, x: float, y: float, controller=None, *args, **kwargs):
+    QUALITY_SEED = 0
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(
+        self,
+        machine: Machine,
+        bridge: SimulationBridge,
+        x: float,
+        y: float,
+        *args,
+        max_product_weight: float = 1.0,
+        max_product_volume: float = 1.0,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         self.machine = machine
-        self.controller = controller
-        self.rng = random.Random()
+        self.max_product_weight = max(float(max_product_weight), 1.0)
+        self.max_product_volume = max(float(max_product_volume), 1.0)
+        self.machine.processing_speed_factor = random.uniform(0.45, 2.00)
+        self.bridge = bridge
+        machine_side = "left" if self.machine.left else "right"
+        self.policy_id = f"SimMachine:{self.machine.name}:{machine_side}"
 
-        self.state = sim.State("State", value="waiting", env=self.env)
+        self.state = sim.State("State", value='waiting', env=self.env)
+
         self.tool_type: ToolType | None = None
-        self.tool_types = machine.machine_type.computeToolTypes()
-        self.tool_type_by_name = {tool_type.name: tool_type for tool_type in self.tool_types}
+        self.dummy_tool_mounted = True
+        self.processing_speed_factor = machine.processing_speed_factor
+        self.processing_variation = random.uniform(0.90, 1.10)
+        self.startup_delay = random.uniform(0.0, 4.0)
+        self._startup_delay_applied = False
+
+        self.tool_types = list(machine.tool_types)
 
         self.remaining_life_units: dict[ToolType, int] = {}
         self.remaining_life_units_t: dict[ToolType, float] = {}
         self.remaining_life_units_next: dict[ToolType, int] = {}
         self.remaining_life_units_next_t: dict[ToolType, float] = {}
-
         for tool_type in self.tool_types:
             self.remaining_life_units[tool_type] = tool_type.total_life_units
             self.remaining_life_units_t[tool_type] = self.env.now()
             self.remaining_life_units_next[tool_type] = tool_type.total_life_units
             self.remaining_life_units_next_t[tool_type] = self.env.now()
 
-        self.store_in = sim.Store(f"{machine.name} in", capacity=machine.storage_capacity, env=self.env)
-        self.store_out = sim.Store(f"{machine.name} out", capacity=machine.storage_capacity, env=self.env)
-        self.cmd_store = sim.Store(f"{machine.name} cmd", env=self.env)
-        self.cmd_active = False
-        self.tool_change_count = 0
-        self.tool_change_time = 0.0
+        self.store_in = sim.Store(
+            f"{machine.name} in", env=self.env, capacity=machine.input_storage_capacity
+        )
+        self.store_out = sim.Store(
+            f"{machine.name} out", env=self.env, capacity=machine.output_storage_capacity
+        )
+        self.current_job: SimOrderJob | None = None
+
+        self.bridge.register(
+            self.policy_id,
+            self,
+            stores=[self.store_in, self.store_out],
+        )
 
         sim.Animate3dBox(x_len=0.25, y_len=0.25, z_len=1.20, color="green", x=x, y=y + 0.00, z=1.80)
+
         sim.Animate3dBox(x_len=0.05, y_len=0.18, z_len=0.05, color="white", x=x, y=y + 0.19, z=1.18)
         sim.Animate3dBox(x_len=0.60, y_len=0.18, z_len=0.05, color="white", x=x, y=y + 0.19, z=1.18)
 
@@ -52,117 +81,205 @@ class SimMachine(sim.Component):
 
         z = 0.70
         for tool_type in self.tool_types:
-            x_len = (lambda tt: lambda t: self.x_func(tt, t))(tool_type)
-            color = (lambda tt: lambda t: self.c_func(tt))(tool_type)
+            x_len = self.create_tool_life_bar_length_function(tool_type)
+            color = self.create_tool_life_bar_color_function(tool_type)
             sim.Animate3dBox(x_len=x_len, y_len=0.01, z_len=0.07, color=color, x=x, y=y + 0.4379, z=z)
             z = z - 0.08
+        
+        sim.Animate3dBox(x_len=0.60, y_len=0.40, z_len=0.40, color="lightgray", x=x, y=y - 0.08, z=1.00)
+        sim.Animate3dBox(x_len=0.60, y_len=0.70, z_len=0.60, color="lightgray", x=x, y=y + 0.08, z=0.50)
 
-        sim.Animate3dBox(x_len=0.60, y_len=0.40, z_len=0.40, color="white", x=x, y=y - 0.08, z=1.00)
-        sim.Animate3dBox(x_len=0.60, y_len=0.70, z_len=0.60, color="white", x=x, y=y + 0.08, z=0.50)
+    # Erstellt das angeforderte Modell, Objekt oder Ergebnis.
+    def create_tool_life_bar_length_function(self, tool_type: ToolType):
+        """Create the time-dependent bar-length function required by Salabim."""
 
-    def x_func(self, tool_type: ToolType, t: float):
-        rtlu = self.remaining_life_units[tool_type]
-        rtlu_t = self.remaining_life_units_t[tool_type]
-        rtlu_next = self.remaining_life_units_next[tool_type]
-        rtlu_next_t = self.remaining_life_units_next_t[tool_type]
-        if rtlu_next_t == rtlu_t:
-            return rtlu / tool_type.total_life_units * 0.4
-        return (
-            rtlu + (rtlu_next - rtlu) * (t - rtlu_t) / (rtlu_next_t - rtlu_t)
-        ) / tool_type.total_life_units * 0.4
+        # Führt die Funktion mit den übergebenen Werten aus.
+        def tool_life_bar_length(animation_time: float):
+            rtlu = self.remaining_life_units[tool_type]
+            rtlu_t = self.remaining_life_units_t[tool_type]
+            rtlu_next = self.remaining_life_units_next[tool_type]
+            rtlu_next_t = self.remaining_life_units_next_t[tool_type]
+            if rtlu_next_t == rtlu_t:
+                return rtlu / tool_type.total_life_units * 0.4
+            return (
+                rtlu
+                + (rtlu_next - rtlu)
+                * (animation_time - rtlu_t)
+                / (rtlu_next_t - rtlu_t)
+            ) / tool_type.total_life_units * 0.4
 
-    def c_func(self, tool_type: ToolType):
-        rtlu_t = self.remaining_life_units_t[tool_type]
-        rtlu_next_t = self.remaining_life_units_next_t[tool_type]
-        if tool_type == self.tool_type:
-            if rtlu_t == rtlu_next_t:
-                if self.state.get() == "unmounting":
-                    return "orange"
-                if self.state.get() == "mounting":
-                    return "yellow"
-                return "green"
-            return "red"
-        return "gray"
+        return tool_life_bar_length
+    # Erstellt das angeforderte Modell, Objekt oder Ergebnis.
+    def create_tool_life_bar_color_function(self, tool_type: ToolType):
+        """Create the time-compatible bar-color function required by Salabim."""
 
-    def _job_matches(self, job: SimOrderJob, job_key: JobKey) -> bool:
-        return (
-            job.scenario.name == job_key.scenario_name
-            and job.order.name == job_key.order_name
-            and job.number == job_key.job_number
-        )
+        # Führt die Funktion mit den übergebenen Werten aus.
+        def tool_life_bar_color(animation_time: float):
+            if tool_type != self.tool_type:
+                return "gray"
+            if self.state.get() == "unmounting":
+                return "orange"
+            if self.state.get() == "mounting":
+                return "yellow"
+            if self.state.get() == "working":
+                return "red"
+            return "green"
 
-    def _take_job_from_input_store(self, job_key: JobKey) -> SimOrderJob:
-        for queued_job in self.store_in:
-            if self._job_matches(queued_job, job_key):
-                self.store_in.remove(queued_job)
-                return queued_job
-        raise ValueError(
-            f"Machine {self.machine.name} could not find selected job "
-            f"{job_key.order_name}/{job_key.job_number} in input queue"
-        )
+        return tool_life_bar_color
 
+    # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
         if self.controller is None:
             raise RuntimeError("SimMachine requires a controller for dispatched commands")
 
         while True:
-            cmd_component = yield self.from_store(self.cmd_store)
-            cmd = cmd_component.payload
-            if not isinstance(cmd, MachineCommand):
-                raise ValueError(f"Unsupported machine command payload: {type(cmd).__name__}")
+            if self.store_out.available_quantity() <= 0:
+                self.state.set("blocked")
+            else:
+                self.state.set("waiting")
+            yield self.bridge.request_action(self)
+            action = yield self.bridge.action(self)
 
-            self.cmd_active = True
-            try:
-                job = self._take_job_from_input_store(cmd.job_key)
-                job.mark_queue_exit()
+            if action.action_type == "pick_machine_job":
+                yield from self.execute_pick_action(action)
+            elif action.action_type == "process_machine_job":
+                yield from self.execute_process_action(action)
+            elif action.action_type == "wait_machine":
+                yield self.hold(1.0)
 
-                next_machine = job.machine_sequence[0]
-                if next_machine.name != cmd.expected_machine_name or self.machine.name != cmd.expected_machine_name:
-                    raise ValueError(
-                        f"Machine command mismatch: expected {cmd.expected_machine_name}, got {self.machine.name}"
-                    )
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def execute_pick_action(self, action):
+        target_store = action.payload["target_store"]
+        selected_job = action.payload["selected_job"]
+        current_items = target_store.as_list()
+        if selected_job not in current_items:
+            return None
 
-                current_operation = job.operation_sequence[0]
-                tool_type = self.tool_type_by_name[cmd.tool_name]
-                job.machine_sequence.pop(0)
-                job.operation_sequence.pop(0)
+        # Prüft die angegebene Bedingung.
+        def is_selected_job(item):
+            if item is selected_job:
+                return True
+            return False
 
-                if len(cmd.tool_actions) > 0:
-                    self.tool_change_count += 1
-                for tool_action in cmd.tool_actions:
-                    self.state.set(tool_action.state)
-                    self.tool_change_time += tool_action.duration
-                    if tool_action.mount_tool_name is not None:
-                        self.tool_type = self.tool_type_by_name[tool_action.mount_tool_name]
-                    yield self.hold(tool_action.duration)
+        job = yield self.from_store(
+            target_store,
+            filter=is_selected_job,
+        )
+        job.location = f"{self.machine.name}:loaded"
+        job.queue_priority = action.payload["queue_priority"]
+        self.current_job = job
 
-                self.state.set("working")
-                self.remaining_life_units[tool_type] = cmd.remaining_life_units_before
-                self.remaining_life_units_t[tool_type] = self.env.now()
-                self.remaining_life_units_next[tool_type] = cmd.remaining_life_units_after
-                self.remaining_life_units_next_t[tool_type] = self.env.now() + cmd.duration
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def execute_process_action(self, action):
+        job = self.current_job
+        if not self._startup_delay_applied and self.startup_delay > 0:
+            self.state.set("waiting")
+            yield self.hold(self.startup_delay)
+            self._startup_delay_applied = True
+        operation = action.payload["operation"]
+        tool_type = action.payload["tool_type"]
 
-                yield self.hold(cmd.duration)
+        total_life_units = action.payload["total_life_units"]
 
-                if self.rng.random() < current_operation.defect_probability:
-                    job.current_product_type = current_operation.produces_product_type
-                    job.mark_defective(cmd.produced_product_name, current_operation.name)
-                else:
-                    job.current_product_type = current_operation.produces_product_type
-                    job.state.set(cmd.produced_product_name)
-                    job.clear_route()
+        consumed_life_units = action.payload["consumed_life_units"]
 
-                self.remaining_life_units[tool_type] = cmd.remaining_life_units_after
-                self.remaining_life_units_t[tool_type] = self.env.now()
-                self.remaining_life_units_next[tool_type] = cmd.remaining_life_units_after
-                self.remaining_life_units_next_t[tool_type] = self.env.now()
+        remaining_life_units_before_operation = action.payload[
+            "remaining_life_units_before_operation"
+        ]
+        self.processing_speed_factor = self.machine.processing_speed_factor
 
-                job.mark_queue_entry()
-                yield self.to_store(self.store_out, job)
-                self.state.set("returning")
-            finally:
-                self.cmd_active = False
+        tool_setup_action = action.payload["tool_setup_action"]
+        if tool_setup_action == "unmount_dummy_tool_and_mount_tool":
+            self.state.set("unmounting")
+            yield self.hold(self.machine.dummy_tool_unmount_time)
+            self.dummy_tool_mounted = False
 
+        if tool_setup_action in ["unmount_and_mount_tool", "replace_tool_same_type"] and self.tool_type is not None:
+            self.state.set("unmounting")
+            yield self.hold(self.tool_type.unmount_time)
+
+        if tool_setup_action in ["unmount_dummy_tool_and_mount_tool", "unmount_and_mount_tool", "replace_tool_same_type"]:
+            self.state.set("mounting")
+            self.tool_type = tool_type
+            yield self.hold(self.tool_type.mount_time)
+            if remaining_life_units_before_operation < consumed_life_units:
+                remaining_life_units_before_operation = total_life_units
+
+        product = job.order.product_type
+        volume = product.length * product.width * product.depth
+        weight_ratio = float(product.weight) / self.max_product_weight
+        volume_ratio = float(volume) / self.max_product_volume
+        size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
+        duration = operation.duration * size_factor / self.processing_speed_factor
+        duration *= self.processing_variation
+
+        self.remaining_life_units[tool_type] = remaining_life_units_before_operation
+        self.remaining_life_units_t[tool_type] = self.env.now()
+        self.remaining_life_units_next[tool_type] = (
+            remaining_life_units_before_operation - consumed_life_units
+        )
+        self.remaining_life_units_next_t[tool_type] = self.env.now() + duration
+
+        self.state.set("working")
+        yield self.hold(duration)
+
+        self.state.set("returning")
+
+        defekt_schwergrad = None
+
+        quality_key = (
+            f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
+            f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+        ).encode("utf-8")
+
+        quality_rng = random.Random(
+            int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
+        )
+
+        if quality_rng.random() < operation.defect_probability:
+         
+            defekt_schwergrad = quality_rng.random()
+
+        if defekt_schwergrad is not None and defekt_schwergrad >= 0.001:
+            job.mark_defective(
+                operation=operation,
+                machine=self.machine,
+                product_state_before=operation.consumes_product_type.name,
+                product_state_target=operation.produces_product_type.name,
+                defekt_schwergrad=defekt_schwergrad,
+            )
+        else:
+            job.bearbeitungs_state.set(operation.produces_product_type.name)
+            job.general_state.set("intakt")
+            if job.defect_recovery_strategy in {
+                "nacharbeiten_auf_defektmaschine",
+                "nacharbeiten_auf_alternativer_maschine",
+            }:
+                job.defect_recovery_strategy = None
+
+        # Die Recovery-Strategie ist nach dieser Bearbeitung abgeschlossen.
+        if job.recovery_in_progress:
+            job.recovery_in_progress = False
+
+        job.selected_operation = None
+        job.selected_machine = None
+
+        self.remaining_life_units[tool_type] = (
+            remaining_life_units_before_operation - consumed_life_units
+        )
+        self.remaining_life_units_t[tool_type] = self.env.now()
+        self.remaining_life_units_next[tool_type] = (
+            remaining_life_units_before_operation - consumed_life_units
+        )
+        self.remaining_life_units_next_t[tool_type] = self.env.now()
+
+        yield self.to_store(action.payload["target_store"], job, priority=job.queue_priority)
+        job.location = action.payload["target_store"].name()
+        yield self.bridge.notify_state_change(self)
+
+        self.current_job = None
+
+    # Führt die Funktion mit den übergebenen Werten aus.
     def utilization(self):
         waiting = self.state.value.value_duration("waiting")
         mounting = self.state.value.value_duration("mounting")
@@ -173,10 +290,16 @@ class SimMachine(sim.Component):
         total = waiting + mounting + unmounting + working + returning
         if total > 0:
             return working / total
-        return 1
-
+        else:
+            return 1
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
     def printStatistics(self):
-        print(f"       - {self.machine.name} (utilization = {'{:.1f}'.format(self.utilization() * 100)}%)")
+        pass
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
+    def plot(self, legend = False):
+        categories = ['Waiting', 'Mounting', 'Unmounting', 'Working', 'Returning']
 
     def plot(self, legend=False):
         categories = ["Waiting", "Mounting", "Unmounting", "Working", "Returning"]
@@ -194,9 +317,34 @@ class SimMachine(sim.Component):
             plt.bar(i * bar_width, values[i], width=bar_width, label=categories[i])
 
         plt.xticks([])
-        plt.xlabel("Machine State")
-        plt.ylabel("State Duration")
+
+        plt.xlabel('Machine State')
+        plt.ylabel('State Duration')
         plt.title(self.machine.name)
 
         if legend:
             plt.legend()
+
+
+class SimMachineShutdown(sim.Component):
+    """Run the end-of-simulation dummy-tool setup for one SimMachine."""
+
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(self, machine: SimMachine, *args, **kwargs):
+        self.machine = machine
+        super().__init__(*args, **kwargs)
+
+    # Führt den Prozess dieser Simulationskomponente aus.
+    def process(self):
+        if self.machine.dummy_tool_mounted:
+            return
+
+        if self.machine.tool_type is not None:
+            self.machine.state.set("unmounting")
+            yield self.hold(self.machine.tool_type.unmount_time)
+            self.machine.tool_type = None
+
+        self.machine.state.set("mounting")
+        yield self.hold(self.machine.machine.dummy_tool_mount_time)
+        self.machine.dummy_tool_mounted = True
+        self.machine.state.set("waiting")

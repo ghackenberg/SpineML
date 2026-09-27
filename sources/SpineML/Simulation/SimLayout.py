@@ -2,120 +2,89 @@ import salabim as sim
 import matplotlib.pyplot as plt
 
 from ..Configuration import Layout, Scenario
+from ..Control import SimulationBridge
 
 from .SimCorridor import SimCorridor
 from .SimRobotMain import SimRobotMain
 
 
 class SimLayout(sim.Component):
-    def __init__(self, layout: Layout, scenario: Scenario, controller=None, *args, **kwargs):
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(self, layout: Layout, scenario: Scenario, bridge: SimulationBridge, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.layout = layout
         self.controller = controller
 
-        # Grid for visualization
+        self.max_product_weight = 1.0
+        self.max_product_volume = 1.0
+        for order in scenario.orders:
+            product = order.product_type
+            product_volume = product.length * product.width * product.depth
+            self.max_product_weight = max(
+                self.max_product_weight,
+                float(product.weight),
+            )
+            self.max_product_volume = max(
+                self.max_product_volume,
+                float(product_volume),
+            )
+
         sim.Animate3dGrid(x_range=range(-20, 20), y_range=range(-20, 20))
 
-        # Start and end storage boxes
         y = 2 + len(layout.corridors) / 1.15
-        # ... start
-        self.store_start = sim.Store("start", capacity=layout.storage_capacity, env=self.env)
+        self.store_start = sim.Store("start", env=self.env, capacity=layout.storage_capacity)
         sim.Animate3dBox(x_len=3, y_len=1, z_len=1, color="yellow", x=0, y=y, z=0.5)
-        # ... end
-        self.store_end = sim.Store("end", capacity=layout.storage_capacity, env=self.env)
+        self.store_end = sim.Store("end", env=self.env, capacity=layout.storage_capacity)
         sim.Animate3dBox(x_len=3, y_len=1, z_len=1, color="yellow", x=0, y=-y, z=0.5)
 
-        # Start and end vertical boxes /Erstellung
         sim.Animate3dBox(x_len=0.25, y_len=0.25, z_len=1.5, color="red", x=0, y=y, z=1.625)
         sim.Animate3dBox(x_len=0.25, y_len=0.25, z_len=1.5, color="red", x=0, y=-y, z=1.625)
 
-        # Main horizontal box/ Erstellung
-        sim.Animate3dBox(x_len=0.25, y_len=y * 2 + 0.25, z_len=0.25, color="red", x=0, y=0, z=2.5)
+        sim.Animate3dBox(x_len=0.25, y_len=y*2+0.25, z_len=0.25, color="red", x=0, y=0, z=2.5)
 
-        # Corridors
         self.sim_corridors: list[SimCorridor] = []
         corridor_num = 0
         for corridor in layout.corridors:
             y = (corridor_num + 0.5 - len(layout.corridors) / 2) * 2
-            self.sim_corridors.append(SimCorridor(corridor, y, controller=self.controller, env=self.env))
+            self.sim_corridors.append(
+                SimCorridor(
+                    corridor,
+                    bridge,
+                    y,
+                    max_product_weight=self.max_product_weight,
+                    max_product_volume=self.max_product_volume,
+                    env=self.env,
+                )
+            )
             corridor_num = corridor_num + 1
 
-        # Main robot
-        self.sim_main_robot = SimRobotMain(
-            layout,
-            scenario,
-            self.store_start,
-            self.store_end,
-            self.sim_corridors,
-            0,
-            2.5,
-            controller=self.controller,
-            env=self.env,
-        )
-
-        sim.AnimateText(text=lambda: f"layout start queue: {self.store_start.length()}", x=20, y=70, text_anchor="nw", font="narrow", fontsize=12)
-        sim.AnimateText(text=lambda: f"layout end queue: {self.store_end.length()}", x=20, y=92, text_anchor="nw", font="narrow", fontsize=12)
-
-
-    def _corridor_queues_text(self) -> str:
-        if len(self.sim_corridors) == 0:
-            return "corridor queues: none"
-
-        total_main = 0
-        total_left = 0
-        total_right = 0
-        parts = []
-
-        for sc in self.sim_corridors:
-            main_len = sc.store_main.length()
-            left_len = sc.store_left.length()
-            right_len = sc.store_right.length()
-
-            total_main += main_len
-            total_left += left_len
-            total_right += right_len
-
-            parts.append(f"{sc.corridor.name}(m/l/r={main_len}/{left_len}/{right_len})")
-
-        return (
-            f"corridor queues main/left/right total={total_main}/{total_left}/{total_right}: "
-            + ", ".join(parts)
-        )
-
-    def _machine_store_queues_text(self) -> str:
-        sim_machines = []
-        for sc in self.sim_corridors:
-            sim_machines.extend(sc.sim_arm_left.sim_machines)
-            sim_machines.extend(sc.sim_arm_right.sim_machines)
-
-        if len(sim_machines) == 0:
-            return "machine stores in/out: none"
-
-        total_in = sum(sm.store_in.length() for sm in sim_machines)
-        total_out = sum(sm.store_out.length() for sm in sim_machines)
-        parts = [
-            f"{sm.machine.name}(in/out={sm.store_in.length()}/{sm.store_out.length()})"
-            for sm in sim_machines
-        ]
-
-        return (
-            f"machine stores in/out total={total_in}/{total_out}: "
-            + ", ".join(parts)
-        )
-
+        self.sim_main_robot = SimRobotMain(layout, scenario, self.store_start, self.store_end, self.sim_corridors, bridge, 0, 2.5, env=self.env)
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
     def robotCount(self):
         cnt = 1
         for sim_corridor in self.sim_corridors:
             cnt = cnt + sim_corridor.robotCount()
         return cnt
-
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
     def machineCount(self):
         cnt = 0
         for sim_corridor in self.sim_corridors:
             cnt = cnt + sim_corridor.machineCount()
         return cnt
 
+    # Führt die Funktion mit den übergebenen Werten aus.
+    def simMachines(self):
+        """Return all runtime SimMachine components in this layout."""
+        machines = []
+        for sim_corridor in self.sim_corridors:
+            machines.extend(sim_corridor.sim_arm_left.sim_machines)
+            machines.extend(sim_corridor.sim_arm_right.sim_machines)
+        return machines
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
     def robotUtilization(self):
         cnt = self.robotCount()
         utl = self.sim_main_robot.utilization() / cnt
@@ -124,6 +93,7 @@ class SimLayout(sim.Component):
                 utl = utl + sim_corridor.robotUtilization() * sim_corridor.robotCount() / cnt
         return utl
 
+    # Führt die Funktion mit den übergebenen Werten aus.
     def machineUtilization(self):
         cnt = self.machineCount()
         if cnt > 0:
@@ -135,19 +105,22 @@ class SimLayout(sim.Component):
         else:
             return 1
 
+    # Führt die Funktion mit den übergebenen Werten aus.
     def printStatistics(self):
-        print(f"{self.layout.name}:")
+        print(
+            f"{self.layout.name}: Anfangslager={self.store_start.count()} Jobs, "
+            f"Endlager={self.store_end.count()} Jobs"
+        )
         self.sim_main_robot.printStatistics()
         for sim_corridor in self.sim_corridors:
             sim_corridor.printStatistics()
-
+    
+    # Führt die Funktion mit den übergebenen Werten aus.
     def plot(self):
         plt.figure(self.layout.name)
 
-        # Draw chart
         bar_width = 0.15
-
-        # Main robot subplot
+        
         plt.subplot(2, 3, (1, 4))
         col = 1
         plt.bar(col * bar_width, self.sim_main_robot.utilization() * 100, width=bar_width, label='Main robot')
@@ -158,7 +131,6 @@ class SimLayout(sim.Component):
         plt.title('Main robot utilization')
         plt.legend()
 
-        # Corridor robot submit
         plt.subplot(2, 3, (2, 3))
         col = 1
         for sim_corridor in self.sim_corridors:
@@ -170,7 +142,6 @@ class SimLayout(sim.Component):
         plt.title('Corridor robot utilization')
         plt.legend()
 
-        # Machines subplot
         plt.subplot(2, 3, (5, 6))
         col = 1
         for sim_corridor in self.sim_corridors:
@@ -184,7 +155,8 @@ class SimLayout(sim.Component):
 
         plt.show()
 
-    def plotFull(self, legend=False):
+    # Führt die Funktion mit den übergebenen Werten aus.
+    def plotFull(self, legend = False):
         plt.figure('Layout')
 
         rows = len(self.sim_corridors) + 1
@@ -205,33 +177,25 @@ class SimLayout(sim.Component):
         else:
             columns = 1
 
-        # Main robot
         plt.subplot(rows, columns, 1)
         self.sim_main_robot.plot(legend)
 
-        # Corridors
         row = 1
         for sim_corridor in self.sim_corridors:
-            # Left arm
             col = 1
             if len(sim_corridor.sim_arm_left.sim_machines) > 0:
-                # Robot
                 plt.subplot(rows, columns, row * columns + col)
                 sim_corridor.sim_arm_left.sim_arm_robot.plot(legend)
                 col = col + 1
-                # Machines
                 for sim_machine in sim_corridor.sim_arm_left.sim_machines:
                     plt.subplot(rows, columns, row * columns + col)
                     sim_machine.plot(legend)
                     col = col + 1
-            # Right arm
             col = 1 if left == 0 else left + 2
             if len(sim_corridor.sim_arm_right.sim_machines) > 0:
-                # Robot
                 plt.subplot(rows, columns, row * columns + col)
                 sim_corridor.sim_arm_right.sim_arm_robot.plot(legend)
                 col = col + 1
-                # Machines
                 for sim_machine in sim_corridor.sim_arm_right.sim_machines:
                     plt.subplot(rows, columns, row * columns + col)
                     sim_machine.plot(legend)
@@ -239,12 +203,4 @@ class SimLayout(sim.Component):
             row = row + 1
 
         plt.show()
-
-
-
-
-
-
-
-
 

@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import salabim as sim
-
-from ..Configuration import Layout, Order, ProductType, Scenario
-from ..controller.types import JobKey, JobPlanningRequest
-from ..util import toString
+from ..Configuration import Layout, Scenario, Order, Machine, OperationType
+from ..Control import SimulationBridge
 
 if TYPE_CHECKING:
     from ..controller.simulation_bridge import SimulationBridge
@@ -14,18 +12,15 @@ if TYPE_CHECKING:
 
 
 class SimOrderJob(sim.Component):
-    def __init__(
-        self,
-        layout: Layout,
-        scenario: Scenario,
-        order: Order,
-        number: int,
-        store_start: sim.Store,
-        sim_order: Optional[SimOrder] = None,
-        controller: Optional[SimulationBridge] = None,
-        *args,
-        **kwargs,
-    ):
+    DEFECT_STRATEGY_ACTION_TYPES = {
+        "job_nacharbeiten_auf_defektmaschine",
+        "job_nacharbeiten_auf_alternativer_maschine",
+        "produkt_herabstufen",
+        "job_ausschuss",
+    }
+
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(self, layout: Layout, scenario: Scenario, order: Order, number: int, store_start: sim.Store, bridge: SimulationBridge, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.layout = layout
@@ -33,143 +28,161 @@ class SimOrderJob(sim.Component):
         self.order = order
         self.number = number
         self.store_start = store_start
-        self.sim_order = sim_order
-        self.controller = controller
+        self.bridge = bridge
 
-        if self.controller is None:
-            raise ValueError("Controller is required for SimOrderJob planning")
-
-        self.operation_sequence: list = []
-        self.machine_sequence: list = []
-        self.current_product_type: ProductType = self._infer_initial_product_type()
-        self.current_queue_entry_time = self.env.now()
-        self.queue_wait_active = False
-        self.total_queue_wait_time = 0.0
-        self.queue_wait_events = 0
-        self.max_queue_wait_time = 0.0
-        self.completion_time: float | None = None
-        self.is_defective = False
-        self.defect_time: float | None = None
-        self.defect_operation_name: str | None = None
-        self.released = sim_order is None
-
-        value = self.current_product_type.name
-        self.state = sim.State("State", value=value, env=self.env)
-
-    def _planning_request(self, *, current_product_type: ProductType | None) -> JobPlanningRequest:
-        return JobPlanningRequest(
-            job_key=JobKey(
-                scenario_name=self.scenario.name,
-                order_name=self.order.name,
-                job_number=self.number,
-            ),
-            layout=self.layout,
-            order=self.order,
-            current_product_type=current_product_type,
+        self.bridge.register(
+            f"{self.order.name}:{self.number}",
+            self,
         )
 
-    def _infer_initial_product_type(self) -> ProductType:
-        candidates = self.controller.plan_job_candidates(
-            self._planning_request(current_product_type=None),
-        )
-        initial_products = {
-            route.operation_sequence[0].consumes_product_type
-            for route in candidates
-            if len(route.operation_sequence) > 0
-        }
-        if len(initial_products) == 0:
-            return self.order.product_type
-        if len(initial_products) > 1:
-            product_names = ", ".join(sorted(product_type.name for product_type in initial_products))
-            raise ValueError(
-                f"Job {self.order.name}/{self.number} has multiple possible initial products: {product_names}"
-            )
-        return next(iter(initial_products))
 
-    def apply_route(
-        self,
-        operation_sequence: list,
-        machine_sequence: list,
-        *,
-        allow_initial_reset: bool = False,
-    ) -> None:
-        self.operation_sequence = list(operation_sequence)
-        self.machine_sequence = list(machine_sequence)
+        self.released = False  
+        self.queue_priority = 0.0  
+        self.completed_time = None  
+        self.process_finished = False  
+        self.location = "start_storage"
+        self.selected_operation: OperationType | None = None  
+        self.selected_machine: Machine | None = None  
+        self.bearbeitungs_state = sim.State("Bearbeitungszustand", value="unconfigured", env=self.env)  
+        self.general_state = sim.State("General state", value="intakt", env=self.env)  
+        self.due_state = sim.State("Due", value=None, env=self.env)  
 
-        if len(self.operation_sequence) == 0:
-            return
+        self.downgraded = False  
+        self.downgrade_product_type = None  
 
-        first_input_product = self.operation_sequence[0].consumes_product_type
-        if first_input_product != self.current_product_type and not (
-            allow_initial_reset and self.current_product_type == self.order.product_type
-        ):
-            raise ValueError(
-                f"Applied route for job {self.order.name}/{self.number} does not match current product "
-                f"{self.current_product_type.name}; got {first_input_product.name}"
-            )
-        self.current_product_type = first_input_product
+        self.defect_detected_time = None  
+        self.defect_operation: OperationType | None = None  
+        self.defect_machine: Machine | None = None  
+        self.defect_product_state_before = None  
+        self.defect_product_state_target = None  
+        self.defekt_schwergrad = None  
+        self.defect_recovery_strategy = None  
+        # Bleibt während des Recovery-Transports und der Recovery-Bearbeitung aktiv.
+        self.recovery_in_progress = False
+        self.defect_count = 0
+        self.nacharbeit_count = 0
+        self.ausschuss_count = 0
 
-    def replan_route(self, *, initial: bool = False) -> None:
-        plan_request = self._planning_request(
-            current_product_type=None if initial else self.current_product_type,
-        )
-        plan = self.controller.plan_job(plan_request)
-        self.apply_route(
-            plan.operation_sequence,
-            plan.machine_sequence,
-            allow_initial_reset=initial,
-        )
-
-    def clear_route(self) -> None:
-        self.operation_sequence.clear()
-        self.machine_sequence.clear()
-
-    def mark_queue_entry(self) -> None:
-        self.current_queue_entry_time = self.env.now()
-        self.queue_wait_active = True
-
-    def mark_queue_exit(self) -> None:
-        if not self.queue_wait_active:
-            return
-        wait_time = max(0.0, self.env.now() - self.current_queue_entry_time)
-        self.total_queue_wait_time += wait_time
-        self.queue_wait_events += 1
-        if wait_time > self.max_queue_wait_time:
-            self.max_queue_wait_time = wait_time
-        self.queue_wait_active = False
-
-    def mark_completed(self) -> None:
-        if self.completion_time is not None:
-            return
-        self.queue_wait_active = False
-        self.completion_time = self.env.now()
-
-    def mark_defective(self, defective_product_name: str, operation_name: str) -> None:
-        self.is_defective = True
-        if self.defect_time is None:
-            self.defect_time = self.env.now()
-        self.defect_operation_name = operation_name
-        self.state.set(f"{defective_product_name} defective")
-        self.operation_sequence.clear()
-        self.machine_sequence.clear()
-
-    def release(self) -> None:
-        self.released = True
-        self.activate()
-
+    # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
-        while not self.released:
-            yield self.passivate()
-        self.mark_queue_entry()
-        yield self.to_store(self.store_start, self)
+       
+        while True:
+            yield self.bridge.request_action(self)
+            action = yield self.bridge.action(self)
 
+            if "selected_operation" in action.payload:
+                self.selected_operation = action.payload["selected_operation"]
+
+            if "selected_machine" in action.payload:
+                self.selected_machine = action.payload["selected_machine"]
+
+            if "bearbeitungs_state" in action.payload:
+                self.bearbeitungs_state.set(action.payload["bearbeitungs_state"])
+
+            if "general_state" in action.payload:
+                self.general_state.set(action.payload["general_state"])
+
+            if "due_state" in action.payload:
+                self.due_state.set(action.payload["due_state"])
+
+            if "released" in action.payload:
+                self.released = action.payload["released"]
+
+            if "downgraded" in action.payload:
+                self.downgraded = action.payload["downgraded"]
+
+            if "downgrade_product_type" in action.payload:
+                self.downgrade_product_type = action.payload["downgrade_product_type"]
+
+            if "queue_priority" in action.payload:
+                self.queue_priority = action.payload["queue_priority"]
+
+            if "completed_time" in action.payload:
+                self.completed_time = action.payload["completed_time"]
+
+            if "defect_detected_time" in action.payload:
+                self.defect_detected_time = action.payload["defect_detected_time"]
+
+            if "defect_operation" in action.payload:
+                self.defect_operation = action.payload["defect_operation"]
+
+            if "defect_machine" in action.payload:
+                self.defect_machine = action.payload["defect_machine"]
+
+            if "defect_product_state_before" in action.payload:
+                self.defect_product_state_before = action.payload["defect_product_state_before"]
+
+            if "defect_product_state_target" in action.payload:
+                self.defect_product_state_target = action.payload["defect_product_state_target"]
+
+            if "defekt_schwergrad" in action.payload:
+                self.defekt_schwergrad = action.payload["defekt_schwergrad"]
+
+            if "defect_recovery_strategy" in action.payload:
+                self.defect_recovery_strategy = action.payload["defect_recovery_strategy"]
+
+            if "release_time" in action.payload:
+                release_time = action.payload["release_time"]
+                if release_time > self.env.now():
+                    yield self.hold(release_time - self.env.now())
+
+            target_store = action.payload.get("target_store")
+            if target_store is not None:
+                yield self.to_store(target_store, self, priority=self.queue_priority)
+                self.location = target_store.name()
+                yield self.bridge.notify_state_change(self)
+
+            if action.action_type == "release_job":
+                yield self.bridge.notify_state_change(self)
+              
+                yield self.hold(1.0)
+                continue
+
+            if action.action_type == "wait_job":
+                yield self.hold(1.0)
+                continue
+
+            if action.action_type in self.DEFECT_STRATEGY_ACTION_TYPES:
+                if action.action_type in {
+                    "job_nacharbeiten_auf_defektmaschine",
+                    "job_nacharbeiten_auf_alternativer_maschine",
+                }:
+                    self.nacharbeit_count += 1
+                    # Nacharbeitsstrategie ist gewählt; die Recovery ist noch nicht abgeschlossen.
+                    self.recovery_in_progress = True
+                elif action.action_type == "job_ausschuss":
+                    self.ausschuss_count += 1
+                yield self.bridge.notify_state_change(self)
+                yield self.hold(1.0)
+                continue
+
+            if action.payload.get("finish_process", False):
+                self.process_finished = True
+                break
+
+    # Setzt oder aktualisiert den angegebenen Zustand.
+    def mark_finished(self):
+        self.completed_time = self.env.now()
+
+    # Setzt oder aktualisiert den angegebenen Zustand.
+    def mark_defective(
+        self,
+        operation: OperationType | None = None,
+        machine: Machine | None = None,
+        product_state_before: str | None = None,
+        product_state_target: str | None = None,
+        defekt_schwergrad: float | None = None,
+    ):
+        self.defect_count += 1
+        self.general_state.set("defect")
+        self.defect_detected_time = self.env.now()
+        self.defect_operation = operation
+        self.defect_machine = machine
+        self.defect_product_state_before = product_state_before
+        self.defect_product_state_target = product_state_target
+        self.defekt_schwergrad = defekt_schwergrad
+        self.defect_recovery_strategy = None
+
+    # Führt die Funktion mit den übergebenen Werten aus.
     def printStatistics(self):
-        output = toString(self.state)
-        completion_output = "not completed" if self.completion_time is None else f"{self.completion_time:.3f}"
-        if self.is_defective:
-            defect_output = (
-                f", defective_at={self.defect_time:.3f}, defect_operation={self.defect_operation_name}"
-            )
-        else:
-            defect_output = ""
-        print(f"    - Job {self.number} ({output}, completion={completion_output}{defect_output})")
+        return None

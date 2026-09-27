@@ -3,186 +3,165 @@ from __future__ import annotations
 import salabim as sim
 
 from ..Configuration import Corridor, Machine
-from ..controller.types import ArmRobotCommand, JobKey
+from ..Control import SimulationBridge
+
+from .SimRobot import SimRobot
 from .SimMachine import SimMachine
 from .SimOrderJob import SimOrderJob
 from .SimRobot import SimRobot
 
 
 class SimRobotCorridorArm(SimRobot):
-    WEIGHT_SPEED_FACTOR = 0.05
-    MIN_LOADED_SPEED = 0.1
-
-    def __init__(
-        self,
-        corridor: Corridor,
-        machines: list[Machine],
-        direction: str,
-        store_in: sim.Store,
-        store_out_arm: sim.Store,
-        store_out_main: sim.Store,
-        sim_machines: list[SimMachine],
-        dx: float,
-        y: float,
-        controller=None,
-        speed: float = 1.0,
-        *args,
-        **kwargs,
-    ):
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(self, corridor: Corridor, machines: list[Machine], direction: str, store_in: sim.Store, store_out_arm: sim.Store, store_out_main: sim.Store, sim_machines: list[SimMachine], bridge: SimulationBridge, dx: float, y: float, *args, **kwargs):
         super().__init__(f"Arm {direction} robot", 2, dx, y, 2.5, "green", *args, **kwargs)
+        self.configured_movement_speed = 1.5
 
         self.corridor = corridor
         self.machines = machines
+        self.bridge = bridge
+
         self.direction = direction
 
         self.store_in = store_in
         self.store_out_arm = store_out_arm
         self.store_out_main = store_out_main
-
+        
+        
         self.dx = dx
         self.sim_machines = sim_machines
-        self.controller = controller
+        self.current_job: SimOrderJob | None = None
 
-        self.speed = speed
+        self.bridge.register(
+            f"CorridorArmRobot:{self.corridor.name}:{self.direction}",
+            self,
+        )
 
-        self.cmd_store = sim.Store(f"{self.label} cmd", env=self.env)
-        self.cmd_active = False
-
-    def _machine_x(self, machine_num: int) -> float:
+    # Berechnet die feste X-Position der Maschine im Corridor.
+    def compute_machine_x(self, machine_num: int) -> float:
         return (3 + machine_num * 2) * self.dx
 
-    def _sim_machine_by_num(self, machine_num: int) -> SimMachine:
-        try:
-            return self.sim_machines[machine_num]
-        except IndexError as exc:
-            raise ValueError(f"Unknown machine slot {machine_num} for arm robot") from exc
-
-    def _job_matches(self, job: SimOrderJob, job_key: JobKey) -> bool:
-        return (
-            job.scenario.name == job_key.scenario_name
-            and job.order.name == job_key.order_name
-            and job.number == job_key.job_number
-        )
-
-    def _take_job_from_store(self, store: sim.Store, job_key: JobKey) -> SimOrderJob:
-        for queued_job in store:
-            if self._job_matches(queued_job, job_key):
-                store.remove(queued_job)
-                return queued_job
-        raise ValueError(
-            f"Arm robot could not find selected job {job_key.order_name}/{job_key.job_number} in source queue"
-        )
-
-    def _loaded_speed(self, job: SimOrderJob) -> float:
-        return max(
-            self.MIN_LOADED_SPEED,
-            self.speed / (1 + job.current_product_type.weight * self.WEIGHT_SPEED_FACTOR),
-        )
-
-    def move_down_corridor_storage(self):
-        yield from self.move_z(1.25, self.speed)
-
-    def move_down_machine_storage(self):
-        yield from self.move_z(1.5, self.speed)
-
-    def move_up(self):
-        yield from self.move_z(2.5, self.speed)
-
-    def move_down_corridor_storage_loaded(self, loaded_speed: float):
-        yield from self.move_z(1.25, loaded_speed)
-
-    def move_down_machine_storage_loaded(self, loaded_speed: float):
-        yield from self.move_z(1.5, loaded_speed)
-
-    def move_up_loaded(self, loaded_speed: float):
-        yield from self.move_z(2.5, loaded_speed)
-
-    def move_to_machine_input_storage(self, machine_num: int):
-        x = self._machine_x(machine_num)
-        if self.x != x:
-            yield from self.move_x(x, self.speed)
-
-    def move_to_machine_output_storage(self, machine_num: int):
-        x = self._machine_x(machine_num)
-        if self.x != x:
-            yield from self.move_x(x, self.speed)
-
-    def move_to_corridor_storage(self):
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def move_to_corridor_storage_x(self, speed: float):
         if self.x != self.dx:
-            yield from self.move_x(self.dx, self.speed)
+            yield from self.move_x(self.dx, speed)
 
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def move_to_machine_storage(self, machine_num: int, speed: float):
+        x = self.compute_machine_x(machine_num)
+        if self.x != x:
+            yield from self.move_x(x, speed)
+
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def move_down_to_corridor_storage(self, speed: float):
+        yield from self.move_z(1.25, speed)
+
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def move_down_to_machine_storage(self, speed: float):
+        yield from self.move_z(1.5, speed)
+
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def move_up_from_storage(self, speed: float):
+        yield from self.move_z(2.5, speed)
+
+    # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
-        if self.controller is None:
-            raise RuntimeError("SimRobotCorridorArm requires a controller for dispatched commands")
-
         while True:
-            cmd_component = yield self.from_store(self.cmd_store)
-            cmd = cmd_component.payload
-            if not isinstance(cmd, ArmRobotCommand):
-                raise ValueError(f"Unsupported corridor arm command payload: {type(cmd).__name__}")
+            yield self.bridge.request_action(self)
+            action = yield self.bridge.action(self)
 
-            self.cmd_active = True
-            try:
-                if cmd.pick.kind == "store_in":
-                    yield from self.move_to_corridor_storage()
-                    yield from self.move_down_corridor_storage()
-                    source_store = self.store_in
-                    source_machine = None
-                    source_out_time = self.corridor.storage_out_time
-                elif cmd.pick.kind == "machine_out":
-                    source_machine = self._sim_machine_by_num(cmd.pick.machine_num)
-                    yield from self.move_to_machine_output_storage(cmd.pick.machine_num)
-                    yield from self.move_down_machine_storage()
-                    source_store = source_machine.store_out
-                    source_out_time = source_machine.machine.storage_out_time
-                else:
-                    raise ValueError(f"Unsupported arm robot pick action: {cmd.pick.kind}")
+            if action.action_type == "pick_corridor_arm_robot":
+                yield from self.execute_pick_action(action)
+            elif action.action_type == "place_corridor_arm_robot":
+                yield from self.execute_place_action(action)
+            elif action.action_type == "wait_corridor_arm_robot":
+                yield self.hold(1.0)
 
-                job = self._take_job_from_store(source_store, cmd.job_key)
-                job.mark_queue_exit()
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def execute_pick_action(self, action):
+        target_type = action.payload["target_type"]
+        target_store = action.payload["target_store"]
+        movement_speed = self.configured_movement_speed
+        if target_type == "sim_corridor_store_arm_input":
+            yield from self.move_to_corridor_storage_x(movement_speed)
+            job: SimOrderJob | None = yield from self.take_selected_job_from_store(action, target_store)
+            if job is None:
+                return
+            job.location = f"{self.label}:loaded"
+            job.queue_priority = action.payload["queue_priority"]
+            storage_out_time = action.payload.get("storage_out_time", 0)
+            if storage_out_time > 0:
+                yield self.hold(storage_out_time)
+            yield from self.move_down_to_corridor_storage(movement_speed)
+            self.current_job = job
+            self.state_load.set("loaded")
+            yield from self.move_up_from_storage(movement_speed)
+            return
 
-                if source_out_time > 0:
-                    yield self.hold(source_out_time)
-                loaded_speed = self._loaded_speed(job)
-                if cmd.place.kind == "machine_in":
-                    job.apply_route(
-                        list(cmd.place.route.operation_sequence),
-                        list(cmd.place.route.machine_sequence),
-                    )
+        if target_type == "machine_output_storage":
+            sim_machine = action.payload["sim_machine"]
+            machine_num = self.sim_machines.index(sim_machine)
+            yield from self.move_to_machine_storage(machine_num, movement_speed)
+            job: SimOrderJob | None = yield from self.take_selected_job_from_store(action, target_store)
+            if job is None:
+                return
+            job.queue_priority = action.payload["queue_priority"]
+            yield from self.move_down_to_machine_storage(movement_speed)
+            self.current_job = job
+            self.state_load.set("loaded")
+            sim_machine.state.set("waiting")
+            yield from self.move_up_from_storage(movement_speed)
+            return
 
-                self.state_load.set("loaded")
-                if source_machine is not None:
-                    source_machine.state.set("waiting")
-                yield from self.move_up_loaded(loaded_speed)
+        return
 
-                if cmd.place.kind == "machine_in":
-                    target_machine = self._sim_machine_by_num(cmd.place.machine_num)
-                    target_x = self._machine_x(cmd.place.machine_num)
-                    if self.x != target_x:
-                        yield from self.move_x(target_x, loaded_speed)
-                    yield from self.move_down_machine_storage_loaded(loaded_speed)
-                    target_store = target_machine.store_in
-                    target_in_time = target_machine.machine.storage_in_time
-                elif cmd.place.kind == "arm_out":
-                    if self.x != self.dx:
-                        yield from self.move_x(self.dx, loaded_speed)
-                    yield from self.move_down_corridor_storage_loaded(loaded_speed)
-                    target_store = self.store_out_arm
-                    target_in_time = self.corridor.storage_in_time
-                elif cmd.place.kind == "main_out":
-                    if self.x != self.dx:
-                        yield from self.move_x(self.dx, loaded_speed)
-                    yield from self.move_down_corridor_storage_loaded(loaded_speed)
-                    target_store = self.store_out_main
-                    target_in_time = self.corridor.storage_in_time
-                else:
-                    raise ValueError(f"Unsupported arm robot place action: {cmd.place.kind}")
+    # Führt die angeforderte Bewegung oder Aktion aus.
+    def execute_place_action(self, action):
+        if self.current_job is None:
+            return
 
-                job.mark_queue_entry()
-                yield self.to_store(target_store, job)
-                if target_in_time > 0:
-                    yield self.hold(target_in_time)
-                self.state_load.set("empty")
-                yield from self.move_up()
-            finally:
-                self.cmd_active = False
+        job = self.current_job
+        target_type = action.payload["target_type"]
+        target_store = action.payload["target_store"]
+        movement_speed = self.configured_movement_speed
+
+        if target_type == "machine_input_storage":
+            sim_machine = action.payload["sim_machine"]
+            machine_num = self.sim_machines.index(sim_machine)
+            if "selected_operation" in action.payload:
+                job.selected_operation = action.payload["selected_operation"]
+            if "selected_machine" in action.payload:
+                job.selected_machine = action.payload["selected_machine"]
+            yield from self.move_to_machine_storage(machine_num, movement_speed)
+            yield from self.move_down_to_machine_storage(movement_speed)
+            yield self.to_store(target_store, job, priority=job.queue_priority)
+            job.location = target_store.name()
+            yield self.bridge.notify_state_change(self)
+            self.current_job = None
+            self.state_load.set("empty")
+            yield from self.move_up_from_storage(movement_speed)
+            return
+
+        if target_type in ["sim_corridor_store_other_arm_input", "sim_corridor_store_main"]:
+            if "selected_operation" in action.payload:
+                job.selected_operation = action.payload["selected_operation"]
+            if "selected_machine" in action.payload:
+                job.selected_machine = action.payload["selected_machine"]
+            if target_type == "sim_corridor_store_main":
+                if self.x != 0.0:
+                    yield from self.move_x(0.0, movement_speed)
+            else:
+                yield from self.move_to_corridor_storage_x(movement_speed)
+            yield from self.move_down_to_corridor_storage(movement_speed)
+            storage_in_time = action.payload.get("storage_in_time", 0)
+            if storage_in_time > 0:
+                yield self.hold(storage_in_time)
+            yield self.to_store(target_store, job, priority=job.queue_priority)
+            job.location = target_store.name()
+            yield self.bridge.notify_state_change(self)
+            self.current_job = None
+            self.state_load.set("empty")
+            yield from self.move_up_from_storage(movement_speed)
+            return
+
+        return

@@ -1,10 +1,13 @@
-# Visualization support
-networkx
+# Plotting support for the built-in simulation statistics
 matplotlib
+streamlit
 
 # Simulation support
 salabim
 greenlet
+
+# Test support
+pytest
 
 # ... 3D animation support
 pyopengl

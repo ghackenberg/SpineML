@@ -4,26 +4,26 @@ class MachineType:
 
     from .ToolType import ToolType
 
-    def __init__(self, name: str) -> None:
+    # Initialisiert das Objekt mit seinen Eingabewerten.
+    def __init__(self, name: str) :
 
         from .OperationType import OperationType
         
         from ..Solution import Machine
 
-        # Remember properties
         self.name = name
 
-        # Remember relations
         self.machines: list[Machine] = []
         self.operations: list[OperationType] = []
 
-        # Remember instance
-        MACHINE_TYPES.append(self)  # append the machinetype (itself) in the global list
+        MACHINE_TYPES.append(self)  
 
+    # Führt die Funktion mit den übergebenen Werten aus.
     def __repr__(self) -> str:
 
         return f"{self.name}"
 
+    # Führt die Funktion mit den übergebenen Werten aus.
     def computeToolTypes(self) -> list[ToolType]:
 
         """Compute tool types for this machine type from operation types."""
@@ -37,3 +37,4 @@ class MachineType:
         return tool_types
     
 MACHINE_TYPES: list[MachineType] = []
+

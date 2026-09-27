@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SpineML"
+version = "0.1.0"
+description = "SpineML simulation package"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib",
+    "salabim",
+    "greenlet",
+    "pyopengl",
+    "pyopengl_accelerate",
+    "pywavefront",
+    "pyglet",
+    "opencv-python",
+    "numpy",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "sources"}
+
+[tool.setuptools.packages.find]
+where = ["sources"]

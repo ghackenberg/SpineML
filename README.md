@@ -62,6 +62,18 @@ Der Wert gehört zur Fabrikkonfiguration und wird in der `Machine` gespeichert.
 Die Erzeugung und Verwendung des effektiven Laufzeitfaktors erfolgt im
 Simulationskern `SimMachine`.
 
+Der Faktor beschreibt die relative Bearbeitungsgeschwindigkeit:
+
+- `processing_speed_factor = 1.0`: normale Bearbeitungsdauer
+- `processing_speed_factor > 1.0`: die Maschine arbeitet schneller und die
+  Operationsdauer wird kürzer
+- `processing_speed_factor < 1.0`: die Maschine arbeitet langsamer und die
+  Operationsdauer wird länger
+
+Vereinfacht wird die Operationsdauer durch diesen Faktor geteilt. Ein Faktor
+von `2.0` macht die Bearbeitung daher ungefähr doppelt so schnell, während ein
+Faktor von `0.5` die Bearbeitungszeit ungefähr verdoppelt.
+
 ## Schutzwerkzeugzeiten
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.

@@ -16,19 +16,17 @@ class SimLayout(sim.Component):
         self.layout = layout
         self.bridge = bridge
 
-        self.max_product_weight = 1.0
-        self.max_product_volume = 1.0
-        for order in scenario.orders:
-            product = order.product_type
-            product_volume = product.length * product.width * product.depth
-            self.max_product_weight = max(
-                self.max_product_weight,
-                float(product.weight),
-            )
-            self.max_product_volume = max(
-                self.max_product_volume,
-                float(product_volume),
-            )
+        products = [order.product_type for order in scenario.orders]
+        if not products:
+            raise ValueError("The scenario must contain at least one order.")
+
+        self.max_product_weight = max(
+            float(product.weight) for product in products
+        )
+        self.max_product_volume = max(
+            float(product.length * product.width * product.depth)
+            for product in products
+        )
 
         sim.Animate3dGrid(x_range=range(-20, 20), y_range=range(-20, 20))
 

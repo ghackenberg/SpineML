@@ -58,6 +58,9 @@ Eine Maschine enthält einen konfigurierten
 `processing_speed_factor`. Der Standardwert ist `1.0`; dieser Wert kann direkt
 bei der Maschine angegeben werden.
 
+Der `processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
+konkreten Maschine.
+
 Der Wert gehört zur Fabrikkonfiguration und wird in der `Machine` gespeichert.
 Die Erzeugung und Verwendung des effektiven Laufzeitfaktors erfolgt im
 Simulationskern `SimMachine`.

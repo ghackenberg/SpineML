@@ -82,27 +82,50 @@ Demontage.
 
 # Diskrete Simulation
 
-Die Laufzeitkomponenten führen die Aktionen der Steuerung aus. Die
-Simulationskomponenten planen keine Produktionsroute selbst. Sie melden ihren
-Zustand, fordern eine Aktion an und führen die zurückgegebene Aktion aus.
+Die folgenden Klassen waren bereits im ursprünglichen `main`-Stand vorhanden.
+Im Foroogh-Zweig wurde ihre Ausführung erweitert: Jobs, Maschinen und Roboter
+planen keine Route mehr selbst, sondern melden ihren Zustand an die
+`SimulationBridge`, erhalten eine Aktion von der Steuerung und führen genau
+diese Aktion aus.
 
-## Laufzeit-Stores und Kapazitäten
+## `SimLayout.py`
 
-Beim Erzeugen des Laufzeitlayouts werden die konfigurierten Kapazitäten an die
-Salabim-Stores weitergegeben:
+`SimLayout` baut aus einem konfigurierten `Layout` die Laufzeitumgebung auf.
+Dabei werden die Lagerkapazitäten der Konfiguration an die Salabim-Stores
+weitergegeben:
 
 - Start- und Endlager verwenden `layout.storage_capacity`.
-- Jeder Korridor erzeugt `store_main`, `store_left` und `store_right` mit
-  `corridor.storage_capacity`.
-- Jede Maschine erzeugt einen Eingangsstore mit
-  `machine.input_storage_capacity` und einen Ausgangsstore mit
-  `machine.output_storage_capacity`.
+- Jeder Korridor erhält drei Stores mit `corridor.storage_capacity`.
+- Das maximale Produktgewicht und -volumen werden aus den Aufträgen ermittelt
+  und an die Maschinen für die Laufzeitberechnung weitergegeben.
+- Der Main-Roboter, die Korridore und die Maschinen werden mit der
+  `SimulationBridge` verbunden.
 
-Die Ein- und Auslagerungszeiten werden bei den Roboteraktionen als
-Simulationszeit berücksichtigt. Vor beziehungsweise nach dem Ablegen oder
-Entnehmen wartet der zuständige Roboter die konfigurierte Zeit.
+## `SimCorridor.py` und `SimCorridorArm.py`
 
-## Laufzeitstatus eines Jobs
+`SimCorridor` erzeugt die drei Korridor-Stores und jeweils einen linken und
+rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
+`SimMachine`-Komponenten und den Korridorroboter. Beide Klassen registrieren
+die Laufzeitobjekte an der Bridge und übergeben die Produktgrößen an die
+Maschinen.
+
+Die Roboter berücksichtigen beim Ein- und Auslagern die konfigurierten
+Lagerzeiten. Ein- und Ausgangspuffer der Maschinen bleiben getrennte Stores.
+
+## `SimOrder.py` und `SimOrderJob.py`
+
+`SimOrder` erzeugt für die bestellte Menge die einzelnen `SimOrderJob`-
+Komponenten. Im ursprünglichen `main` wählte ein Job beim Erzeugen zufällig
+eine Operations- und Maschinenroute. Im Foroogh-Zweig übernimmt diese Auswahl
+die Steuerung über die Bridge. Der Job speichert nur die ausgewählten
+Operationen, Maschinen und seinen aktuellen Zustand.
+
+`SimOrderJob` reagiert unter anderem auf `release_job`, `wait_job`,
+`job_rework_on_defect_machine`, `job_rework_on_alternative_machine`,
+`downgrade_product`, `job_scrap` und `complete_job`. Dadurch können Freigabe,
+Nacharbeit, Herabstufung, Ausschuss und Abschluss von außen gesteuert werden.
+
+## Laufzeitstatus eines `SimOrderJob`
 
 Jeder `SimOrderJob` besitzt einen beobachtbaren Laufzeitstatus. Nicht alle
 Attribute werden von der Steuerung gesetzt: Einige entstehen direkt durch ein
@@ -155,24 +178,13 @@ stateDiagram-v2
     scrap --> [*]
 ```
 
-## Simulationsobjekte: Aktionen, Ausführung und Zustandsmeldungen
+## `SimRobot.py`, `SimRobotMain.py` und `SimRobotCorridorArm.py`
 
-### `SimOrderJob` (Job)
+`SimRobot` stellt die gemeinsame Bewegungslogik bereit. Er interpoliert die
+Positionen auf den X-, Y- und Z-Achsen, führt ausgewählte Jobs aus Stores ab
+und meldet Lade- und Bewegungszustände.
 
-- **Aktionen der Steuerung:** `release_job`, `wait_job`,
-  `job_rework_on_defect_machine`,
-  `job_rework_on_alternative_machine`, `downgrade_product`,
-  `job_scrap` und `complete_job`.
-- **Simulationskern:** Übernimmt die Payload-Werte, aktualisiert den Jobstatus
-  und legt sich bei `release_job` einmalig in den Startstore. Pick und Place
-  übernimmt danach ein Roboter; der Job wählt keine Route selbst.
-- **Seed/Reproduzierbarkeit:** Der Job verwendet keinen eigenen Zufall.
-  Qualitätszufälle entstehen erst bei `SimMachine`.
-- **Zustandsmeldung:** Meldet Änderungen an Freigabe, Produkt-/Qualitätsstatus,
-  Recovery und Abschluss über die Bridge; `finish_process=True` beendet den
-  Jobprozess.
-
-### `SimRobotMain` und `SimRobotCorridorArm` (Roboter)
+### `SimRobotMain.py` und `SimRobotCorridorArm.py`
 
 - **Aktionen der Steuerung:**
   - Main-Roboter: `pick_main_robot`, `place_main_robot`, `wait_main_robot`.
@@ -196,6 +208,9 @@ stateDiagram-v2
 - **Simulationskern:** Führt genau die ausgewählte Operation aus, berechnet
   ihre Dauer, führt Werkzeugwechsel und Lebensdauerverbrauch aus und prüft den
   Ausgangspuffer. Die Maschine wählt weder Job noch Operation selbst.
+- **Bearbeitungsdauer:** Die Dauer wird aus der Operationsdauer, der
+  Produktgröße, der Maschinengeschwindigkeit und einer kleinen
+  Laufzeitvariation berechnet.
 - **Seed/Reproduzierbarkeit:** Die Laufzeitvariation ist ein Zufallsfaktor für
   die Bearbeitungsdauer. Bei gleicher Konfiguration und gleichem Seed entsteht
   daher dieselbe Bearbeitungsdauer.
@@ -231,7 +246,13 @@ Am Ende des Simulationslaufs kann der optionale Abschlussprozess
 wieder das Schutzwerkzeug montieren. Dieser Prozess gehört nicht zur normalen
 Jobbearbeitung; damit endet die Maschine in einem definierten Werkzeugzustand.
 
-## Automatisches Simulationsende
+## `SimScenario.py` und `SimCompletionWatcher`
+
+`SimScenario` erzeugt die Laufzeitobjekte für alle Aufträge und verbindet sie
+mit der Bridge. Gegenüber dem ursprünglichen `main` enthält der Foroogh-Zweig
+zusätzlich den `SimCompletionWatcher`.
+
+### Automatisches Simulationsende
 
 `SimScenario` erstellt beim Aufbau des Szenarios den
 `SimCompletionWatcher`. Der Watcher ist eine Salabim-`sim.Component`; seine

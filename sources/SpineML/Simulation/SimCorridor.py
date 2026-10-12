@@ -14,8 +14,8 @@ class SimCorridor(sim.Component):
         bridge: SimulationBridge,
         y: float,
         *args,
-        max_product_weight: float = 1.0,
-        max_product_volume: float = 1.0,
+        max_product_weight: float,
+        max_product_volume: float,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)

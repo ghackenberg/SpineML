@@ -20,15 +20,16 @@ class SimMachine(sim.Component):
         x: float,
         y: float,
         *args,
-        max_product_weight: float = 1.0,
-        max_product_volume: float = 1.0,
+        max_product_weight: float,
+        max_product_volume: float,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.machine = machine
-        self.max_product_weight = max(float(max_product_weight), 1.0)
-        self.max_product_volume = max(float(max_product_volume), 1.0)
+        # Szenarioweites maximales Produktgewicht und -volumen.
+        self.max_product_weight = float(max_product_weight)
+        self.max_product_volume = float(max_product_volume)
         self.machine.processing_speed_factor = random.uniform(0.45, 2.00)
         self.bridge = bridge
         machine_side = "left" if self.machine.left else "right"

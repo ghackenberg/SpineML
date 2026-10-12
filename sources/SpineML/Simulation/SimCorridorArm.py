@@ -21,8 +21,8 @@ class SimCorridorArm(sim.Component):
         dx: float,
         y: float,
         *args,
-        max_product_weight: float = 1.0,
-        max_product_volume: float = 1.0,
+        max_product_weight: float,
+        max_product_volume: float,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)

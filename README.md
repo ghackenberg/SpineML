@@ -51,13 +51,11 @@ konkreten Maschine. Der Standardwert ist `1.0`.
 - größer als `1.0`: die Maschine arbeitet schneller
 - kleiner als `1.0`: die Maschine arbeitet langsamer
 
-Der Faktor beeinflusst die Bearbeitungsdauer des Jobs.
-Ein Faktor von `2.0` verkürzt die Bearbeitungsdauer daher ungefähr auf die
-Hälfte. Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
-
-Der Faktor gehört zur konkreten Maschine. Er beeinflusst die Bearbeitungsdauer
+Der Faktor gehört zur konkreten Maschine und beeinflusst die Bearbeitungsdauer
 des Jobs beziehungsweise Produkts, während es eine Operation auf dieser
-Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst.
+Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst. Ein Faktor von
+`2.0` verkürzt die Bearbeitungsdauer ungefähr auf die Hälfte; ein Faktor von
+`0.5` verlängert sie ungefähr auf das Doppelte.
 
 ## Schutzwerkzeugzeiten
 

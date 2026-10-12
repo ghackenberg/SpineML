@@ -56,6 +56,10 @@ Operationsdauer wird vereinfacht durch `processing_speed_factor` geteilt.
 Ein Faktor von `2.0` verkürzt die Bearbeitungsdauer daher ungefähr auf die
 Hälfte. Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
 
+Der Faktor gehört zur konkreten Maschine. Er beeinflusst die Bearbeitungsdauer
+des Jobs beziehungsweise Produkts, während es eine Operation auf dieser
+Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst.
+
 ## Schutzwerkzeugzeiten
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.

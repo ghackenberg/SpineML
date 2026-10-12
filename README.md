@@ -1,91 +1,60 @@
 # Fabrikkonfiguration
 
-In der Fabrikkonfiguration wurden zusätzliche Parameter für Lagerkapazitäten
-und Maschinen ergänzt.
+Dieser Abschnitt beschreibt die Konfigurationsklassen im Foroogh-Zweig. Im
+ursprünglichen `main`-Stand enthielt `Layout` nur die Grunddaten des Layouts
+und `Machine` nur die Zuordnung zu Maschinentyp und Korridor. Im Foroogh-Zweig
+wurden zusätzliche Eigenschaften ergänzt, damit die Fabrik genauer beschrieben
+werden kann.
 
-## Speicherkapazität des Layouts
+## `Layout.py`
 
-Ein `Layout` besitzt eine eigene `storage_capacity`. Diese Kapazität gilt für
-das Startlager und das Endlager des Layouts. Beispiel: Bei
-`storage_capacity=10` kann jedes dieser Lager höchstens zehn Jobs aufnehmen.
+`Layout` beschreibt das Fabriklayout und seine Korridore. Zusätzlich zu den
+Ein- und Auslagerungszeiten besitzt ein Layout die
+`storage_capacity`. Sie gibt an, wie viele Jobs das Startlager und das
+Endlager jeweils aufnehmen können. Bei `storage_capacity=10` kann jedes dieser
+Lager höchstens zehn Jobs aufnehmen.
 
-`storage_capacity=10` bedeutet, dass Startlager und Endlager jeweils höchstens
-zehn Jobs aufnehmen können.
+## `Machine.py`
 
-## Getrennte Maschinenpuffer
+`Machine` beschreibt eine konkrete Maschine. Sie gehört zu einem
+`MachineType` und einem Korridor und kann unabhängig konfiguriert werden.
 
-Eine `Machine` erhält eine eigene Kapazität für den Eingangspuffer und eine
-eigene Kapazität für den Ausgangspuffer. Für die MillingMachine A können zum
-Beispiel `input_storage_capacity=10` und `output_storage_capacity=10`
-konfiguriert werden.
+### Getrennte Maschinenpuffer
 
-Die beiden Werte werden unabhängig voneinander gespeichert. Dadurch kann der
-Eingangspuffer eine andere Kapazität als der Ausgangspuffer besitzen.
+`input_storage_capacity` und `output_storage_capacity` legen die Kapazität
+des Eingangs- beziehungsweise Ausgangspuffers fest. Beide Werte werden
+getrennt gespeichert und dürfen unterschiedlich sein.
 
-## Erlaubte Werkzeugtypen einer Maschine
+### Erlaubte Werkzeugtypen
 
-Mit `tool_types` kann festgelegt werden, welche Werkzeugtypen eine Maschine
-verwenden darf. Für eine Maschine können beispielsweise `tool_type_1` und
-`tool_type_2` erlaubt werden.
-
-Wenn `tool_types` nicht angegeben wird, ermittelt die Maschine ihre
-Werkzeugtypen automatisch aus den Operationen ihres `machine_type`.
-
-Ein `MachineType` beschreibt dabei nur die allgemeine Maschinenklasse und die
-Operationen, die für diese Klasse vorgesehen sind. Eine konkrete Maschine
-dieses Typs muss deshalb nicht automatisch alle diese Operationen ausführen
-können und nicht alle dafür benötigten Werkzeuge besitzen. Das Werkzeugmagazin
-ist eine Eigenschaft der konkreten Maschine.
-
-Beispiel: Zwei CNC-Maschinen können denselben `MachineType` haben, aber
-unterschiedlich ausgestattet sein:
+Mit `tool_types` wird das Werkzeugmagazin der konkreten Maschine angegeben.
+Zwei Maschinen desselben `MachineType` können dadurch unterschiedlich
+ausgestattet sein:
 
 ```python
 Machine("CNC A", cnc_type, ..., tool_types=[turning_tool, milling_tool])
 Machine("CNC B", cnc_type, ..., tool_types=[milling_tool])
 ```
 
-Eine Operation ist nur dann auf einer konkreten Maschine ausführbar, wenn der
-`MachineType` passt und das benötigte Werkzeug im Werkzeugmagazin vorhanden ist.
-Ohne explizite `tool_types`-Liste bleibt das frühere Verhalten erhalten: Alle
-Maschinen desselben Typs erhalten die aus den Operationen abgeleitete
-Werkzeugliste. Die explizite Liste ermöglicht somit eine realistischere
-Darstellung unterschiedlich ausgestatteter Maschinen.
+Wird `tool_types` nicht angegeben, werden die Werkzeugtypen weiterhin aus den
+Operationen des `MachineType` abgeleitet. Mit einer expliziten Liste kann eine
+Maschine jedoch nur die Werkzeuge besitzen, die in ihrem eigenen Magazin
+vorhanden sind. Dadurch müssen nicht alle Maschinen desselben Typs dieselben
+Operationen und Werkzeuge haben.
 
-## Grundwert der Verarbeitungsgeschwindigkeit
+### Verarbeitungsgeschwindigkeit
 
-Eine Maschine enthält einen konfigurierten
-`processing_speed_factor`. Der Standardwert ist `1.0`; dieser Wert kann direkt
-bei der Maschine angegeben werden.
+`processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
+konkreten Maschine. Der Standardwert ist `1.0`.
 
-Der `processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
-konkreten Maschine.
+- `1.0`: normale Geschwindigkeit
+- größer als `1.0`: die Maschine arbeitet schneller
+- kleiner als `1.0`: die Maschine arbeitet langsamer
 
-Der Wert gehört zur Fabrikkonfiguration und wird in der `Machine` gespeichert.
-Die Erzeugung und Verwendung des effektiven Laufzeitfaktors erfolgt im
-Simulationskern `SimMachine`.
-
-Der Faktor beschreibt die relative Bearbeitungsgeschwindigkeit:
-
-- `processing_speed_factor = 1.0`: normale Bearbeitungsdauer
-- `processing_speed_factor > 1.0`: die Maschine arbeitet schneller und die
-  Operationsdauer wird kürzer
-- `processing_speed_factor < 1.0`: die Maschine arbeitet langsamer und die
-  Operationsdauer wird länger
-
-Vereinfacht wird die Operationsdauer durch diesen Faktor geteilt. Ein Faktor
-von `2.0` macht die Bearbeitung daher ungefähr doppelt so schnell, während ein
-Faktor von `0.5` die Bearbeitungszeit ungefähr verdoppelt.
-
-Damit ergibt sich die tatsächliche Bearbeitungsdauer aus der ursprünglichen
-Operationsdauer und dem Geschwindigkeitsfaktor. Im `SimMachine` werden zusätzlich
-die Produktgröße und eine kleine Laufzeitvariation berücksichtigt. Vereinfacht:
-
-```text
-tatsächliche Dauer ≈ Operationsdauer × Größenfaktor
-                    ÷ processing_speed_factor
-                    × Laufzeitvariation
-```
+Der Faktor wird bei der Berechnung der Bearbeitungsdauer berücksichtigt: Die
+Operationsdauer wird vereinfacht durch `processing_speed_factor` geteilt.
+Ein Faktor von `2.0` bedeutet daher ungefähr die doppelte Geschwindigkeit,
+ein Faktor von `0.5` ungefähr die halbe Geschwindigkeit.
 
 ## Schutzwerkzeugzeiten
 

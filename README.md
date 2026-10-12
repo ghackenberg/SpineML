@@ -74,6 +74,16 @@ Vereinfacht wird die Operationsdauer durch diesen Faktor geteilt. Ein Faktor
 von `2.0` macht die Bearbeitung daher ungefähr doppelt so schnell, während ein
 Faktor von `0.5` die Bearbeitungszeit ungefähr verdoppelt.
 
+Damit ergibt sich die tatsächliche Bearbeitungsdauer aus der ursprünglichen
+Operationsdauer und dem Geschwindigkeitsfaktor. Im `SimMachine` werden zusätzlich
+die Produktgröße und eine kleine Laufzeitvariation berücksichtigt. Vereinfacht:
+
+```text
+tatsächliche Dauer ≈ Operationsdauer × Größenfaktor
+                    ÷ processing_speed_factor
+                    × Laufzeitvariation
+```
+
 ## Schutzwerkzeugzeiten
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.

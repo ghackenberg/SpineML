@@ -1,4 +1,4 @@
-"""Kompatibilitätsstarter für die Optimierung von Example 3."""
+"""Compatibility entry point for optimizing Example 3."""
 
 import os
 from pathlib import Path

@@ -9,7 +9,7 @@ from .SimOrder import SimOrder
 
 
 class SimCompletionWatcher(sim.Component):
-    """Beendet den Simulationslauf, sobald alle Jobs abgeschlossen sind."""
+    """Stop the simulation run as soon as all jobs are completed."""
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
     def __init__(self, sim_orders, *args, **kwargs):

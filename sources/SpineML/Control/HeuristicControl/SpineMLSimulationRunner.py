@@ -20,7 +20,7 @@ from .LocalHeuristicActionEvaluator import (
 
 
 class SpineMLSimulationRunner:
-    """Führt einen vollständigen headless SpineML-Lauf für Gewichte und Seed aus."""
+    """Run a complete headless SpineML simulation for weights and a seed."""
 
     # Speichert Layout, Szenario und die maximale Simulationszeit für spätere Läufe.
     def __init__(
@@ -33,8 +33,8 @@ class SpineMLSimulationRunner:
         self.scenario = scenario
         self.till = till
 
-    # Führt einen vollständigen Simulationslauf mit einem Gewichtssatz und Seed aus
-    # und gibt die daraus berechneten globalen Kennzahlen zurück.
+        # Run a complete simulation with a weight set and seed,
+        # then return the resulting global metrics.
     def __call__(
         self,
         weights: HeuristicWeights,
@@ -44,7 +44,7 @@ class SpineMLSimulationRunner:
      
         # Setzt den Python-Zufallszahlengenerator auf diesen Seed für reproduzierbare Zufallswerte.
         random.seed(seed)
-        # Übergibt den Seed an SimMachine für reproduzierbare Defekt- und Qualitätsereignisse.
+        # Übergibt den Seed an SimMachine für reproduzierbare Defect- und Qualitätsereignisse.
         SimMachine.QUALITY_SEED = int(seed)
 
         env = sim.Environment(time_unit="hours", random_seed=seed)
@@ -88,12 +88,12 @@ class SpineMLSimulationRunner:
             env.now(),
         )
 
-        # Ein Lauf mit unfertigen Jobs darf nicht als gültiges
-        # Optimierungsergebnis weiterverwendet werden.
+        # A run with unfinished jobs must not be reused as a valid
+        # optimization result.
         if metrics.unfinished_jobs > 0:
             raise RuntimeError(
-                "Die Simulation wurde beendet, obwohl noch "
-                f"{metrics.unfinished_jobs} Job(s) nicht fertiggestellt waren."
+                "The simulation ended while "
+                f"{metrics.unfinished_jobs} job(s) were still unfinished."
             )
 
         return metrics
@@ -113,8 +113,8 @@ class SpineMLSimulationRunner:
         completed_times = []
         total_tardiness = 0.0
         unfinished_jobs = 0
-        nacharbeit_job_count = 0.0
-        ausschuss_job_count = 0.0
+        rework_job_count = 0.0
+        scrap_job_count = 0.0
         downgraded_job_count = 0.0
         intact_jobs = 0
         defect_jobs = 0
@@ -122,26 +122,26 @@ class SpineMLSimulationRunner:
         unfinished_orders = set()
 
         for job in jobs:
-            # Prüft, ob dieser Job mindestens einen erkannten Defekt hat.
+            # Prüft, ob dieser Job mindestens einen erkannten Defect hat.
             if getattr(job, "defect_count", 0) > 0:
-                # Zählt den Job für die globale Defektquote höchstens einmal.
+                # Zählt den Job für die globale Defectquote höchstens einmal.
                 defect_jobs += 1
-            # Prüft, ob der Job als herabgestuft markiert wurde.
+            # Check whether the job was marked as downgraded.
             if getattr(job, "downgraded", False):
-                # Zählt den herabgestuften Job für die globale Herabstufungsquote.
+                # Count the downgraded job for the global downgrade rate.
                 downgraded_job_count += 1.0
             # Prüft, ob der Job noch keinen Abschlusszeitpunkt besitzt.
             if job.completed_time is None:
-                # Zählt den Job als unfertig und merkt sich den betroffenen Auftrag.
+                # Count the job as unfinished and remember its order.
                 unfinished_jobs += 1
                 unfinished_orders.add(job.order.name)
-                # Überspringt die Abschlussverarbeitung für diesen unfertigen Job.
+                # Skip completion processing for this unfinished job.
                 continue
             else:
                 # Speichert die Abschlusszeit eines fertiggestellten Jobs.
                 completed_times.append(float(job.completed_time))
-                # Zählt den Job als intakt, wenn sein Produktionszustand intakt ist.
-                if job.general_state.get() == "intakt":
+                # Count the job as intact when its production state is intact.
+                if job.general_state.get() == "intact":
                     intact_jobs += 1
                 # Übernimmt die Abschlusszeit für die spätere Auftragsauswertung.
                 completion_time = float(job.completed_time)
@@ -158,10 +158,10 @@ class SpineMLSimulationRunner:
                 order_completion_times.get(order_name, 0.0),
             )
 
-            nacharbeit_job_count += (
-                1.0 if getattr(job, "nacharbeit_count", 0) > 0 else 0.0
+            rework_job_count += (
+                1.0 if getattr(job, "rework_count", 0) > 0 else 0.0
             )
-            ausschuss_job_count += float(getattr(job, "ausschuss_count", 0))
+            scrap_job_count += float(getattr(job, "scrap_count", 0))
 
         # Berechnet pro vollständig abgeschlossenem Auftrag die Verspätung anhand
         # seines spätesten Job-Abschlusses und addiert sie zu total_tardiness.
@@ -234,8 +234,8 @@ class SpineMLSimulationRunner:
             total_transport_time=total_transport_time,
             tool_change_time=tool_change_time,
             blocking_time=blocking_time,
-            nacharbeit_job_count=nacharbeit_job_count,
-            ausschuss_job_count=ausschuss_job_count,
+            rework_job_count=rework_job_count,
+            scrap_job_count=scrap_job_count,
             unfinished_jobs=unfinished_jobs,
             total_jobs=len(jobs),
             completed_jobs=len(completed_times),

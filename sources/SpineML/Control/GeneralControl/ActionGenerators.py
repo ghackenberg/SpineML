@@ -4,8 +4,8 @@ from ..Interface.InterfaceTypes import ActionGenerator, PolicyObservation
 class SpineActionGenerator(ActionGenerator):
     """Erzeugt technisch mögliche Aktionen aus einer Policy-Beobachtung."""
 
-    MIN_NACHARBEIT_DEFEKT_SCHWERGRAD = 0.001
-    MAX_NACHARBEIT_DEFEKT_SCHWERGRAD = 0.6
+    MIN_REWORK_DEFECT_SEVERITY = 0.001
+    MAX_REWORK_DEFECT_SEVERITY = 0.6
 
 
     # Erzeugt Aktionskandidaten und entfernt exakt doppelte Aktionen.
@@ -46,7 +46,7 @@ class SpineActionGenerator(ActionGenerator):
         if current_state["completed_time"] is not None and current_state["due_state"] is None:
             return self.create_completion_actions_for_job(observation)
 
-        # Ein defekter Job erhält die möglichen Aktionen für Nacharbeit oder Ausschuss.
+        # Ein defective Job erhält die möglichen Aktionen für Rework oder Scrap.
         if current_state["general_state"] == "defect":
             return self.create_defect_actions_for_job(observation)
 
@@ -147,7 +147,7 @@ class SpineActionGenerator(ActionGenerator):
 
     # Prüft, ob die Maschine frei ist und beide Puffer Platz haben.
     # Beispiel: Wartende Maschine ohne Job und mit Platz in beiden Puffern ergibt True.
-    def machine_available_for_nacharbeit(self, machine_observation: dict) -> bool:
+    def machine_available_for_rework(self, machine_observation: dict) -> bool:
         if machine_observation["current_job_id"] is not None:
             return False
         if machine_observation["state"] != "waiting":
@@ -158,10 +158,10 @@ class SpineActionGenerator(ActionGenerator):
             return False
         return True
 
-    # Sucht den Zustands-Datensatz der Maschine, die den Defekt verursacht hat.
+    # Sucht den Zustands-Datensatz der Maschine, die den Defect verursacht hat.
     # Beispiel: defect_machine_id="m1" liefert den beobachteten Zustand von "m1".
     def defect_machine_observation(self, current_state: dict, snapshot: dict) -> dict:
-        # Liest aus dem defekten Job die ID der Maschine, die den Defekt verursacht hat.
+        # Liest aus dem defective Job die ID der Maschine, die den Defect verursacht hat.
         defect_machine_id = current_state["defect_machine_id"]
 
         machine_observations_by_id = {}
@@ -173,16 +173,16 @@ class SpineActionGenerator(ActionGenerator):
 
         return machine_observations_by_id[defect_machine_id]
 
-    # Ermittelt Nacharbeitsrouten mit einer anderen Maschine als der Defektmaschine.
-    # Beispiel: Defekt auf m1 lässt nur Routen zu, die mit einer anderen Maschine beginnen.
-    def find_nacharbeit_routes_with_alternative_machine(self, observation: PolicyObservation) -> list[dict]:
+    # Find rework routes that use a machine other than the defect machine.
+    # Beispiel: Defect auf m1 lässt nur Routen zu, die mit einer anderen Maschine beginnen.
+    def find_rework_routes_with_alternative_machine(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
         model = self.model(observation)
-        # Liest aus dem Job die ID der Operation, bei der der Defekt entstanden ist.
+        # Liest aus dem Job die ID der Operation, bei der der Defect entstanden ist.
         defect_operation_id = current_state["defect_operation_id"]
-        # Liest aus dem Job die ID der Maschine, auf der der Defekt entstanden ist.
+        # Liest aus dem Job die ID der Maschine, auf der der Defect entstanden ist.
         defect_machine_id = current_state["defect_machine_id"]
-        return self.find_alternative_nacharbeit_routes(
+        return self.find_alternative_rework_routes(
             defect_operation_id,
             defect_machine_id,
             current_state["target_product_type_id"],
@@ -190,9 +190,9 @@ class SpineActionGenerator(ActionGenerator):
             model,
         )
 
-    # Ermittelt alternative Maschinen für die Wiederholung der Defektoperation.
-    # Beispiel: Eine Defektoperation auf m1 kann als nächste Route m2 statt m1 liefern.
-    def find_alternative_nacharbeit_routes(
+    # Ermittelt alternative Maschinen für die Wiederholung der defect operation.
+    # Beispiel: Eine defect operation auf m1 kann als nächste Route m2 statt m1 liefern.
+    def find_alternative_rework_routes(
         self,
         defect_operation_id: str | None,
         defect_machine_id: str | None,
@@ -207,7 +207,7 @@ class SpineActionGenerator(ActionGenerator):
         if defect_operation is None:
             return []
 
-        # Berechnet den weiteren Weg nach der wiederholten Defektoperation bis zum Zielprodukt.
+        # Berechnet den weiteren Weg nach der wiederholten defect operation bis zum Zielprodukt.
         remaining_operation_sequences = self.calculate_operation_sequences_between(
             defect_operation["produces_product_type_id"],
             target_product_type_id,
@@ -216,7 +216,7 @@ class SpineActionGenerator(ActionGenerator):
 
         route_options = []
         for remaining_operation_sequence in remaining_operation_sequences:
-            # Setzt die Defektoperation vor die Restfolge; die Liste enthält nur Operations-IDs.
+            # Setzt die defect operation vor die Restfolge; die Liste enthält nur Operations-IDs.
             operation_sequence = [defect_operation_id, *remaining_operation_sequence]
             machine_sequences = self.calculate_machine_sequences_from_operation_sequence(
                 list(operation_sequence),
@@ -237,42 +237,42 @@ class SpineActionGenerator(ActionGenerator):
 
     # Prüft, ob ein Job die normale Produktionsroute nicht verwenden darf.
     # Normaler Job:
-    # general_state == "intakt"
+    # general_state == "intact"
     # downgraded == False
-    # bearbeitungs_state != "unconfigured"
-    # bearbeitungs_state != "defect"
+    # processing_state != "unconfigured"
+    # processing_state != "defect"
     def job_cannot_use_normal_production_route(self, job: dict) -> bool:
         if job["general_state"] == "defect":
             return True
 
-        if job["general_state"] == "ausschuss":
+        if job["general_state"] == "scrap":
             return True
 
         if job["downgraded"]:
             return True
 
-        if job["bearbeitungs_state"] == "unconfigured":
+        if job["processing_state"] == "unconfigured":
             return True
 
-        if job["bearbeitungs_state"] == "defect":
+        if job["processing_state"] == "defect":
             return True
 
         return False
     
-    # Ein normaler Job ist intakt, nicht herabgestuft und weder unconfigured noch defect.
+    # A normal job is intact, not downgraded, and neither unconfigured nor defective.
     # Für diesen Job gibt die Methode alle technisch möglichen Operations- und Maschinenfolgen zurück.
-    # Bei festgelegter Nacharbeit wird nur die ausgewählte einzelne Route zurückgegeben; sonst ggf. [].
+    # Bei festgelegter Rework wird nur die ausgewählte einzelne Route zurückgegeben; sonst ggf. [].
     def selectable_routes_for_job(self, job: dict, layout_id: str, model: dict) -> list[dict]:
-        # Prüft, ob für den defekten Job bereits eine Nacharbeitsstrategie festgelegt wurde.
+        # Check whether a rework strategy has already been selected for the defective job.
         if (
             job.get("defect_recovery_strategy") in {
-                "nacharbeiten_auf_defektmaschine",
-                "nacharbeiten_auf_alternativer_maschine",
+                "rework_on_defect_machine",
+                "rework_on_alternative_machine",
             }
             and job.get("selected_operation_id") is not None
             and job.get("selected_machine_id") is not None
         ):
-            # Gibt die festgelegte einzelne Nacharbeitsoperation und Nacharbeitsmaschine zurück.
+            # Gibt die festgelegte einzelne rework operation und rework machine zurück.
             return [
                 {
                     "operation_sequence": [job["selected_operation_id"]],
@@ -285,7 +285,7 @@ class SpineActionGenerator(ActionGenerator):
         if self.job_cannot_use_normal_production_route(job):
             return []
 
-        current_product_type_id = job["bearbeitungs_state"]
+        current_product_type_id = job["processing_state"]
         target_product_type_id = job["target_product_type_name"]
         if current_product_type_id == target_product_type_id:
             return []
@@ -312,72 +312,72 @@ class SpineActionGenerator(ActionGenerator):
         return route_options
 
 
-    # Prüft, ob der Defektgrad im technisch nacharbeitbaren Bereich liegt.
-    # Bereich: 0.001 <= defekt_schwergrad < 0.6; Beispiel: 0.2 ergibt True.
-    def nacharbeit_is_technically_possible(self, current_state: dict) -> bool:
-        defekt_schwergrad = current_state["defekt_schwergrad"]
+    # Prüft, ob der defect severity im technisch reworkbaren Bereich liegt.
+    # Bereich: 0.001 <= defect_severity < 0.6; Beispiel: 0.2 ergibt True.
+    def rework_is_technically_possible(self, current_state: dict) -> bool:
+        defect_severity = current_state["defect_severity"]
         return (
-            self.MIN_NACHARBEIT_DEFEKT_SCHWERGRAD
-            <= defekt_schwergrad
-            < self.MAX_NACHARBEIT_DEFEKT_SCHWERGRAD
+            self.MIN_REWORK_DEFECT_SEVERITY
+            <= defect_severity
+            < self.MAX_REWORK_DEFECT_SEVERITY
         )
 
     # Erzeugt je nach Zustand mögliche Recovery-Aktionen; die Policy wählt später eine davon aus.
-    # Beispiel: Nacharbeitbarkeit bietet Nacharbeit, Herabstufung und Warten; sonst wird Ausschuss angeboten.
+    # Beispiel: Reworkbarkeit bietet Rework, Downgrade und Warten; sonst wird Scrap angeboten.
     def create_defect_actions_for_job(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
         snapshot = observation.simulation_configuration_snapshot
-        # True bedeutet: Recovery läuft noch; False prüft neue Defektaktionen.
+        # True bedeutet: Recovery läuft noch; False prüft neue Defectaktionen.
         if current_state.get("recovery_in_progress"):
             return self.create_wait_actions_for_job(observation)
         product_state_before_defect = current_state["defect_product_state_before"]
 
-        # Ohne technisch möglichen Defektgrad wird nur die Ausschussaktion angeboten.
-        if not self.nacharbeit_is_technically_possible(current_state):
-            return self.create_ausschuss_actions_for_job(observation)
+        # Ohne technisch möglichen defect severity wird nur die Scrapaktion angeboten.
+        if not self.rework_is_technically_possible(current_state):
+            return self.create_scrap_actions_for_job(observation)
 
-        # Sammelt Nacharbeit, Herabstufung und Warten gemeinsam; 
+        # Sammelt Rework, Downgrade und Warten gemeinsam;
         actions = []
 
-        alternative_routes = self.find_nacharbeit_routes_with_alternative_machine(
+        alternative_routes = self.find_rework_routes_with_alternative_machine(
             observation,
         )
         for alternative_route in alternative_routes:
             actions.append({
-                "action_type": "job_nacharbeiten_auf_alternativer_maschine",
+                "action_type": "job_rework_on_alternative_machine",
                 "payload": {
                     "selected_operation_id": alternative_route["next_operation_id"],
                     "selected_machine_id": alternative_route["next_machine_id"],
-                    "bearbeitungs_state": product_state_before_defect,
-                    "defect_recovery_strategy": "nacharbeiten_auf_alternativer_maschine",
+                    "processing_state": product_state_before_defect,
+                    "defect_recovery_strategy": "rework_on_alternative_machine",
                 },
             })
 
-        defect_machine_is_available = self.machine_available_for_nacharbeit(
+        defect_machine_is_available = self.machine_available_for_rework(
             self.defect_machine_observation(current_state, snapshot)
         )
         if defect_machine_is_available:
             actions.append({
-                "action_type": "job_nacharbeiten_auf_defektmaschine",
+                "action_type": "job_rework_on_defect_machine",
                 "payload": {
                     "selected_operation_id": current_state["defect_operation_id"],
                     "selected_machine_id": current_state["defect_machine_id"],
-                    "bearbeitungs_state": product_state_before_defect,
-                    "defect_recovery_strategy": "nacharbeiten_auf_defektmaschine",
+                    "processing_state": product_state_before_defect,
+                    "defect_recovery_strategy": "rework_on_defect_machine",
                 },
             })
 
         downgraded_product_type_id = current_state["defect_product_state_target"]
         actions.append({
-            "action_type": "produkt_herabstufen",
+            "action_type": "downgrade_product",
             "payload": {
                 "selected_operation_id": None,
                 "selected_machine_id": None,
-                "bearbeitungs_state": downgraded_product_type_id,
-                "general_state": "intakt",
+                "processing_state": downgraded_product_type_id,
+                "general_state": "intact",
                 "downgraded": True,
                 "downgrade_product_type_id": downgraded_product_type_id,
-                "defect_recovery_strategy": "herabstufen",
+                "defect_recovery_strategy": "downgrade",
             },
         })
 
@@ -388,18 +388,18 @@ class SpineActionGenerator(ActionGenerator):
 
         return actions
 
-    # Erzeugt die Ausschussaktion für einen Job.
-    # Beispiel: Das Ergebnis ist eine job_ausschuss-Aktion mit general_state="ausschuss".
-    def create_ausschuss_actions_for_job(self, observation: PolicyObservation) -> list[dict]:
+    # Erzeugt die Scrapaktion für einen Job.
+    # Beispiel: Das Ergebnis ist eine job_scrap-Aktion mit general_state="scrap".
+    def create_scrap_actions_for_job(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
         return [
             {
-                "action_type": "job_ausschuss",
+                "action_type": "job_scrap",
                 "payload": {
                     "selected_operation_id": None,
                     "selected_machine_id": None,
-                    "general_state": "ausschuss",
-                    "defect_recovery_strategy": "ausschuss",
+                    "general_state": "scrap",
+                    "defect_recovery_strategy": "scrap",
                 },
             }
         ]
@@ -423,7 +423,7 @@ class SpineActionGenerator(ActionGenerator):
             }
         ]
 
-    # Erzeugt die Freigabeaktion mit Bearbeitungszustand, Freigabezeit und Startstore.
+    # Erzeugt die Freigabeaktion mit ProcessingState, Freigabezeit und Startstore.
     # Beispiel: Ein nicht freigegebener Job erhält eine release_job-Aktion für den Startstore.
     def create_release_job_action(self, observation: PolicyObservation) -> dict:
         current_state = self.current_state(observation)
@@ -431,11 +431,11 @@ class SpineActionGenerator(ActionGenerator):
         operation_sequences = self.calculate_operation_sequences(current_state["target_product_type_id"], model)
 
         if len(operation_sequences) == 0:
-            bearbeitungs_state = current_state["target_product_type_id"]
+            processing_state = current_state["target_product_type_id"]
         else:
             first_operation_sequence = operation_sequences[0]
             first_operation_id = first_operation_sequence[0]
-            bearbeitungs_state = model["operations_by_id"][first_operation_id][
+            processing_state = model["operations_by_id"][first_operation_id][
                 "consumes_product_type_id"
             ]
 
@@ -446,7 +446,7 @@ class SpineActionGenerator(ActionGenerator):
         return {
             "action_type": "release_job",
             "payload": {
-                "bearbeitungs_state": bearbeitungs_state,
+                "processing_state": processing_state,
                 "release_time": release_time,
                 "target_store_id": current_state["start_store_id"],
                 "released": True,
@@ -505,59 +505,59 @@ class SpineActionGenerator(ActionGenerator):
         actions = []
 
         if job["general_state"] == "defect":
-            # Sammelt für einen defekten Job die Defektmaschine und mögliche alternative Nacharbeitsmaschinen.
+            # Sammelt für einen defective Job die defect machine und mögliche alternative rework machinen.
             defect_machine_id = (
                 job.get("defect_machine_id")
                 or current_state.get("current_job_defect_machine_id")
             )
-            # Historische ID der Operation, in der der Defekt entstanden wurde.
+            # Historische ID der Operation, in der der Defect entstanden wurde.
             defect_operation_id = (
                 job.get("defect_operation_id")
                 or current_state.get("current_job_defect_operation_id")
             )
-            # Liest die zuvor festgelegte Nacharbeitsstrategie und die ausgewählten IDs.
+            # Liest die zuvor festgelegte rework strategy und die ausgewählten IDs.
             recovery_strategy = job.get("defect_recovery_strategy")
-            # ID der als Nächstes ausgewählten Operation; sie kann bei Nacharbeit der Defektoperation entsprechen.
+            # ID der als Nächstes ausgewählten Operation; sie kann bei Rework der defect operation entsprechen.
             selected_operation_id = job.get("selected_operation_id")
             selected_machine_id = job.get("selected_machine_id")
 
 
 
-            # Definiert die beiden erlaubten Arten der Nacharbeit.
+            # Definiert die beiden erlaubten Arten der Rework.
             recovery_strategies = {
-                "nacharbeiten_auf_defektmaschine",
-                "nacharbeiten_auf_alternativer_maschine",
+                "rework_on_defect_machine",
+                "rework_on_alternative_machine",
             }
 
             repair_targets = []
 
 
-            # Beide IDs bedeuten: Die Policy hat bereits die Nacharbeitsroute ausgewählt.
+            # Beide IDs bedeuten: Die Policy hat bereits die rework route ausgewählt.
             if selected_operation_id and selected_machine_id:
                 
-                # Prüft, ob die gespeicherte Strategie eine erlaubte Nacharbeitsstrategie ist.
+                # Prüft, ob die gespeicherte Strategie eine erlaubte rework strategy ist.
                 if recovery_strategy not in recovery_strategies:
                     recovery_strategy = (
-                        "nacharbeiten_auf_defektmaschine"
+                        "rework_on_defect_machine"
                         if selected_machine_id == defect_machine_id
-                        else "nacharbeiten_auf_alternativer_maschine"
+                        else "rework_on_alternative_machine"
                     )
-                # Verwendet die bereits durch die Policy festgelegte Nacharbeitsoperation und -maschine.
+                # Verwendet die bereits durch die Policy festgelegte rework operation und -maschine.
                 repair_targets.append((
                     selected_operation_id,
                     selected_machine_id,
                     recovery_strategy,
                 ))
-            # Ohne ausgewählte Route werden Defektoperation und Defektmaschine als Ausgangspunkt verwendet.
+            # Ohne ausgewählte Route werden defect operation und defect machine als Ausgangspunkt verwendet.
             elif defect_machine_id and defect_operation_id:
-                # Ohne vorherige Festlegung werden die Defektmaschine und Alternativen als Kandidaten erzeugt.
+                # Ohne vorherige Festlegung werden die defect machine und Alternativen als Kandidaten erzeugt.
                 repair_targets.append((
                     defect_operation_id,
                     defect_machine_id,
-                    "nacharbeiten_auf_defektmaschine",
+                    "rework_on_defect_machine",
                 ))
                 target_product_type_id = job.get("target_product_type_name")
-                for route in self.find_alternative_nacharbeit_routes(
+                for route in self.find_alternative_rework_routes(
                     defect_operation_id,
                     defect_machine_id,
                     target_product_type_id,
@@ -567,7 +567,7 @@ class SpineActionGenerator(ActionGenerator):
                     repair_targets.append((
                         route["next_operation_id"],
                         route["next_machine_id"],
-                        "nacharbeiten_auf_alternativer_maschine",
+                        "rework_on_alternative_machine",
                     ))
 
             added_targets = set()
@@ -606,7 +606,7 @@ class SpineActionGenerator(ActionGenerator):
             actions.extend(self.create_main_robot_wait_actions(observation))
             return actions
 
-        if job["general_state"] == "ausschuss" or job["downgraded"] or job["bearbeitungs_state"] == job["target_product_type_name"]:
+        if job["general_state"] == "scrap" or job["downgraded"] or job["processing_state"] == job["target_product_type_name"]:
             target_store = current_state["end_storage"]
             payload = {
                 "target_type": "end_storage",
@@ -621,7 +621,7 @@ class SpineActionGenerator(ActionGenerator):
             actions.extend(self.create_main_robot_wait_actions(observation))
             return actions
 
-        # Für einen normalen Job (intakt, nicht herabgestuft, kein Ausschuss und noch nicht fertig)
+        # For a normal job (intact, not downgraded, not scrapped, and not finished)
         # werden hier alle technisch möglichen nächsten Operations- und Maschinenrouten durchlaufen.
         for route_option in self.selectable_routes_for_job(job, layout_id, model):
             next_operation_id = route_option["next_operation_id"]
@@ -702,9 +702,9 @@ class SpineActionGenerator(ActionGenerator):
         actions = []
 
         if (
-            job["general_state"] == "ausschuss"
+            job["general_state"] == "scrap"
             or job["downgraded"]
-            or job["bearbeitungs_state"] == job["target_product_type_name"]
+            or job["processing_state"] == job["target_product_type_name"]
         ):
             target_store = current_state["sim_corridor_store_main"]
             if self.store_has_free_capacity(target_store):
@@ -719,7 +719,7 @@ class SpineActionGenerator(ActionGenerator):
             actions.extend(self.create_corridor_arm_robot_wait_actions(observation))
             return actions
 
-        if job["general_state"] != "ausschuss" and not job["downgraded"] and job["bearbeitungs_state"] != job["target_product_type_name"]:
+        if job["general_state"] != "scrap" and not job["downgraded"] and job["processing_state"] != job["target_product_type_name"]:
             layout_id = model["corridors_by_id"][corridor_id]["layout_id"]
 
             # Liest die von der Policy bereits gespeicherte nächste Operation und Maschine.
@@ -732,7 +732,7 @@ class SpineActionGenerator(ActionGenerator):
                     "next_machine_id": selected_machine_id,
                 }]
             else:
-                # Ohne Policy-Auswahl werden keine Defekt-IDs als Ersatzroute verwendet.
+                # Ohne Policy-Auswahl werden keine Defect-IDs als Ersatzroute verwendet.
                 route_options = self.selectable_routes_for_job(job, layout_id, model)
 
             for route_option in route_options:
@@ -778,7 +778,7 @@ class SpineActionGenerator(ActionGenerator):
                         "action_type": "place_corridor_arm_robot",
                         "payload": payload,
                     })
-        # Ausschuss-, herabgestufte oder bereits fertige Jobs benötigen keine weitere Maschine.
+        # Scrapped, downgraded, or already finished jobs need no further machine.
         # Der Korridorarm legt sie deshalb in den Main-Store für den Weitertransport.
         else:
             target_store = current_state["sim_corridor_store_main"]
@@ -904,16 +904,16 @@ class SpineActionGenerator(ActionGenerator):
                 if required_tool_type_id not in machine_tool_type_ids:
                     continue
 
-            maschinenrouten = (
+            machine_routes = (
                 self.calculate_machine_sequences_from_operation_sequence(
                     remaining_operation_sequence,
                     layout_id,
                     model,
                 )
             )
-            for maschinenroute in maschinenrouten:
-                maschinenroute.insert(0, machine_id)
-                result.append(maschinenroute)
+            for machine_route in machine_routes:
+                machine_route.insert(0, machine_id)
+                result.append(machine_route)
 
         return result
 
@@ -923,15 +923,15 @@ class SpineActionGenerator(ActionGenerator):
         result: list[list[str]] = []
         operation_sequences = self.calculate_operation_sequences(product_type_id, model)
         for operation_sequence in operation_sequences:
-            maschinenrouten = self.calculate_machine_sequences_from_operation_sequence(operation_sequence, layout_id, model)
-            for maschinenroute in maschinenrouten:
+            machine_routes = self.calculate_machine_sequences_from_operation_sequence(operation_sequence, layout_id, model)
+            for machine_route in machine_routes:
                 exists = False
-                for andere_maschinenroute in result:
-                    if all(x == y for x, y in zip(maschinenroute, andere_maschinenroute)):
+                for other_machine_route in result:
+                    if all(x == y for x, y in zip(machine_route, other_machine_route)):
                         exists = True
                         break
                 if not exists:
-                    result.append(maschinenroute)
+                    result.append(machine_route)
         return result
 
     # Ermittelt rekursiv alle Operationsfolgen vom Startprodukttyp zum Zielprodukttyp.
@@ -980,15 +980,15 @@ class SpineActionGenerator(ActionGenerator):
         for operation_id, operation in model["operations_by_id"].items():
             if operation["produces_product_type_id"] != product_type_id:
                 continue
-            vorherige_operationsfolgen = self.calculate_operation_sequences(
+            previous_operation_sequences = self.calculate_operation_sequences(
                 operation["consumes_product_type_id"],
                 model,
                 visited,
             )
 
-            if not vorherige_operationsfolgen:
+            if not previous_operation_sequences:
                 result.append([operation_id])
             else:
-                for vorherige_operationsfolge in vorherige_operationsfolgen:
-                    result.append(vorherige_operationsfolge + [operation_id])
+                for previous_operation_sequence in previous_operation_sequences:
+                    result.append(previous_operation_sequence + [operation_id])
         return result

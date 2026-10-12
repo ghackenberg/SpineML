@@ -4,15 +4,15 @@ from typing import Iterable
 
 @dataclass(frozen=True)
 class GlobalSimulationMetrics:
-    """Globale Kennzahlen eines vollständig ausgeführten Simulationslaufs."""
+    """Global metrics of a fully completed simulation run."""
 
     makespan: float
     total_tardiness: float
     total_transport_time: float = 0.0
     tool_change_time: float = 0.0
     blocking_time: float = 0.0
-    nacharbeit_job_count: float = 0.0
-    ausschuss_job_count: float = 0.0
+    rework_job_count: float = 0.0
+    scrap_job_count: float = 0.0
     unfinished_jobs: int = 0
     total_jobs: int = 0
     completed_jobs: int = 0
@@ -38,12 +38,12 @@ class GlobalSimulationMetrics:
     @property
     # Führt die Funktion mit den übergebenen Werten aus.
     def rework_rate(self) -> float:
-        return self.nacharbeit_job_count / self.total_jobs if self.total_jobs else 0.0
+        return self.rework_job_count / self.total_jobs if self.total_jobs else 0.0
 
     @property
     # Führt die Funktion mit den übergebenen Werten aus.
     def scrap_rate(self) -> float:
-        return self.ausschuss_job_count / self.total_jobs if self.total_jobs else 0.0
+        return self.scrap_job_count / self.total_jobs if self.total_jobs else 0.0
 
     @property
     # Führt die Funktion mit den übergebenen Werten aus.
@@ -62,15 +62,15 @@ class GlobalSimulationMetrics:
 
 @dataclass(frozen=True)
 class GlobalSimulationWeights:
-    """Gewichte der zu minimierenden globalen Zielfunktion."""
+    """Weights of the global objective function to minimize."""
 
     makespan: float
     total_tardiness: float
     total_transport_time: float
     tool_change_time: float
     blocking_time: float
-    nacharbeit_job_penalty: float
-    ausschuss_job_penalty: float
+    rework_job_penalty: float
+    scrap_job_penalty: float
     unfinished_jobs: float
     defect_job_penalty: float = 0.0
     non_intact_penalty: float = 0.0
@@ -78,7 +78,7 @@ class GlobalSimulationWeights:
 
 
 class GlobalSimulationEvaluation:
-    """Berechnet globale Kosten aus den Kennzahlen eines Simulationslaufs."""
+    """Calculate global cost from the metrics of a simulation run."""
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
     def __init__(
@@ -103,8 +103,8 @@ class GlobalSimulationEvaluation:
         baseline_metrics = tuple(metrics_by_seed)
         if not baseline_metrics:
             raise ValueError(
-                "Für die Berechnung der Baseline-Referenzwerte wird mindestens "
-                "ein Lauf benötigt."
+                "At least one run is required to calculate baseline reference "
+                "values."
             )
 
         # Berechnet den Mittelwert eines ausgewählten globalen Kennzahlenfelds
@@ -147,12 +147,12 @@ class GlobalSimulationEvaluation:
         self,
         metrics: GlobalSimulationMetrics,
     ) -> dict[str, float]:
-        """Skaliert Zeitwerte relativ zur Baseline und übernimmt Qualitätsraten direkt."""
+        """Scale time values relative to the baseline and keep quality rates direct."""
         if self.baseline_reference_values is None:
             raise RuntimeError(
-                "Baseline-Referenzwerte fehlen. Zuerst "
-                "calculate_baseline_reference_values(...) aufrufen oder "
-                "baseline_reference_values ausdrücklich übergeben."
+                "Baseline reference values are missing. Call "
+                "calculate_baseline_reference_values(...) first or pass "
+                "baseline_reference_values explicitly."
             )
 
         time_values = {
@@ -187,8 +187,8 @@ class GlobalSimulationEvaluation:
         )
         return relative_metrics
 
-    # Berechnet eine vergleichbare gewichtete Summe der relativ zur Baseline
-    # skalierten Kennzahlen für den Vergleich verschiedener Gewichtssätze.
+    # Berechnet eine vergleichbare weighted Summe der relativ zur Baseline
+    # skalierten Kennzahlen für den Vergleich verschiedener weight sets.
     def calculate_weighted_sum_of_metrics_relative_to_baseline(
         self,
         metrics: GlobalSimulationMetrics,
@@ -201,9 +201,9 @@ class GlobalSimulationEvaluation:
             * relative_metrics["total_transport_time"]
             + self.weights.tool_change_time * relative_metrics["tool_change_time"]
             + self.weights.blocking_time * relative_metrics["blocking_time"]
-            + self.weights.nacharbeit_job_penalty
+            + self.weights.rework_job_penalty
             * relative_metrics["rework_rate"]
-            + self.weights.ausschuss_job_penalty
+            + self.weights.scrap_job_penalty
             * relative_metrics["scrap_rate"]
             + self.weights.unfinished_jobs * relative_metrics["unfinished_rate"]
             + self.weights.defect_job_penalty * relative_metrics["defect_rate"]

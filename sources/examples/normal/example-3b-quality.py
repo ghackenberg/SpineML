@@ -1,8 +1,8 @@
-"""Example 3B: gleiche Fabrik, aber alternative Qualitätsrouten.
+"""Example 3B: the same factory with alternative quality routes.
 
-Die normale Example-3-Konfiguration bleibt unverändert. Für jede wichtige
-Produktumwandlung werden zusätzliche Operationen angeboten: eine schnelle
-Route mit höherem Defektrisiko und eine langsamere Qualitätsroute.
+The regular Example 3 configuration remains unchanged. Additional operations
+are offered for important product transformations: a fast route with a higher
+defect risk and a slower quality route.
 """
 
 import runpy

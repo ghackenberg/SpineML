@@ -2,34 +2,34 @@ import salabim as sim
 
 from SpineML import *
 
-mt1 = MachineType('Grundbearbeitungszentrum')
-mt2 = MachineType('Praezisionsbearbeitungszentrum')
-mt3 = MachineType('Polierzentrum')
+mt1 = MachineType('BasicMachiningCenter')
+mt2 = MachineType('PrecisionMachiningCenter')
+mt3 = MachineType('PolishingCenter')
 
 
-tt1 = ToolType('Fräswerkzeug', 2, 3, 10)
-tt2 = ToolType('Bohrwerkzeug', 1, 2, 9)
-tt3 = ToolType('Praezisionswerkzeug', 3, 4, 12)
+tt1 = ToolType('MillingTool', 2, 3, 10)
+tt2 = ToolType('DrillingTool', 1, 2, 9)
+tt3 = ToolType('PrecisionTool', 3, 4, 12)
 
-pt1 = ProductType('Rohling Typ A', 12, 12, 12, 5)
-pt2 = ProductType('Bearbeiteter Grundkoerper', 12, 24, 11, 10)
-pt3 = ProductType('Rohling Typ B', 14, 15, 15, 6)
-pt4 = ProductType('Gefraestes Gehaeuse', 22, 23, 12, 7)
-pt5 = ProductType('Bohrbearbeitetes Gehaeuse', 22, 23, 12, 7)
-pt6 = ProductType('Poliertes Fertigteil', 12, 24, 11, 10)
+pt1 = ProductType('BlankTypeA', 12, 12, 12, 5)
+pt2 = ProductType('MachinedBaseBody', 12, 24, 11, 10)
+pt3 = ProductType('BlankTypeB', 14, 15, 15, 6)
+pt4 = ProductType('MilledHousing', 22, 23, 12, 7)
+pt5 = ProductType('DrilledHousing', 22, 23, 12, 7)
+pt6 = ProductType('PolishedFinishedPart', 12, 24, 11, 10)
 
-OperationType('Grundbearbeitung Rohling A', 2, 4, 0.50, mt1, tt1, pt1, pt2)
-OperationType('Grundbearbeitung Rohling B', 4, 3, 0.55, mt1, tt2, pt3, pt2)
-OperationType('Praezisionsfraesen', 7, 5, 0.45, mt2, tt3, pt2, pt4)
-OperationType('Praezisionsbohren', 3, 6, 0.50, mt2, tt2, pt2, pt5)
-OperationType('Endpolitur', 9, 2, 0.48, mt3, tt1, pt2, pt6)
+OperationType('BasicMachiningBlankA', 2, 4, 0.50, mt1, tt1, pt1, pt2)
+OperationType('BasicMachiningBlankB', 4, 3, 0.55, mt1, tt2, pt3, pt2)
+OperationType('PrecisionMilling', 7, 5, 0.45, mt2, tt3, pt2, pt4)
+OperationType('PrecisionDrilling', 3, 6, 0.50, mt2, tt2, pt2, pt5)
+OperationType('FinalPolishing', 9, 2, 0.48, mt3, tt1, pt2, pt6)
 
-s3 = Scenario('Schicht 3 – Gehaeusefertigung')
+s3 = Scenario('Shift 3 - HousingProduction')
 
-o3_1 = Order("Gehaeuse Los A – Fraesen", 2, 15, 650, pt4, s3)
-o3_2 = Order("Gehaeuse Los B – Bohren", 2, 25, 680, pt5, s3)
-o3_3 = Order("Fertigteil Los C – Polieren", 2, 11, 620, pt6, s3)
-o3_4 = Order("Grundkoerper Los D", 2, 19, 670, pt2, s3)
+o3_1 = Order("HousingBatchA - Milling", 2, 15, 650, pt4, s3)
+o3_2 = Order("HousingBatchB - Drilling", 2, 25, 680, pt5, s3)
+o3_3 = Order("FinishedPartBatchC - Polishing", 2, 11, 620, pt6, s3)
+o3_4 = Order("BaseBodyBatchD", 2, 19, 670, pt2, s3)
 
 l3 = Layout('Layout 3', 11, 3, 1000)
 

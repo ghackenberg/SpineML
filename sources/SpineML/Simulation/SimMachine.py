@@ -85,7 +85,7 @@ class SimMachine(sim.Component):
             color = self.create_tool_life_bar_color_function(tool_type)
             sim.Animate3dBox(x_len=x_len, y_len=0.01, z_len=0.07, color=color, x=x, y=y + 0.4379, z=z)
             z = z - 0.08
-        
+
         sim.Animate3dBox(x_len=0.60, y_len=0.40, z_len=0.40, color="lightgray", x=x, y=y - 0.08, z=1.00)
         sim.Animate3dBox(x_len=0.60, y_len=0.70, z_len=0.60, color="lightgray", x=x, y=y + 0.08, z=0.50)
 
@@ -210,6 +210,7 @@ class SimMachine(sim.Component):
         weight_ratio = float(product.weight) / self.max_product_weight
         volume_ratio = float(volume) / self.max_product_volume
         size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
+
         duration = operation.duration * size_factor / self.processing_speed_factor
         duration *= self.processing_variation
 
@@ -225,11 +226,11 @@ class SimMachine(sim.Component):
 
         self.state.set("returning")
 
-        defekt_schwergrad = None
+        defect_severity = None
 
         quality_key = (
             f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-            f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+            f"{job.number}|{operation.name}|{job.rework_count}"
         ).encode("utf-8")
 
         quality_rng = random.Random(
@@ -238,22 +239,22 @@ class SimMachine(sim.Component):
 
         if quality_rng.random() < operation.defect_probability:
          
-            defekt_schwergrad = quality_rng.random()
+            defect_severity = quality_rng.random()
 
-        if defekt_schwergrad is not None and defekt_schwergrad >= 0.001:
+        if defect_severity is not None and defect_severity >= 0.001:
             job.mark_defective(
                 operation=operation,
                 machine=self.machine,
                 product_state_before=operation.consumes_product_type.name,
                 product_state_target=operation.produces_product_type.name,
-                defekt_schwergrad=defekt_schwergrad,
+                defect_severity=defect_severity,
             )
         else:
-            job.bearbeitungs_state.set(operation.produces_product_type.name)
-            job.general_state.set("intakt")
+            job.processing_state.set(operation.produces_product_type.name)
+            job.general_state.set("intact")
             if job.defect_recovery_strategy in {
-                "nacharbeiten_auf_defektmaschine",
-                "nacharbeiten_auf_alternativer_maschine",
+                "rework_on_defect_machine",
+                "rework_on_alternative_machine",
             }:
                 job.defect_recovery_strategy = None
 

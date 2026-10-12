@@ -186,27 +186,27 @@ def _load_model(model_path: Path) -> dict[str, object]:
 def _global_evaluation() -> GlobalSimulationEvaluation:
     return GlobalSimulationEvaluation(
         GlobalSimulationWeights(
-            # Gewicht für die gesamte Durchlaufzeit bis zum letzten Abschluss.
+            # Weight für die gesamte Durchlaufzeit bis zum letzten Abschluss.
             makespan=5.0,
-            # Gewicht für die aufsummierte Verspätung abgeschlossener Aufträge.
+            # Weight für die aufsummierte Verspätung abgeschlossener Aufträge.
             total_tardiness=4.0,
-            # Gewicht für die gesamte Transportzeit aller Roboter.
+            # Weight für die gesamte Transportzeit aller Roboter.
             total_transport_time=1.0,
-            # Gewicht für Werkzeugwechsel sowie Montage- und Demontagezeiten.
+            # Weight für Werkzeugwechsel sowie Montage- und Demontagezeiten.
             tool_change_time=1.0,
-            # Gewicht für Wartezeit durch blockierte oder volle Puffer.
+            # Weight für Wartezeit durch blockierte oder volle Puffer.
             blocking_time=1.0,
             # Strafe für den Anteil der Jobs, die nachgearbeitet wurden.
-            nacharbeit_job_penalty=3.0,
-            # Strafe für den Anteil der Jobs, die als Ausschuss endeten.
-            ausschuss_job_penalty=4.0,
+            rework_job_penalty=3.0,
+            # Strafe für den Anteil der Jobs, die als Scrap endeten.
+            scrap_job_penalty=4.0,
             # Strafe für den Anteil der Jobs, die nicht fertiggestellt wurden.
             unfinished_jobs=20.0,
-            # Strafe für den Anteil der Jobs, bei denen ein Defekt auftrat.
+            # Strafe für den Anteil der Jobs, bei denen ein Defect auftrat.
             defect_job_penalty=3.0,
-            # Strafe für den Anteil der Jobs, die nicht intakt abgeschlossen wurden.
+            # Penalize the share of jobs that did not finish intact.
             non_intact_penalty=3.0,
-            # Strafe für den Anteil der herabgestuften Jobs.
+            # Penalize the share of downgraded jobs.
             downgrade_job_penalty=3.0,
         )
     )
@@ -227,7 +227,7 @@ def create_optimizer(model_file: str, model_stamp: int):
     layout, scenario = _find_layout_and_scenario(model, model_path)
 
     # Erstellt den Simulationsrunner, der das ausgewählte Layout und Szenario
-    # mit einem Gewichtssatz und Seed ausführen kann.
+    # mit einem weight set und Seed ausführen kann.
     runner = SpineMLSimulationRunner(
         layout,
         scenario,
@@ -235,13 +235,13 @@ def create_optimizer(model_file: str, model_stamp: int):
     )
 
     # Definiert die Funktion, die einen Lauf mit einem vollständigen lokalen
-    # Gewichtssatz und einem Seed startet.
+    # weight set und einem Seed startet.
     def run_simulation(weights, seed):
-        # Übergibt den Gewichtssatz und den Seed an den Simulationsrunner.
+        # Übergibt den weight set und den Seed an den Simulationsrunner.
         return runner(weights, seed)
 
     # Erstellt den Optimierer. Bei optimize_iteratively() lässt er später
-    # verschiedene lokale heuristische Gewichtssätze simulieren, vergleicht
+    # verschiedene lokale heuristische weight sets simulieren, vergleicht
     # ihre globalen Kosten und wählt den besten Satz aus.
     return LocalHeuristicWeightOptimizer(
         simulation_runner=run_simulation,
@@ -258,26 +258,26 @@ def _mean_metric(metrics_by_seed, attribute_name: str) -> float:
 
 
 # Zeichnet die mittleren globalen Kosten je Kandidat.
-def globale_kosten_pro_kandidat(costs, container=None):
+def global_costs_per_candidate(costs, container=None):
     if not costs:
         return
     data = pd.DataFrame(
         {
-            "Kandidat": range(1, len(costs) + 1),
-            "Mittlere globale Kosten": costs,
+            "Candidate": range(1, len(costs) + 1),
+            "Mean global cost": costs,
         }
     )
     chart = (
         alt.Chart(data)
         .mark_line(point=True, color="#f28e2b")
         .encode(
-            x=alt.X("Kandidat:Q", title="Kandidat"),
+            x=alt.X("Candidate:Q", title="Candidate"),
             y=alt.Y(
-                "Mittlere globale Kosten:Q",
-                title="Mittlere globale Kosten",
+                "Mean global cost:Q",
+                title="Mean global cost",
                 scale=alt.Scale(zero=False),
             ),
-            tooltip=["Kandidat:Q", "Mittlere globale Kosten:Q"],
+            tooltip=["Candidate:Q", "Mean global cost:Q"],
         )
         .interactive()
     )
@@ -286,28 +286,28 @@ def globale_kosten_pro_kandidat(costs, container=None):
 
 
 # Zeichnet die mittleren Kennzahlen je Kandidat.
-def mittlere_kennzahlen_pro_kandidat(metrics, container=None):
+def mean_metrics_per_candidate(metrics, container=None):
     if not metrics:
         return
     frame = pd.DataFrame(metrics)
     frame = frame.melt(
-        id_vars=["Kandidat"],
-        var_name="Kennzahl",
-        value_name="Wert",
+        id_vars=["Candidate"],
+        var_name="Metric",
+        value_name="Value",
     )
     chart = (
         alt.Chart(frame)
         .mark_line(point=True)
         .encode(
-            x=alt.X("Kandidat:Q", title="Kandidat"),
+            x=alt.X("Candidate:Q", title="Candidate"),
             y=alt.Y(
-                "Wert:Q",
-                title="Mittelwert über Seeds",
+                "Value:Q",
+                title="Mean across seeds",
                 scale=alt.Scale(zero=False),
             ),
-            color=alt.Color("Kennzahl:N", title="Kennzahl"),
-            facet=alt.Facet("Kennzahl:N", columns=2, title=None),
-            tooltip=["Kandidat:Q", "Kennzahl:N", "Wert:Q"],
+            color=alt.Color("Metric:N", title="Metric"),
+            facet=alt.Facet("Metric:N", columns=2, title=None),
+            tooltip=["Candidate:Q", "Metric:N", "Value:Q"],
         )
         .properties(height=180)
         .resolve_scale(y="independent")
@@ -318,21 +318,21 @@ def mittlere_kennzahlen_pro_kandidat(metrics, container=None):
 
 
 # Zeichnet die prozentuale Kennzahlenabweichung gegenüber dem ersten Kandidaten.
-def kennzahlenabweichung_gegen_kandidat_1(metrics, container=None):
+def metric_deviation_from_candidate_1(metrics, container=None):
     if not metrics:
         return
     frame = pd.DataFrame(metrics)
     metric_names = [
         "Makespan",
         "Tardiness",
-        "Transportzeit",
-        "Unfertige Jobs",
-        "Intaktquote (%)",
-        "Defektquote (%)",
-        "Ausschussquote (%)",
-        "Nacharbeitsquote (%)",
-        "Unfertigenquote (%)",
-        "Herabstufungsquote (%)",
+        "Transport time",
+        "Unfinished jobs",
+        "Intact rate (%)",
+        "Defect rate (%)",
+        "Scrap rate (%)",
+        "Rework rate (%)",
+        "Unfinished rate (%)",
+        "Downgrade rate (%)",
     ]
     for name in metric_names:
         baseline = float(frame[name].iloc[0])
@@ -344,24 +344,24 @@ def kennzahlenabweichung_gegen_kandidat_1(metrics, container=None):
             )
 
     delta_frame = frame.melt(
-        id_vars=["Kandidat"],
-        var_name="Kennzahl",
-        value_name="Abweichung in %",
+        id_vars=["Candidate"],
+        var_name="Metric",
+        value_name="Deviation (%)",
     )
     chart = (
         alt.Chart(delta_frame)
         .mark_line(point=True)
         .encode(
-            x=alt.X("Kandidat:Q", title="Kandidat"),
+            x=alt.X("Candidate:Q", title="Candidate"),
             y=alt.Y(
-                "Abweichung in %:Q",
-                title="Abweichung gegenüber Kandidat 1 (%)",
+                "Deviation (%):Q",
+                title="Deviation from candidate 1 (%)",
             ),
-            color=alt.Color("Kennzahl:N", title="Kennzahl"),
+            color=alt.Color("Metric:N", title="Metric"),
             tooltip=[
-                "Kandidat:Q",
-                "Kennzahl:N",
-                "Abweichung in %:Q",
+                "Candidate:Q",
+                "Metric:N",
+                "Deviation (%):Q",
             ],
         )
         .interactive()
@@ -370,8 +370,8 @@ def kennzahlenabweichung_gegen_kandidat_1(metrics, container=None):
     target.altair_chart(chart, use_container_width=True)
 
 
-# Zeigt den Mittelwertvergleich zwischen Baseline und optimierten Gewichten.
-def vergleich_baseline_optimiert(benchmark):
+# Zeigt den Mittelwertvergleich zwischen Baseline und optimierten weights.
+def compare_baseline_optimized(benchmark):
     if not benchmark:
         return
 
@@ -379,48 +379,48 @@ def vergleich_baseline_optimiert(benchmark):
     for label, seed_rows in benchmark.items():
         for row in seed_rows:
             item = dict(row)
-            item["Steuerung"] = label
+            item["Control"] = label
             rows.append(item)
 
     frame = pd.DataFrame(rows)
     metric_names = [
         "Makespan",
         "Tardiness",
-        "Transportzeit",
-        "Unfertige Jobs",
-        "Intaktquote (%)",
-        "Defektquote (%)",
-        "Ausschussquote (%)",
-        "Nacharbeitsquote (%)",
-        "Herabstufungsquote (%)",
-        "Gewichtete Summe der relativ zur Baseline skalierten Kennzahlen",
+        "Transport time",
+        "Unfinished jobs",
+        "Intact rate (%)",
+        "Defect rate (%)",
+        "Scrap rate (%)",
+        "Rework rate (%)",
+        "Downgrade rate (%)",
+        "Weighted sum of metrics relative to baseline",
     ]
     mean_frame = frame.groupby(
-        "Steuerung",
+        "Control",
         as_index=False,
     )[metric_names].mean()
 
-    st.subheader("Vergleich: Originalgewichte gegen optimierte Gewichte")
+    st.subheader("Comparison: original weights vs. optimized weights")
     st.dataframe(mean_frame, use_container_width=True, hide_index=True)
 
     chart_frame = frame.melt(
-        id_vars=["Seed", "Steuerung"],
-        var_name="Kennzahl",
-        value_name="Wert",
+        id_vars=["Seed", "Control"],
+        var_name="Metric",
+        value_name="Value",
     )
     chart = (
         alt.Chart(chart_frame)
         .mark_line(point=True)
         .encode(
             x=alt.X("Seed:O", title="Seed"),
-            y=alt.Y("Wert:Q", title="Wert", scale=alt.Scale(zero=False)),
-            color=alt.Color("Steuerung:N", title="Steuerung"),
-            facet=alt.Facet("Kennzahl:N", columns=3, title=None),
+            y=alt.Y("Value:Q", title="Value", scale=alt.Scale(zero=False)),
+            color=alt.Color("Control:N", title="Control"),
+            facet=alt.Facet("Metric:N", columns=3, title=None),
             tooltip=[
                 "Seed:O",
-                "Steuerung:N",
-                "Kennzahl:N",
-                "Wert:Q",
+                "Control:N",
+                "Metric:N",
+                "Value:Q",
             ],
         )
         .properties(height=180)
@@ -430,13 +430,13 @@ def vergleich_baseline_optimiert(benchmark):
     st.altair_chart(chart, use_container_width=True)
 
 
-# Simuliert einen lokalen Gewichtssatz mit allen Seeds und sammelt globale Kennzahlen.
+# Simuliert einen lokalen weight set mit allen Seeds und sammelt globale Kennzahlen.
 def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
     # Zustands-Dictionary des Streamlit-Webservers für Fortschritt und Ergebnisse.
     state,
     # Optimierer mit Simulationsrunner und globaler Kostenberechnung.
     optimizer,
-    # Vollständiger lokaler Gewichtssatz mit allen einzelnen Heuristik-Gewichten.
+    # Complete local weight set with all individual heuristic weights.
     weights,
     # Gibt an, ob die Referenzwerte aus dieser Baseline berechnet werden.
     calculate_reference_values=False,
@@ -448,11 +448,11 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
         if calculate_reference_values:
             phase_name = "Baseline"
         else:
-            phase_name = "Optimierte Gewichte"
+            phase_name = "Optimized weights"
         state["phase"] = (
             f"{phase_name}: Seed {seed_index}/{len(SEEDS)}"
         )
-        # Führt die Simulation mit dem lokalen Gewichtssatz und diesem Seed aus.
+        # Führt die Simulation mit dem lokalen weight set und diesem Seed aus.
         # metrics enthält danach die globalen Kennzahlen dieses Simulationslaufs.
         metrics = optimizer.simulation_runner(weights, seed)
         metrics_by_seed.append((seed, metrics))
@@ -483,15 +483,15 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
             "Seed": seed,
             "Makespan": metrics.makespan,
             "Tardiness": metrics.total_tardiness,
-            "Transportzeit": metrics.total_transport_time,
-            "Unfertige Jobs": metrics.unfinished_jobs,
-            "Intaktquote (%)": metrics.intact_rate * 100.0,
-            "Defektquote (%)": metrics.defect_rate * 100.0,
-            "Ausschussquote (%)": metrics.scrap_rate * 100.0,
-            "Nacharbeitsquote (%)": metrics.rework_rate * 100.0,
-            "Herabstufungsquote (%)": metrics.downgrade_rate * 100.0,
-            # Die Kennzahlen werden relativ zur Baseline skaliert und anschließend gewichtet addiert.
-            "Gewichtete Summe der relativ zur Baseline skalierten Kennzahlen": (
+            "Transport time": metrics.total_transport_time,
+            "Unfinished jobs": metrics.unfinished_jobs,
+            "Intact rate (%)": metrics.intact_rate * 100.0,
+            "Defect rate (%)": metrics.defect_rate * 100.0,
+            "Scrap rate (%)": metrics.scrap_rate * 100.0,
+            "Rework rate (%)": metrics.rework_rate * 100.0,
+            "Downgrade rate (%)": metrics.downgrade_rate * 100.0,
+            # Scale metrics relative to the baseline and add them with weights.
+            "Weighted sum of metrics relative to baseline": (
                 optimizer.global_evaluation.calculate_weighted_sum_of_metrics_relative_to_baseline(
                     metrics
                 )
@@ -536,8 +536,8 @@ def _start_optimization(state, optimizer):
         state["candidate"] = candidate
         state["total_candidates"] = total_candidates
         state["phase"] = (
-            f"Optimierung: Runde {iteration}, "
-            f"Kandidat {candidate}/{total_candidates}"
+            f"Optimization: round {iteration}, "
+            f"candidate {candidate}/{total_candidates}"
         )
 
         if evaluation is None:
@@ -549,41 +549,41 @@ def _start_optimization(state, optimizer):
 
         metrics_by_seed = evaluation.metrics_by_seed
         metric_row = {
-            "Kandidat": len(state["costs"]),
+            "Candidate": len(state["costs"]),
             "Makespan": _mean_metric(metrics_by_seed, "makespan"),
             "Tardiness": _mean_metric(
                 metrics_by_seed,
                 "total_tardiness",
             ),
-            "Transportzeit": _mean_metric(
+            "Transport time": _mean_metric(
                 metrics_by_seed,
                 "total_transport_time",
             ),
-            "Unfertige Jobs": _mean_metric(
+            "Unfinished jobs": _mean_metric(
                 metrics_by_seed,
                 "unfinished_jobs",
             ),
-            "Intaktquote (%)": _mean_metric(
+            "Intact rate (%)": _mean_metric(
                 metrics_by_seed,
                 "intact_rate",
             ) * 100.0,
-            "Defektquote (%)": _mean_metric(
+            "Defect rate (%)": _mean_metric(
                 metrics_by_seed,
                 "defect_rate",
             ) * 100.0,
-            "Ausschussquote (%)": _mean_metric(
+            "Scrap rate (%)": _mean_metric(
                 metrics_by_seed,
                 "scrap_rate",
             ) * 100.0,
-            "Nacharbeitsquote (%)": _mean_metric(
+            "Rework rate (%)": _mean_metric(
                 metrics_by_seed,
                 "rework_rate",
             ) * 100.0,
-            "Herabstufungsquote (%)": _mean_metric(
+            "Downgrade rate (%)": _mean_metric(
                 metrics_by_seed,
                 "downgrade_rate",
             ) * 100.0,
-            "Unfertigenquote (%)": _mean_metric(
+            "Unfinished rate (%)": _mean_metric(
                 metrics_by_seed,
                 "unfinished_rate",
             ) * 100.0,
@@ -594,7 +594,7 @@ def _start_optimization(state, optimizer):
     def worker():
         try:
             # Aktualisiert die Statusanzeige: Jetzt wird zuerst die Baseline berechnet.
-            state["phase"] = "Baseline wird mit Originalgewichten berechnet ..."
+            state["phase"] = "Calculating baseline with original weights ..."
         
             # hier liefert die Methode eine Zeile mit globalen Kennzahlen pro Seed.
             baseline_rows = _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
@@ -603,26 +603,26 @@ def _start_optimization(state, optimizer):
                 state,
                 # Übergibt den Optimierer, der die Simulation ausführt und bewertet.
                 optimizer,
-                # Erzeugt den unveränderten Standard-Gewichtssatz als Vergleichsbasis.
+                # Erzeugt den unveränderten Standard-weight set als Vergleichsbasis.
                 HeuristicWeights(),
                 # Berechnet aus der Baseline die Referenzwerte für die spätere relative Skalierung.
                 calculate_reference_values=True,
             )
 
-            # Startet die iterative Suche nach einem besseren lokalen Gewichtssatz
+            # Startet die iterative Suche nach einem besseren lokalen weight set
             # und speichert das Optimierungsergebnis im Streamlit-Webserver-Zustand.
             state["result"] = optimizer.optimize_iteratively(
 
-                # Startet die Suche mit den unveränderten Standardgewichten.
+                # Start the search with the unchanged default weights.
                 initial_local_weights=HeuristicWeights(),
 
-                # Verwendet diese Seeds für jeden getesteten Gewichtssatz.
+                # Verwendet diese Seeds für jeden getesteten weight set.
                 seeds=SEEDS,
 
                 # Legt die maximale Anzahl der Optimierungsrunden fest.
                 iterations=ITERATIONS,
 
-                # Legt die anfängliche relative Größe der Gewichtsänderungen fest.
+                # Set the initial relative size of weight changes.
                 initial_local_weight_step_fraction=INITIAL_WEIGHT_STEP,
 
                 # Legt fest, wie viele zusätzliche Kandidaten pro Runde getestet werden.
@@ -638,8 +638,8 @@ def _start_optimization(state, optimizer):
                 progress_callback=progress,
             )
 
-            # Simuliert den besten lokalen Gewichtssatz mit allen Seeds und sammelt
-            # pro Seed globale Kennzahlen sowie deren gewichtete relative Summe.
+            # Simuliert den besten lokalen weight set mit allen Seeds und sammelt
+            # pro Seed globale Kennzahlen sowie deren weighted relative Summe.
             optimized_rows = _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
                 state,
                 optimizer,
@@ -647,7 +647,7 @@ def _start_optimization(state, optimizer):
             )
             state["benchmark"] = {
                 "Baseline": baseline_rows,
-                "Optimiert": optimized_rows,
+                "Optimized": optimized_rows,
             }
         except Exception as error:
             state["error"] = str(error)
@@ -704,8 +704,8 @@ def _streamlit_app():
         selected_model_path.stat().st_mtime_ns,
     )
 
-    st.title("SpineML – heuristische Optimierung")
-    st.caption(f"Beispiel: {selected_model_path.name}")
+    st.title("SpineML - heuristic optimization")
+    st.caption(f"Example: {selected_model_path.name}")
 
     if "optimization_state" not in st.session_state:
         st.session_state.optimization_state = {
@@ -727,7 +727,7 @@ def _streamlit_app():
     # Zeigt den Startbutton und ruft beim Anklicken
     # _start_optimization(state, optimizer) mit diesen beiden Argumenten auf.
     st.button(
-        "Optimierung starten",
+        "Start optimization",
         disabled=state["running"],
         on_click=_start_optimization,
         args=(state, optimizer),
@@ -746,11 +746,11 @@ def _streamlit_app():
         while state["running"]:
             status.info(
                 state["phase"]
-                or "Optimierung läuft – Kandidaten werden simuliert ..."
+                or "Optimization running - simulating candidates ..."
             )
-            iteration.write(f"Aktuelle Iteration: {state['iteration']}")
+            iteration.write(f"Current iteration: {state['iteration']}")
             candidate.write(
-                f"Kandidat: {state['candidate']} / "
+                f"Candidate: {state['candidate']} / "
                 f"{state['total_candidates'] or '?'}"
             )
             if state["total_candidates"]:
@@ -758,42 +758,42 @@ def _streamlit_app():
                     state["candidate"] / state["total_candidates"]
                 )
             if state["costs"]:
-                globale_kosten_pro_kandidat(state["costs"], cost_chart)
-                mittlere_kennzahlen_pro_kandidat(
+                global_costs_per_candidate(state["costs"], cost_chart)
+                mean_metrics_per_candidate(
                     state["metrics"],
                     metric_chart,
                 )
-                kennzahlenabweichung_gegen_kandidat_1(
+                metric_deviation_from_candidate_1(
                     state["metrics"],
                     delta_chart,
                 )
                 latest.caption(
-                    f"Letzte mittlere globale Kosten: "
+                    f"Latest mean global cost: "
                     f"{state['costs'][-1]:.2f}"
                 )
             else:
-                latest.caption("Noch kein Kandidat vollständig bewertet.")
+                latest.caption("No candidate has been fully evaluated yet.")
             time.sleep(0.5)
 
     if state["error"]:
         st.error(state["error"])
     elif state["result"] is not None:
-        st.success("Optimierung abgeschlossen")
-        globale_kosten_pro_kandidat(state["costs"])
-        st.subheader("Mittlere Kennzahlen pro Kandidat")
-        mittlere_kennzahlen_pro_kandidat(state["metrics"])
-        st.subheader("Kennzahlenabweichung gegenüber Kandidat 1")
-        kennzahlenabweichung_gegen_kandidat_1(state["metrics"])
-        st.write("Beste lokale Gewichte", state["result"].best_weights)
+        st.success("Optimization completed")
+        global_costs_per_candidate(state["costs"])
+        st.subheader("Mean metrics per candidate")
+        mean_metrics_per_candidate(state["metrics"])
+        st.subheader("Metric deviation from candidate 1")
+        metric_deviation_from_candidate_1(state["metrics"])
+        st.write("Best local weights", state["result"].best_weights)
         st.write(
-            "Beste mittlere globale Kosten",
+            "Best mean global cost",
             state["result"].best_mean_global_cost,
         )
         st.write(
-            "Referenzwerte der Baseline",
+            "Baseline reference values",
             state["baseline_reference_values"],
         )
-        vergleich_baseline_optimiert(state["benchmark"])
+        compare_baseline_optimized(state["benchmark"])
 
 if __name__ == "__main__" and st.runtime.exists():
     _streamlit_app()

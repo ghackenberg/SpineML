@@ -57,7 +57,7 @@ class SimulationObjectObserver:
             "downgraded": job.downgraded,
             "downgrade_product_type_id": None if job.downgrade_product_type is None else job.downgrade_product_type.name,
             "queue_priority": job.queue_priority,
-            "bearbeitungs_state": job.bearbeitungs_state.get(),
+            "processing_state": job.processing_state.get(),
             "general_state": job.general_state.get(),
             "due_state": job.due_state.get(),
             "defect_detected_time": job.defect_detected_time,
@@ -67,7 +67,7 @@ class SimulationObjectObserver:
             "defect_machine_id": None if job.defect_machine is None else job.defect_machine.name,
             "defect_product_state_before": job.defect_product_state_before,
             "defect_product_state_target": job.defect_product_state_target,
-            "defekt_schwergrad": job.defekt_schwergrad,
+            "defect_severity": job.defect_severity,
             "defect_recovery_strategy": job.defect_recovery_strategy,
             "recovery_in_progress": job.recovery_in_progress,
             "completed_time": job.completed_time,
@@ -144,7 +144,7 @@ class SimulationObjectObserver:
             "current_job_defect_operation_id": None if current_job is None or current_job.defect_operation is None else current_job.defect_operation.name,
             "current_job_defect_machine_id": None if current_job is None or current_job.defect_machine is None else current_job.defect_machine.name,
             "current_job_queue_priority": None if current_job is None else current_job.queue_priority,
-            "current_job_bearbeitungs_state": None if current_job is None else current_job.bearbeitungs_state.get(),
+            "current_job_processing_state": None if current_job is None else current_job.processing_state.get(),
             "current_job_general_state": None if current_job is None else current_job.general_state.get(),
             "current_job_selected_operation_id": None if current_job is None or current_job.selected_operation is None else current_job.selected_operation.name,
             "current_job_selected_machine_id": None if current_job is None or current_job.selected_machine is None else current_job.selected_machine.name,
@@ -227,7 +227,7 @@ class SimulationObjectObserver:
             "current_job_summary": SimulationObjectObserver.observe_job_summary(current_job),
             "current_job_id": SimulationObjectObserver.job_id(current_job),
             "current_job_queue_priority": None if current_job is None else current_job.queue_priority,
-            "current_job_bearbeitungs_state": None if current_job is None else current_job.bearbeitungs_state.get(),
+            "current_job_processing_state": None if current_job is None else current_job.processing_state.get(),
             "current_job_general_state": None if current_job is None else current_job.general_state.get(),
             "current_job_selected_operation_id": None if current_job is None or current_job.selected_operation is None else current_job.selected_operation.name,
             "current_job_selected_machine_id": None if current_job is None or current_job.selected_machine is None else current_job.selected_machine.name,
@@ -320,7 +320,7 @@ class SimulationObjectObserver:
             "current_job_summary": SimulationObjectObserver.observe_job_summary(current_job),
             "current_job_id": SimulationObjectObserver.job_id(current_job),
             "current_job_queue_priority": None if current_job is None else current_job.queue_priority,
-            "current_job_bearbeitungs_state": None if current_job is None else current_job.bearbeitungs_state.get(),
+            "current_job_processing_state": None if current_job is None else current_job.processing_state.get(),
             "current_job_general_state": None if current_job is None else current_job.general_state.get(),
             "remaining_operation_count": None if current_job is not None else 0,
             "remaining_machine_count": 0 if current_job is None or current_job.selected_machine is None else 1,
@@ -363,8 +363,8 @@ class SimulationObjectObserver:
                 getattr(item, "queue_priority", None)
                 for item in items
             ],
-            "job_bearbeitungs_states": [
-                item.bearbeitungs_state.get() if hasattr(item, "bearbeitungs_state") else None
+            "job_processing_states": [
+                item.processing_state.get() if hasattr(item, "processing_state") else None
                 for item in items
             ],
             "job_general_states": [
@@ -386,7 +386,7 @@ class SimulationObjectObserver:
             "job_id": SimulationObjectObserver.job_id(job),
             "order_name": job.order.name,
             "number": job.number,
-            "bearbeitungs_state": job.bearbeitungs_state.get(),
+            "processing_state": job.processing_state.get(),
             "general_state": job.general_state.get(),
             "target_product_type_name": job.order.product_type.name,
             "target_product_weight": job.order.product_type.weight,

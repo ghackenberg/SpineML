@@ -29,14 +29,14 @@ class SimOrder(sim.Component):
     def plot(self, legend=True):
         categories = []
         for job in self.sim_jobs:
-            for value in job.bearbeitungs_state.value.values():
+            for value in job.processing_state.value.values():
                 if value not in categories:
                     categories.append(value)
         
         values = [0 for c in categories]
         for job in self.sim_jobs:
-            for value in job.bearbeitungs_state.value.values():
-                duration = job.bearbeitungs_state.value.value_duration(value)
+            for value in job.processing_state.value.values():
+                duration = job.processing_state.value.value_duration(value)
                 index = categories.index(value)
                 values[index] = values[index] + duration
 

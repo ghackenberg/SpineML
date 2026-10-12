@@ -12,10 +12,10 @@ if TYPE_CHECKING:
 
 class SimOrderJob(sim.Component):
     DEFECT_STRATEGY_ACTION_TYPES = {
-        "job_nacharbeiten_auf_defektmaschine",
-        "job_nacharbeiten_auf_alternativer_maschine",
-        "produkt_herabstufen",
-        "job_ausschuss",
+        "job_rework_on_defect_machine",
+        "job_rework_on_alternative_machine",
+        "downgrade_product",
+        "job_scrap",
     }
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
@@ -42,8 +42,8 @@ class SimOrderJob(sim.Component):
         self.location = "start_storage"
         self.selected_operation: OperationType | None = None  
         self.selected_machine: Machine | None = None  
-        self.bearbeitungs_state = sim.State("Bearbeitungszustand", value="unconfigured", env=self.env)  
-        self.general_state = sim.State("General state", value="intakt", env=self.env)  
+        self.processing_state = sim.State("ProcessingState", value="unconfigured", env=self.env)
+        self.general_state = sim.State("General state", value="intact", env=self.env)
         self.due_state = sim.State("Due", value=None, env=self.env)  
 
         self.downgraded = False  
@@ -54,13 +54,13 @@ class SimOrderJob(sim.Component):
         self.defect_machine: Machine | None = None  
         self.defect_product_state_before = None  
         self.defect_product_state_target = None  
-        self.defekt_schwergrad = None  
+        self.defect_severity = None
         self.defect_recovery_strategy = None  
         # Bleibt während des Recovery-Transports und der Recovery-Bearbeitung aktiv.
         self.recovery_in_progress = False
         self.defect_count = 0
-        self.nacharbeit_count = 0
-        self.ausschuss_count = 0
+        self.rework_count = 0
+        self.scrap_count = 0
 
     # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
@@ -75,8 +75,8 @@ class SimOrderJob(sim.Component):
             if "selected_machine" in action.payload:
                 self.selected_machine = action.payload["selected_machine"]
 
-            if "bearbeitungs_state" in action.payload:
-                self.bearbeitungs_state.set(action.payload["bearbeitungs_state"])
+            if "processing_state" in action.payload:
+                self.processing_state.set(action.payload["processing_state"])
 
             if "general_state" in action.payload:
                 self.general_state.set(action.payload["general_state"])
@@ -114,8 +114,8 @@ class SimOrderJob(sim.Component):
             if "defect_product_state_target" in action.payload:
                 self.defect_product_state_target = action.payload["defect_product_state_target"]
 
-            if "defekt_schwergrad" in action.payload:
-                self.defekt_schwergrad = action.payload["defekt_schwergrad"]
+            if "defect_severity" in action.payload:
+                self.defect_severity = action.payload["defect_severity"]
 
             if "defect_recovery_strategy" in action.payload:
                 self.defect_recovery_strategy = action.payload["defect_recovery_strategy"]
@@ -143,14 +143,14 @@ class SimOrderJob(sim.Component):
 
             if action.action_type in self.DEFECT_STRATEGY_ACTION_TYPES:
                 if action.action_type in {
-                    "job_nacharbeiten_auf_defektmaschine",
-                    "job_nacharbeiten_auf_alternativer_maschine",
+                    "job_rework_on_defect_machine",
+                    "job_rework_on_alternative_machine",
                 }:
-                    self.nacharbeit_count += 1
-                    # Nacharbeitsstrategie ist gewählt; die Recovery ist noch nicht abgeschlossen.
+                    self.rework_count += 1
+                    # The rework strategy is selected; recovery is not complete yet.
                     self.recovery_in_progress = True
-                elif action.action_type == "job_ausschuss":
-                    self.ausschuss_count += 1
+                elif action.action_type == "job_scrap":
+                    self.scrap_count += 1
                 yield self.bridge.notify_state_change(self)
                 yield self.hold(1.0)
                 continue
@@ -170,7 +170,7 @@ class SimOrderJob(sim.Component):
         machine: Machine | None = None,
         product_state_before: str | None = None,
         product_state_target: str | None = None,
-        defekt_schwergrad: float | None = None,
+        defect_severity: float | None = None,
     ):
         self.defect_count += 1
         self.general_state.set("defect")
@@ -179,7 +179,7 @@ class SimOrderJob(sim.Component):
         self.defect_machine = machine
         self.defect_product_state_before = product_state_before
         self.defect_product_state_target = product_state_target
-        self.defekt_schwergrad = defekt_schwergrad
+        self.defect_severity = defect_severity
         self.defect_recovery_strategy = None
 
     # Führt die Funktion mit den übergebenen Werten aus.

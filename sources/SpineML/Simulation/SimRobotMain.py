@@ -50,7 +50,7 @@ class SimRobotMain(SimRobot):
             if corridor_name is not None and configured_corridor.name == corridor_name:
                 return index
         raise ValueError(
-            f"Corridor {corridor_name!r} gehört nicht zum Layout "
+            f"Corridor {corridor_name!r} is not part of the layout "
             f"{self.layout.name!r}."
         )
 
@@ -73,7 +73,7 @@ class SimRobotMain(SimRobot):
             if corridor_name is not None and configured_name == corridor_name:
                 return index
         raise ValueError(
-            f"Simulations-Corridor {corridor_name!r} gehört nicht zum Layout."
+            f"Simulation corridor {corridor_name!r} is not part of the layout."
         )
 
     # Führt die angeforderte Bewegung oder Aktion aus.
@@ -157,23 +157,23 @@ class SimRobotMain(SimRobot):
             if "selected_machine" in action.payload:
                 job.selected_machine = action.payload["selected_machine"]
             if "defect_recovery_strategy" in action.payload:
-                # Speichert die gewählte Nacharbeitsstrategie; der Job markiert die laufende Recovery selbst.
+                # Stores the selected rework strategy; the job marks the active recovery itself.
                 recovery_strategy = action.payload["defect_recovery_strategy"]
                 if (
                     recovery_strategy in {
-                        "nacharbeiten_auf_defektmaschine",
-                        "nacharbeiten_auf_alternativer_maschine",
+                        "rework_on_defect_machine",
+                        "rework_on_alternative_machine",
                     }
                     and job.defect_recovery_strategy not in {
-                        "nacharbeiten_auf_defektmaschine",
-                        "nacharbeiten_auf_alternativer_maschine",
+                        "rework_on_defect_machine",
+                        "rework_on_alternative_machine",
                     }
                 ):
-                    job.nacharbeit_count += 1
+                    job.rework_count += 1
                 job.defect_recovery_strategy = recovery_strategy
                 if recovery_strategy in {
-                    "nacharbeiten_auf_defektmaschine",
-                    "nacharbeiten_auf_alternativer_maschine",
+                    "rework_on_defect_machine",
+                    "rework_on_alternative_machine",
                 }:
                     job.recovery_in_progress = True
             yield from self.move_to_corridor_storage(sim_corridor, corridor_index, movement_speed)

@@ -12,7 +12,7 @@ from ..Interface.InterfaceTypes import (
 
 
 class GeneratorSelectorPolicy(Policy):
-    """Verbindet einen ActionGenerator mit einem austauschbaren ActionSelector."""
+    """Connect an action generator to a replaceable action selector."""
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
     def __init__(

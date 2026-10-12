@@ -577,12 +577,12 @@ machine_pick_tool_life, target_store_capacity,
 place_target_storage_time, place_short_transport_time,
 place_machine_queue, place_shortest_processing_time,
 release_edd,
-nacharbeit_defektmaschine, nacharbeit_alternative_maschine,
-produkt_herabstufen, wait_defect_job, job_ausschuss,
-nacharbeit_not_allowed_downgrade_bonus,
-deadline_pressure_ausschuss_bonus, deadline_missed_wait_penalty,
-nacharbeit_defektmaschine_not_allowed,
-nacharbeit_alternative_maschine_not_allowed,
+rework_defect_machine_deadline_penalty_weight, rework_alternative_machine_deadline_penalty_weight,
+downgrade_product, wait_defect_job, job_scrap,
+rework_not_allowed_downgrade_bonus_weight,
+deadline_pressure_scrap_bonus_weight, deadline_missed_wait_penalty,
+rework_defect_machine_deadline_penalty_weight,
+rework_alternative_machine_deadline_penalty_weight,
 defect_edd, defect_repair_quality
 ```
 

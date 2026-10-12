@@ -54,7 +54,7 @@ observation = PolicyObservation(
                     "defect_machine": None,
                     "defect_product_state_before": None,
                     "defect_product_state_target": None,
-                    "defekt_schwergrad": None,
+                    "defect_severity": None,
                     "defect_recovery_strategy": None,
                     "action_store_empty": True,
                     "last_report_time": 12.0,
@@ -138,7 +138,7 @@ SelectedActionPolicy(
                     "defect_machine": None,
                     "defect_product_state_before": None,
                     "defect_product_state_target": None,
-                    "defekt_schwergrad": None,
+                    "defect_severity": None,
                     "defect_recovery_strategy": None,
                 },
             )
@@ -614,7 +614,7 @@ current_state = {
         "defect_machine": None,
         "defect_product_state_before": None,
         "defect_product_state_target": None,
-        "defekt_schwergrad": None,
+        "defect_severity": None,
         "defect_recovery_strategy": None,
     }
 ```
@@ -650,7 +650,7 @@ Konkreter Output:
         "defect_machine": None,
         "defect_product_state_before": None,
         "defect_product_state_target": None,
-        "defekt_schwergrad": None,
+        "defect_severity": None,
         "defect_recovery_strategy": None,
     }
 ```
@@ -668,17 +668,17 @@ Wichtig:
 
 ## estimate_defect_repairable
 
-- Input: `current_state["defekt_schwergrad"]`
+- Input: `current_state["defect_severity"]`
 - Output: `True`, wenn Schweregrad gesetzt und kleiner als `0.7`
 - Bedeutung: einfache Heuristik, ob Defekt reparierbar ist
 
 Konkrete Beispiele:
 
-- Input: `{"defekt_schwergrad": 0.2}` -> Output: `True`
-- Input: `{"defekt_schwergrad": 0.69}` -> Output: `True`
-- Input: `{"defekt_schwergrad": 0.7}` -> Output: `False`
-- Input: `{"defekt_schwergrad": 0.9}` -> Output: `False`
-- Input: `{"defekt_schwergrad": None}` -> Output: `False`
+- Input: `{"defect_severity": 0.2}` -> Output: `True`
+- Input: `{"defect_severity": 0.69}` -> Output: `True`
+- Input: `{"defect_severity": 0.7}` -> Output: `False`
+- Input: `{"defect_severity": 0.9}` -> Output: `False`
+- Input: `{"defect_severity": None}` -> Output: `False`
 
 ## estimate_rework_time
 
@@ -817,7 +817,7 @@ input_storage.available_capacity = 0 -> Output False
 
 - Input: defekter OrderJob
 - Output: Liste moeglicher Recovery-Aktionen
-- Beispiele: `order_job_reparieren`, `order_job_produktionsweg_neuplanen`, `produkt_herabstufen`, `order_job_abbrechen`, `wait_job`
+- Beispiele: `order_job_reparieren`, `order_job_produktionsweg_neuplanen`, `downgrade_product`, `order_job_abbrechen`, `wait_job`
 - Bedeutung: erzeugt Handlungsspielraum fuer Defektfall
 
 Konkreter Input:
@@ -833,7 +833,7 @@ current_state = {
         "defect_machine": Machine("Bohrmaschine 1"),
         "defect_product_state_before": "Rohteil",
         "defect_product_state_target": "Gebohrt",
-        "defekt_schwergrad": 0.4,
+        "defect_severity": 0.4,
         "defect_recovery_strategy": None,
         "latest_end_time": 100.0,
         "time": 30.0,
@@ -875,7 +875,7 @@ Bedeutung der einzelnen Aktionen:
 
 - `order_job_reparieren`: Defekt wird repariert, Job kann wieder weiterlaufen.
 - `order_job_produktionsweg_neuplanen`: aktuelle Route wird verworfen, Policy soll neuen Weg suchen.
-- `produkt_herabstufen`: Zielprodukt wird auf niedrigeren Produkttyp gesetzt.
+- `downgrade_product`: Zielprodukt wird auf niedrigeren Produkttyp gesetzt.
 - `order_job_abbrechen`: Job wird abgebrochen.
 - `wait_job`: noch keine endgueltige Recovery-Entscheidung.
 

@@ -128,8 +128,8 @@ Entscheidungen.
 | `total_transport_time` | Gesamte Zeit aller Roboter- und Materialtransporte                                   | Logistik und Fabrikplanung: kurze Materialwege                            |
 | `tool_change_time`     | Gesamte Zeit für Werkzeugwechsel an Maschinen                                       | Produktionsleitung und Instandhaltung: weniger Rüst- und Wechselzeit     |
 | `blocking_time`        | Zeit, in der Maschinen wegen blockierter Ein-/Ausgänge nicht weiterarbeiten können | Produktionsleitung: Vermeidung von Stillstand und Blockierung             |
-| `nacharbeit_job_count` | Anzahl der Jobs mit Nacharbeitsstrategie                                            | Qualitätsmanagement und Controlling: Nacharbeitsaufwand begrenzen        |
-| `ausschuss_job_count`  | Anzahl der als Ausschuss verworfenen Jobs                                           | Qualitätsmanagement und Controlling: Material- und Wertverlust vermeiden |
+| `rework_job_count` | Anzahl der Jobs mit Nacharbeitsstrategie                                            | Qualitätsmanagement und Controlling: Nacharbeitsaufwand begrenzen        |
+| `scrap_job_count`  | Anzahl der als Ausschuss verworfenen Jobs                                           | Qualitätsmanagement und Controlling: Material- und Wertverlust vermeiden |
 | `unfinished_jobs`      | Anzahl der Jobs, die am Simulationsende nicht fertig sind                            | Produktionsleitung: vollständige Auftragserfüllung sicherstellen        |
 
 Die Abteilungen liefern also die fachliche Priorität. Diese Priorität wird als
@@ -254,8 +254,8 @@ Z = w_makespan × makespan
   + w_transport × total_transport_time
   + w_tool × tool_change_time
   + w_blocking × blocking_time
-  + w_repair × nacharbeit_job_count
-  + w_scrap × ausschuss_job_count
+  + w_repair × rework_job_count
+  + w_scrap × scrap_job_count
   + w_unfinished × unfinished_jobs
 ```
 
@@ -464,16 +464,16 @@ HeuristicWeights
 ├── place_machine_queue
 ├── place_shortest_processing_time
 ├── release_edd
-├── nacharbeit_defektmaschine
-├── nacharbeit_alternative_maschine
-├── produkt_herabstufen
+├── rework_defect_machine_deadline_penalty_weight
+├── rework_alternative_machine_deadline_penalty_weight
+├── downgrade_product
 ├── wait_defect_job
-├── job_ausschuss
-├── nacharbeit_not_allowed_downgrade_bonus
-├── deadline_pressure_ausschuss_bonus
+├── job_scrap
+├── rework_not_allowed_downgrade_bonus_weight
+├── deadline_pressure_scrap_bonus_weight
 ├── deadline_missed_wait_penalty
-├── nacharbeit_defektmaschine_not_allowed
-├── nacharbeit_alternative_maschine_not_allowed
+├── rework_defect_machine_deadline_penalty_weight
+├── rework_alternative_machine_deadline_penalty_weight
 ├── defect_edd
 └── defect_repair_quality
 ~~~
@@ -507,8 +507,8 @@ GlobalSimulationMetrics
 ├── total_transport_time
 ├── tool_change_time
 ├── blocking_time
-├── nacharbeit_job_count
-├── ausschuss_job_count
+├── rework_job_count
+├── scrap_job_count
 └── unfinished_jobs
 ~~~
 
@@ -525,7 +525,7 @@ GlobalSimulationWeights(
     tool_change_time=1.0,
     blocking_time=1.0,
     nacharbeit_job_penalty=1.0,
-    ausschuss_job_penalty=1.0,
+    job_scrap_weight=1.0,
     unfinished_jobs=1_000.0,
 )
 ~~~

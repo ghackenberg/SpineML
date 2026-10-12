@@ -242,7 +242,7 @@ Die nächste Zufallszahl kann anschließend beispielsweise als
 Defektschweregrad verwendet werden:
 
 ```text
-defekt_schwergrad = 0.8474337363
+defect_severity = 0.8474337363
 ```
 
 Das ist eine Veranschaulichung der Reihenfolge; welche Zufallszahl für welches
@@ -303,7 +303,7 @@ Defektentscheidung und — falls ein Defekt entsteht — den Defektschweregrad:
 
 ```python
 if random.random() < operation.defect_probability:
-    defekt_schwergrad = random.random()
+    defect_severity = random.random()
 ```
 
 Der Ablauf ist:
@@ -329,7 +329,7 @@ Bei `operation.defect_probability = 0.20` gilt `0.1343 < 0.20`. Also entsteht
 ein Defekt und die nächste Zahl wird als Schweregrad verwendet:
 
 ```text
-defekt_schwergrad = 0.8474
+defect_severity = 0.8474
 ```
 
 Beim nächsten Zufallsaufruf verwendet `SimMachine` die nächste Zahl der Folge.
@@ -456,8 +456,8 @@ jobs      → [Job 1, Job 2, Job 3]
 completed_times = []
 total_tardiness = 0.0
 unfinished_jobs = 0
-nacharbeit_job_count = 0.0
-ausschuss_job_count = 0.0
+rework_job_count = 0.0
+scrap_job_count = 0.0
 ```
 
 Diese Variablen sammeln die Ergebnisse:
@@ -468,8 +468,8 @@ Diese Variablen sammeln die Ergebnisse:
 | `completed_times`      |        `[]` | Liste der Abschlusszeitpunkte aller fertiggestellten Jobs; sie startet leer, weil noch kein Job geprüft wurde. |
 | `total_tardiness`      |       `0.0` | Summe der Verspätung aller fertiggestellten Jobs; zunächst gibt es noch keine Verspätung.                    |
 | `unfinished_jobs`      |         `0` | Zähler für Jobs ohne`completed_time`; er wird bei jedem unfertigen Job um `1` erhöht.                        |
-| `nacharbeit_job_count` |       `0.0` | Anzahl der Jobs mit Nacharbeitsstrategie; pro Nacharbeitsjob wird`1.0` gezählt.                                |
-| `ausschuss_job_count`  |       `0.0` | Anzahl der Jobs im Zustand`ausschuss`; pro Ausschussjob wird `1.0` gezählt.                                    |
+| `rework_job_count` |       `0.0` | Anzahl der Jobs mit Nacharbeitsstrategie; pro Nacharbeitsjob wird`1.0` gezählt.                                |
+| `scrap_job_count`  |       `0.0` | Anzahl der Jobs im Zustand`scrap`; pro Ausschussjob wird `1.0` gezählt.                                    |
 
 Die leere Liste und die Nullwerte sind Startwerte. Während die anschließende
 Job-Schleife läuft, werden sie Schritt für Schritt ergänzt oder erhöht.
@@ -526,24 +526,24 @@ latest_end_time = 20
 
 ```python
 if job.defect_recovery_strategy in {
-    "nacharbeiten_auf_defektmaschine",
-    "nacharbeiten_auf_alternativer_maschine",
+    "rework_on_defect_machine",
+    "rework_on_alternative_machine",
 }:
-    nacharbeit_job_count += 1.0
+    rework_job_count += 1.0
 ```
 
-Hat der Job eine dieser beiden Nacharbeitsstrategien, wird `nacharbeit_job_count`
+Hat der Job eine dieser beiden Nacharbeitsstrategien, wird `rework_job_count`
 um `1.0` erhöht. In der aktuellen Implementierung entspricht das einer
 einfachen Zählung der Nacharbeitsjobs, nicht einem Eurobetrag.
 
 ##### Ausschusskosten zählen
 
 ```python
-if job.general_state.get() == "ausschuss":
-    ausschuss_job_count += 1.0
+if job.general_state.get() == "scrap":
+    scrap_job_count += 1.0
 ```
 
-Wenn der allgemeine Jobzustand `ausschuss` ist, wird `ausschuss_job_count` um `1.0`
+Wenn der allgemeine Jobzustand `scrap` ist, wird `scrap_job_count` um `1.0`
 erhöht. Auch dies ist aktuell eine Zählung und keine detaillierte
 Produktkostenberechnung.
 
@@ -651,8 +651,8 @@ return GlobalSimulationMetrics(
     total_tardiness=total_tardiness,
     total_transport_time=total_transport_time,
     tool_change_time=tool_change_time,
-    nacharbeit_job_count=nacharbeit_job_count,
-    ausschuss_job_count=ausschuss_job_count,
+    rework_job_count=rework_job_count,
+    scrap_job_count=scrap_job_count,
     unfinished_jobs=unfinished_jobs,
 )
 ```
@@ -673,8 +673,8 @@ Maschinen und bildet daraus die Ergebniskennzahlen:
 | `total_tardiness`      | Summe von`max(0, completed_time - latest_end_time)` über alle abgeschlossenen Jobs                                                           |
 | `total_transport_time` | Bewegungsdauer aller Roboter in X-, Y- und Z-Richtung                                                                                         |
 | `tool_change_time`     | Dauer aller Werkzeugmontage- und Demontagevorgänge                                                                                           |
-| `nacharbeit_job_count` | Zählung der Jobs mit einer Nacharbeitsstrategie                                                                                              |
-| `ausschuss_job_count`  | Zählung der Jobs im Zustand`ausschuss`                                                                                                       |
+| `rework_job_count` | Zählung der Jobs mit einer Nacharbeitsstrategie                                                                                              |
+| `scrap_job_count`  | Zählung der Jobs im Zustand`scrap`                                                                                                       |
 | `unfinished_jobs`      | Anzahl der Jobs ohne`completed_time`                                                                                                          |
 
 Die Kennzahlen werden als ein Objekt zurückgegeben:
@@ -685,8 +685,8 @@ return GlobalSimulationMetrics(
     total_tardiness=...,
     total_transport_time=...,
     tool_change_time=...,
-    nacharbeit_job_count=...,
-    ausschuss_job_count=...,
+    rework_job_count=...,
+    scrap_job_count=...,
     unfinished_jobs=...,
 )
 ```

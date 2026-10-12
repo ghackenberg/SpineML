@@ -192,7 +192,7 @@ LocalHeuristicActionEvaluator
     ├── evaluate_defect_action(action_type, current_state, observation)
     │   ├── estimate_remaining_time(current_state) → deadline_missed
     │   ├── calculate_edd_priority(...) → urgency
-    │   ├── job_ausschuss → Ausschuss-Score zurückgeben
+    │   ├── job_scrap → Ausschuss-Score zurückgeben
     │   ├── wait_job → Warte-Score zurückgeben
     │   ├── is_nacharbeit_allowed(current_state, observation)
     │   │   ├── estimate_remaining_time(current_state)
@@ -200,7 +200,7 @@ LocalHeuristicActionEvaluator
     │   │       ├── configuration_maxima(observation)
     │   │       ├── estimate_nacharbeit_time(current_state, observation)
     │   │       └── estimate_nacharbeit_failure_probability(current_state)
-    │   ├── produkt_herabstufen → Herabstufungs-Score zurückgeben
+    │   ├── downgrade_product → Herabstufungs-Score zurückgeben
     │   └── Nacharbeit → Maschinen-Score zurückgeben
     ├── evaluate_pick_action(action, observation)
     │   ├── evaluate_robot_pick_action(action, observation)
@@ -464,7 +464,7 @@ und Produktvolumen.
 
 ### `estimate_nacharbeit_failure_probability(current_state)`
 
-Verwendet den `defekt_schwergrad` direkt als geschätzte Wahrscheinlichkeit,
+Verwendet den `defect_severity` direkt als geschätzte Wahrscheinlichkeit,
 dass die Nacharbeit fehlschlägt.
 
 ### `estimate_nacharbeit_cost(current_state, observation)`
@@ -707,7 +707,7 @@ Der Defektschweregrad wird direkt als geschätzte Fehlschlagswahrscheinlichkeit
 verwendet:
 
 ```text
-failure_probability = defekt_schwergrad
+failure_probability = defect_severity
 ```
 
 ### `estimate_nacharbeit_cost(current_state, observation)`
@@ -762,20 +762,20 @@ Warte-Score bewertet.
 
 ```text
 evaluate_defect_action(...)
-├── 1. action_type == "job_ausschuss"?
+├── 1. action_type == "job_scrap"?
 │   └── Ausschuss-Grundscore + Dringlichkeitsbonus zurückgeben
 ├── 2. action_type == "wait_job"?
 │   └── Wait-Score abhängig von urgency zurückgeben
 ├── 3. nacharbeit_allowed berechnen
 │   └── is_nacharbeit_allowed(...)
-├── 4. action_type == "produkt_herabstufen"?
+├── 4. action_type == "downgrade_product"?
 │   └── Herabstufungs-Score zurückgeben
 └── 5. nacharbeit_allowed?
     ├── Nacharbeit auf Defektmaschine bewerten
     └── Nacharbeit auf alternativer Maschine bewerten
 ```
 
-Die Reihenfolge ist wichtig: `job_ausschuss` und `wait_job` werden sofort
+Die Reihenfolge ist wichtig: `job_scrap` und `wait_job` werden sofort
 behandelt. Für Herabstufen und Nacharbeit wird erst danach geprüft, ob die
 Nacharbeit zeitlich und wirtschaftlich zulässig ist.
 
@@ -787,17 +787,17 @@ des Jobs (0 = viel Zeit bis zur Deadline, 1 = Deadline sehr nah oder bereits
 #### Schritt 1: Ausschuss bewerten
 
 ```text
-wenn action_type == "job_ausschuss":
-    score = job_ausschuss
-    score += urgency × deadline_pressure_ausschuss_bonus
+wenn action_type == "job_scrap":
+    score = job_scrap
+    score += urgency × deadline_pressure_scrap_bonus_weight
     return score
 ```
 
-`job_ausschuss` ist der konfigurierbare Grundscore für das Verschrotten.
-`urgency × deadline_pressure_ausschuss_bonus` ist der zusätzliche Score für
+`job_scrap` ist der konfigurierbare Grundscore für das Verschrotten.
+`urgency × deadline_pressure_scrap_bonus_weight` ist der zusätzliche Score für
 Zeitdruck: je dringender der Job, desto attraktiver wird Ausschuss gegenüber
-weiterem Warten. Beispiel: Bei `job_ausschuss = 0.0`, `urgency = 0.8` und
-`deadline_pressure_ausschuss_bonus = 0.5` ergibt sich `0.4`. Die Aktion wird
+weiterem Warten. Beispiel: Bei `job_scrap = 0.0`, `urgency = 0.8` und
+`deadline_pressure_scrap_bonus_weight = 0.5` ergibt sich `0.4`. Die Aktion wird
 hier direkt zurückgegeben; Nacharbeitsprüfungen werden für Ausschuss nicht
 ausgeführt.
 
@@ -827,10 +827,10 @@ Für Herabstufen und Nacharbeit ruft der Evaluator danach
 `is_nacharbeit_allowed(...)` auf. Diese Prüfung liefert nur `True` oder
 `False`; sie ist selbst kein Score.
 
-#### Schritt 4: `produkt_herabstufen` bewerten
+#### Schritt 4: `downgrade_product` bewerten
 
 ```text
-score = produkt_herabstufen
+score = downgrade_product
 ```
 
 Zusätzlich wird die EDD-Dringlichkeit addiert:
@@ -842,7 +842,7 @@ score += urgency × defect_edd
 Beispiel:
 
 ```text
-produkt_herabstufen = 0.4
+downgrade_product = 0.4
 urgency = 0.8
 defect_edd = 0.2
 Nacharbeit zulässig
@@ -861,10 +861,10 @@ Score = 0.4 + 0.16 + 0.4
 Wenn Nacharbeit nicht erlaubt ist:
 
 ```text
-score += nacharbeit_not_allowed_downgrade_bonus
+score += rework_not_allowed_downgrade_bonus_weight
 ```
 
-Der Grundscore `produkt_herabstufen` bewertet die Entscheidung, das Produkt
+Der Grundscore `downgrade_product` bewertet die Entscheidung, das Produkt
 mit niedrigerer Qualitätsstufe weiterzuführen. `urgency × defect_edd` belohnt
 die Entscheidung bei einer nahen oder überschrittenen Deadline. Der optionale
 Bonus bewertet, dass Herabstufen gewählt wird, wenn Nacharbeit nicht zulässig
@@ -875,29 +875,29 @@ ist.
 Nur wenn `nacharbeit_allowed` wahr ist, werden die beiden Nacharbeitsaktionen
 mit demselben Qualitäts- und Dringlichkeitsanteil bewertet:
 
-#### `job_nacharbeiten_auf_defektmaschine`
+#### `job_rework_on_defect_machine`
 
 ```text
-score = nacharbeit_defektmaschine
+score = rework_defect_machine_deadline_penalty_weight
       + urgency × defect_edd
       + repair_economic_score × defect_repair_quality
 ```
 
-`nacharbeit_defektmaschine` ist die Grundbewertung für die Reparatur auf der
+`rework_defect_machine_deadline_penalty_weight` ist die Grundbewertung für die Reparatur auf der
 Defektmaschine. `urgency × defect_edd` bewertet den EDD-Zeitdruck.
 `repair_economic_score` bewertet ausschließlich die Wirtschaftlichkeit der
 Nacharbeit und wird als `1.0 - nacharbeit_cost` berechnet. Geringe Kosten
 ergeben daher einen höheren wirtschaftlichen Score. Die technische
 Erfolgswahrscheinlichkeit ist davon getrennt und wird als
-`repair_success_probability = 1.0 - defekt_schwergrad` beschrieben.
+`repair_success_probability = 1.0 - defect_severity` beschrieben.
 
 Damit ist jeder Teilscore eindeutig zugeordnet:
 
 
 | Teilscore                                        | Bedeutung                                                  |
 | -------------------------------------------------- | ------------------------------------------------------------ |
-| `nacharbeit_defektmaschine`                      | Grundnutzen der Nacharbeit auf der Defektmaschine          |
-| `nacharbeit_alternative_maschine`                | Grundnutzen der Nacharbeit auf einer alternativen Maschine |
+| `rework_defect_machine_deadline_penalty_weight`                      | Grundnutzen der Nacharbeit auf der Defektmaschine          |
+| `rework_alternative_machine_deadline_penalty_weight`                | Grundnutzen der Nacharbeit auf einer alternativen Maschine |
 | `urgency × defect_edd`                          | Bonus für einen dringenden Job nach EDD                   |
 | `repair_economic_score × defect_repair_quality` | wirtschaftlicher Bonus für eine günstige Nacharbeit      |
 | `repair_success_probability`                     | Wahrscheinlichkeit, dass die Reparatur technisch gelingt   |
@@ -910,25 +910,25 @@ bereits die Zulässigkeitsgrenze.
 Beispiel: `1.0 + (0.8 × 0.2) + (0.7 × 0.1) = 1.21`.
 
 Ist Nacharbeit nicht zulässig, wird stattdessen ausschließlich
-`nacharbeit_defektmaschine_not_allowed` zurückgegeben.
+`rework_defect_machine_deadline_penalty_weight` zurückgegeben.
 
-#### `job_nacharbeiten_auf_alternativer_maschine`
+#### `job_rework_on_alternative_machine`
 
 Die Berechnung ist identisch, aber der Grundscore
-`nacharbeit_alternative_maschine` bewertet die alternative Maschine. Bei den
+`rework_alternative_machine_deadline_penalty_weight` bewertet die alternative Maschine. Bei den
 Werten `0.8`, `urgency = 0.8`, `defect_edd = 0.2`,
 `repair_economic_score = 0.7` und `defect_repair_quality = 0.1` ergibt sich
 `0.8 + 0.16 + 0.07 = 1.03`.
 Ist Nacharbeit nicht zulässig, wird ausschließlich
-`nacharbeit_alternative_maschine_not_allowed` verwendet.
+`rework_alternative_machine_deadline_penalty_weight` verwendet.
 
 #### Zusammenfassung der tatsächlichen Rückgabepfade
 
 ```text
-1. job_ausschuss       → Score berechnen und sofort zurückgeben
+1. job_scrap       → Score berechnen und sofort zurückgeben
 2. wait_job            → Score berechnen und sofort zurückgeben
 3. nacharbeit_allowed  → Zulässigkeit prüfen
-4. produkt_herabstufen → Score berechnen und sofort zurückgeben
+4. downgrade_product → Score berechnen und sofort zurückgeben
 5. Nacharbeit          → passenden Maschinen-Score zurückgeben
 ```
 

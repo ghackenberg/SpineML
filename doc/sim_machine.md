@@ -1552,11 +1552,11 @@ ob die Operation einen Defekt erzeugt hat.
 #### 5. Defekt oder erfolgreiche Bearbeitung bestimmen
 
 ```python
-defekt_schwergrad = None
+defect_severity = None
 
 quality_key = (
     f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-    f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+    f"{job.number}|{operation.name}|{job.rework_count}"
 ).encode("utf-8")
 
 quality_rng = random.Random(
@@ -1564,22 +1564,22 @@ quality_rng = random.Random(
 )
 
 if quality_rng.random() < operation.defect_probability:
-    defekt_schwergrad = quality_rng.random()
+    defect_severity = quality_rng.random()
 
-if defekt_schwergrad is not None and defekt_schwergrad >= 0.001:
+if defect_severity is not None and defect_severity >= 0.001:
     job.mark_defective(
         operation=operation,
         machine=self.machine,
         product_state_before=operation.consumes_product_type.name,
         product_state_target=operation.produces_product_type.name,
-        defekt_schwergrad=defekt_schwergrad,
+        defect_severity=defect_severity,
     )
 else:
-    job.bearbeitungs_state.set(operation.produces_product_type.name)
-    job.general_state.set("intakt")
+    job.processing_state.set(operation.produces_product_type.name)
+    job.general_state.set("intact")
     if job.defect_recovery_strategy in {
-        "nacharbeiten_auf_defektmaschine",
-        "nacharbeiten_auf_alternativer_maschine",
+        "rework_on_defect_machine",
+        "rework_on_alternative_machine",
     }:
         job.defect_recovery_strategy = None
 ```
@@ -1638,7 +1638,7 @@ Optimierung setzt der Runner den Wert für jeden Seed-Lauf neu.
 ##### Schritt 1: Zunächst existiert kein Defekt
 
 ```python
-defekt_schwergrad = None
+defect_severity = None
 ```
 
 `None` bedeutet hier: Bis jetzt wurde für diese Bearbeitung kein Defekt
@@ -1649,7 +1649,7 @@ festgestellt.
 ```python
 quality_key = (
     f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-    f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+    f"{job.number}|{operation.name}|{job.rework_count}"
 ).encode("utf-8")
 ```
 
@@ -1680,7 +1680,7 @@ Die Bestandteile haben folgende Aufgabe:
 | `job.order.name`    | unterscheidet verschiedene Aufträge                            |
 | `job.number`        | unterscheidet die Jobs desselben Auftrags                       |
 | `operation.name`    | unterscheidet die Bearbeitungsschritte eines Jobs               |
-| `job.nacharbeit_count` | unterscheidet Erstbearbeitung und Nacharbeitsversuche       |
+| `job.rework_count` | unterscheidet Erstbearbeitung und Nacharbeitsversuche       |
 
 `encode("utf-8")` übersetzt den Text in Bytes. Das ist notwendig, weil
 `hashlib.sha256(...)` Bytes und keinen normalen Python-Text verarbeitet.
@@ -1764,7 +1764,7 @@ Nur wenn die erste Zufallszahl einen Defekt ausgelöst hat, wird eine zweite
 Zufallszahl erzeugt:
 
 ```python
-defekt_schwergrad = quality_rng.random()
+defect_severity = quality_rng.random()
 ```
 
 Beispielsweise bedeutet `0.78` einen Schweregrad von 78 Prozent. Ein Wert
@@ -1776,9 +1776,9 @@ erste Zufallszahl < defect_probability
 │   └── zweite Zufallszahl als Defektschweregrad erzeugen
 │
 └── False
-    └── defekt_schwergrad bleibt None
+    └── defect_severity bleibt None
 
-defekt_schwergrad vorhanden und mindestens 0.001?
+defect_severity vorhanden und mindestens 0.001?
 ├── Ja  → mark_defective(...) aufrufen
 └── Nein → Bearbeitung erfolgreich abschließen
 ```
@@ -1854,10 +1854,10 @@ Weil ein Defekt entstanden ist, ruft der Code den Generator ein zweites Mal
 auf:
 
 ```python
-defekt_schwergrad = quality_rng.random()
+defect_severity = quality_rng.random()
 
 # Ergebnis:
-defekt_schwergrad = 0.8116138146615316
+defect_severity = 0.8116138146615316
 ```
 
 Der Job erhält damit einen Defektschweregrad von ungefähr `0.8116`, also
@@ -1900,7 +1900,7 @@ Vergleich mit der Defektwahrscheinlichkeit
 0.04504844636372318 < 0.45
               │
               ├── Nein → kein Defekt
-              │          defekt_schwergrad bleibt None
+              │          defect_severity bleibt None
               │          kein zweiter .random()-Aufruf
               │
               └── Ja → Defekt
@@ -1913,7 +1913,7 @@ Vergleich mit der Defektwahrscheinlichkeit
                        └── verschiebt den Generator auf Zustand S2
                        │
                        ▼
-              defekt_schwergrad = 0.8116138146615316
+              defect_severity = 0.8116138146615316
               Defektschweregrad ungefähr 81,16 %
 ```
 
@@ -1942,12 +1942,12 @@ neuer random.Random(8864270101116701395)
 
 Wird dieselbe Kombination erneut ausgeführt, entstehen wieder genau
 `0.04504844636372318` und `0.8116138146615316`. Wird beispielsweise der Seed,
-das Szenario, die Jobnummer oder `nacharbeit_count` geändert, entsteht ein
+das Szenario, die Jobnummer oder `rework_count` geändert, entsteht ein
 anderer Fingerabdruck und damit eine andere Pseudozufallsfolge.
 
 Falls die erste Zahl größer oder gleich `0.45` wäre, entstünde kein Defekt.
 Dann würde der Code die zweite Zahl für den Defektschweregrad überhaupt nicht
-abrufen und `defekt_schwergrad` bliebe `None`.
+abrufen und `defect_severity` bliebe `None`.
 
 ##### Warum wird das so gemacht?
 
@@ -1974,9 +1974,9 @@ andere Operation   → wahrscheinlich anderes Defektergebnis
 anderer Nacharbeitszähler → wahrscheinlich anderes Defektergebnis
 ```
 
-Damit erhält die ursprüngliche Bearbeitung mit `nacharbeit_count = 0` eine
+Damit erhält die ursprüngliche Bearbeitung mit `rework_count = 0` eine
 andere reproduzierbare Zufallsfolge als der erste Nacharbeitsversuch mit
-`nacharbeit_count = 1`. Ein weiterer Versuch mit `nacharbeit_count = 2`
+`rework_count = 1`. Ein weiterer Versuch mit `rework_count = 2`
 erhält wieder eine andere Folge. Es gibt dadurch keine feste Begrenzung der
 Nacharbeitsanzahl; weiterhin entscheidet der jeweils neu erzeugte
 Defektschweregrad, ob eine weitere Nacharbeit technisch möglich ist.

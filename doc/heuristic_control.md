@@ -67,7 +67,7 @@ metrics = GlobalSimulationMetrics(
     tool_change_time=4.0,
     blocking_time=2.0,
     nacharbeit_job_penalty=1.0,
-    ausschuss_job_penalty=0.0,
+    job_scrap_weight=0.0,
 )
 
 global_weights = GlobalSimulationWeights(

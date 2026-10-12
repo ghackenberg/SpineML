@@ -344,7 +344,7 @@ earliest_start_time
 latest_end_time
 released
 queue_priority
-bearbeitungs_state
+processing_state
 general_state
 due_state
 location
@@ -352,7 +352,7 @@ selected_operation_id
 selected_machine_id
 defect_operation_id
 defect_machine_id
-defekt_schwergrad
+defect_severity
 defect_recovery_strategy
 waiting_for_recovery_transport
 completed_time
@@ -424,10 +424,10 @@ eine Entscheidung wartet.
 release_job
 wait_job
 complete_job
-job_nacharbeiten_auf_defektmaschine
-job_nacharbeiten_auf_alternativer_maschine
-produkt_herabstufen
-job_ausschuss
+job_rework_on_defect_machine
+job_rework_on_alternative_machine
+downgrade_product
+job_scrap
 ~~~
 
 Ein fertiger Job erhält eine Abschlussaktion. Ein noch nicht freigegebener Job
@@ -602,7 +602,7 @@ Szenario
 Auftrag
 Jobnummer
 Operation
-nacharbeit_count
+rework_count
 ~~~
 
 Daraus wird ein SHA-256-Fingerabdruck und ein eigener `random.Random`-
@@ -625,16 +625,16 @@ Der Job speichert:
 
 ~~~text
 defect_count
-nacharbeit_count
-ausschuss_count
+rework_count
+scrap_count
 defect_operation
 defect_machine
-defekt_schwergrad
+defect_severity
 defect_recovery_strategy
 waiting_for_recovery_transport
 ~~~
 
-`nacharbeit_count` unterscheidet wiederholte Ausführungen derselben Operation.
+`rework_count` unterscheidet wiederholte Ausführungen derselben Operation.
 Dadurch erhält eine erneute Nacharbeit einen eigenen reproduzierbaren
 Zufallswert. Die globale Qualitätskennzahl zählt einen Job mit mindestens einer
 Nacharbeit nur einmal als Nacharbeitsjob; die Rohanzahl der Aktionen bleibt für
@@ -660,7 +660,7 @@ Maschinengeschwindigkeitsfaktor und Laufvariation.
 Ein Job besitzt getrennte Zustände für:
 
 ~~~text
-bearbeitungs_state
+processing_state
 general_state
 due_state
 released
@@ -715,8 +715,8 @@ total_tardiness
 total_transport_time
 tool_change_time
 blocking_time
-nacharbeit_job_count
-ausschuss_job_count
+rework_job_count
+scrap_job_count
 unfinished_jobs
 total_jobs
 completed_jobs
@@ -790,7 +790,7 @@ total_transport_time      1.0
 tool_change_time          1.0
 blocking_time             1.0
 nacharbeit_job_penalty    3.0
-ausschuss_job_penalty     4.0
+job_scrap_weight     4.0
 unfinished_jobs          20.0
 defect_job_penalty        3.0
 non_intact_penalty        3.0

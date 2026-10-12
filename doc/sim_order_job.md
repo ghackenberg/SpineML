@@ -251,7 +251,7 @@ selected_machine
 ├── None    → aktuell keine nächste Maschine geplant
 └── Machine → echte konfigurierte Maschine des nächsten Schritts
 
-bearbeitungs_state
+processing_state
 ├── Typ: sim.State
 ├── Anfangswert: "unconfigured"
 └── ProductType-Name → aktueller Bearbeitungszustand, zum Beispiel
@@ -259,10 +259,10 @@ bearbeitungs_state
 
 general_state
 ├── Typ: sim.State
-├── Anfangswert: "intakt"
-├── "intakt"    → kein aktueller Qualitätsfehler
+├── Anfangswert: "intact"
+├── "intact"    → kein aktueller Qualitätsfehler
 ├── "defect"    → Job ist aktuell defekt und benötigt eine Entscheidung
-└── "ausschuss" → Job wird nicht weiter produziert
+└── "scrap" → Job wird nicht weiter produziert
 
 due_state
 ├── Typ: sim.State
@@ -278,7 +278,7 @@ due_state
         └── verspätet fertig: completed_time > latest_end_time
 ```
 
-Da `general_state` die Zustände `intakt`, `defect` und `ausschuss` vollständig
+Da `general_state` die Zustände `intact`, `defect` und `scrap` vollständig
 abbildet, gibt es keine zusätzlichen Bool-Attribute für Defekt und Ausschuss.
 Dadurch können keine widersprüchlichen Kombinationen entstehen.
 
@@ -327,7 +327,7 @@ defect_product_state_target
 ├── None → kein Defektkontext gespeichert
 └── str  → ProductType-Name, den die Operation erzeugen sollte
 
-defekt_schwergrad
+defect_severity
 ├── Typ: float | None
 ├── Anfangswert: None
 ├── None  → kein Schweregrad vorhanden
@@ -340,10 +340,10 @@ defect_recovery_strategy
 
     Mögliche Werte:
     ├── None → noch keine Defektstrategie gewählt
-    ├── "nacharbeiten_auf_defektmaschine" → dieselbe Operation auf derselben Maschine wiederholen
-    ├── "nacharbeiten_auf_alternativer_maschine" → neue Route ab Zustand vor dem Defekt planen
-    ├── "herabstufen" → Zielprodukt auf niedrigeren ProductType setzen
-    └── "ausschuss" → Job abbrechen und als Ausschuss behandeln
+    ├── "rework_on_defect_machine" → dieselbe Operation auf derselben Maschine wiederholen
+    ├── "rework_on_alternative_machine" → neue Route ab Zustand vor dem Defekt planen
+    ├── "downgrade" → Zielprodukt auf niedrigeren ProductType setzen
+    └── "scrap" → Job abbrechen und als Ausschuss behandeln
 ```
 
 Diese Attribute bleiben auf dem echten `SimOrderJob`. Der
@@ -458,7 +458,7 @@ action = SimulationAction(
     action_type="release_job",
     time=0.0,
     payload={
-        "bearbeitungs_state": "Rohes Werkstück",
+        "processing_state": "Rohes Werkstück",
         "queue_priority": 0.8,
         "release_time": 0.0,
         "target_store_id": "start",
@@ -483,8 +483,8 @@ Nach Ende des zweiten `yield` steht genau dieses Objekt in der Variablen
 
 ```python
 # 1. Bearbeitungsstartzustand setzen.
-if "bearbeitungs_state" in action.payload:
-    self.bearbeitungs_state.set(action.payload["bearbeitungs_state"])
+if "processing_state" in action.payload:
+    self.processing_state.set(action.payload["processing_state"])
 
 # 2. Anfangspriorität setzen.
 if "queue_priority" in action.payload:
@@ -519,13 +519,13 @@ Konkretes Ergebnis:
 ```text
 vor der Action
 ├── self.released = False
-├── self.bearbeitungs_state = "unconfigured"
+├── self.processing_state = "unconfigured"
 ├── self.queue_priority = 0.0
 └── Start-Store enthält Order 1.1:0 nicht
 
 nach der Action
 ├── self.released = True
-├── self.bearbeitungs_state = "Rohes Werkstück"
+├── self.processing_state = "Rohes Werkstück"
 ├── self.queue_priority = 0.8
 ├── Start-Store enthält SimOrderJob (simorderjob.0)
 └── der Job ist passiviert und wartet auf seine spätere Aktivierung
@@ -621,9 +621,9 @@ Konfigurationsobjekte und nicht nur Strings.
    Payload: "selected_machine" = Machine("Schleifmaschine A")
    Ergebnis: self.selected_machine zeigt auf diese echte Maschine.
 
-3. if "bearbeitungs_state" in action.payload:
-   Payload: "bearbeitungs_state" = "Rohes Werkstück"
-   Ergebnis: self.bearbeitungs_state.get() == "Rohes Werkstück"
+3. if "processing_state" in action.payload:
+   Payload: "processing_state" = "Rohes Werkstück"
+   Ergebnis: self.processing_state.get() == "Rohes Werkstück"
 
 4. if "general_state" in action.payload:
    Payload: "general_state" = "defect"
@@ -675,12 +675,12 @@ Konfigurationsobjekte und nicht nur Strings.
     Payload: "defect_product_state_target" = "Geschliffenes Werkstück"
     Ergebnis: Der vorgesehene Produktzustand nach der Bearbeitung ist gespeichert.
 
-16. if "defekt_schwergrad" in action.payload:
-    Payload: "defekt_schwergrad" = 0.35
-    Ergebnis: self.defekt_schwergrad == 0.35.
+16. if "defect_severity" in action.payload:
+    Payload: "defect_severity" = 0.35
+    Ergebnis: self.defect_severity == 0.35.
 
 17. if "defect_recovery_strategy" in action.payload:
-    Payload: "defect_recovery_strategy" = "nacharbeiten_auf_defektmaschine"
+    Payload: "defect_recovery_strategy" = "rework_on_defect_machine"
     Ergebnis: Der Job soll die betroffene Operation auf der Defektmaschine
     erneut als Nacharbeit ausführen.
 ```
@@ -696,8 +696,8 @@ action.payload = {
     "selected_operation": operation_rohes_werkstueck_schleifen,
     "selected_machine_id": "Schleifmaschine A",
     "selected_machine": schleifmaschine_a,
-    "bearbeitungs_state": "Rohes Werkstück",
-    "defect_recovery_strategy": "nacharbeiten_auf_defektmaschine",
+    "processing_state": "Rohes Werkstück",
+    "defect_recovery_strategy": "rework_on_defect_machine",
 }
 ```
 
@@ -711,22 +711,22 @@ if "selected_operation" ...
 if "selected_machine" ...
 └── self.selected_machine = Machine("Schleifmaschine A")
 
-if "bearbeitungs_state" ...
-└── self.bearbeitungs_state = "Rohes Werkstück"
+if "processing_state" ...
+└── self.processing_state = "Rohes Werkstück"
 
 if "defect_recovery_strategy" ...
-└── self.defect_recovery_strategy = "nacharbeiten_auf_defektmaschine"
+└── self.defect_recovery_strategy = "rework_on_defect_machine"
 ```
 
 Die Keys mit dem Suffix `_id` bleiben als nachvollziehbare Policy-Daten im
 Payload. Verarbeitet werden in diesen `if`-Blöcken die von der Bridge ergänzten
 Keys `selected_operation` und `selected_machine` mit den echten Objekten.
 
-`bearbeitungs_state` und `general_state` werden unabhängig voneinander gelesen:
+`processing_state` und `general_state` werden unabhängig voneinander gelesen:
 
 ```python
-if "bearbeitungs_state" in action.payload:
-    self.bearbeitungs_state.set(action.payload["bearbeitungs_state"])
+if "processing_state" in action.payload:
+    self.processing_state.set(action.payload["processing_state"])
 
 if "general_state" in action.payload:
     self.general_state.set(action.payload["general_state"])
@@ -737,7 +737,7 @@ kann ein Job beispielsweise gleichzeitig ein geschliffenes Werkstück und
 defekt sein:
 
 ```text
-bearbeitungs_state = "Geschliffenes Werkstück"
+processing_state = "Geschliffenes Werkstück"
 general_state      = "defect"
 ```
 
@@ -747,7 +747,7 @@ general_state      = "defect"
 Payload-Key                    wird gespeichert in
 selected_operation            self.selected_operation
 selected_machine              self.selected_machine
-bearbeitungs_state            self.bearbeitungs_state
+processing_state            self.processing_state
 general_state                 self.general_state
 due_state                     self.due_state
 released                      self.released
@@ -760,7 +760,7 @@ defect_operation              self.defect_operation
 defect_machine                self.defect_machine
 defect_product_state_before   self.defect_product_state_before
 defect_product_state_target   self.defect_product_state_target
-defekt_schwergrad             self.defekt_schwergrad
+defect_severity             self.defect_severity
 defect_recovery_strategy      self.defect_recovery_strategy
 ```
 
@@ -776,10 +776,10 @@ Der Generator kann für einen Job unter anderem diese Aktionstypen erzeugen:
 ```text
 release_job
 complete_job
-job_nacharbeiten_auf_defektmaschine
-job_nacharbeiten_auf_alternativer_maschine
-produkt_herabstufen
-job_ausschuss
+job_rework_on_defect_machine
+job_rework_on_alternative_machine
+downgrade_product
+job_scrap
 wait_job
 ```
 
@@ -1055,13 +1055,13 @@ SimMachine.process()
     ├── geplante Operation bearbeiten
     ├── yield hold(duration)
     └── Zufallswert < operation.defect_probability
-        ├── zufälligen defekt_schwergrad erzeugen
+        ├── zufälligen defect_severity erzeugen
         └── job.mark_defective(...)
             ├── operation
             ├── machine
             ├── product_state_before
             ├── product_state_target
-            └── defekt_schwergrad
+            └── defect_severity
                 │
                 ▼
 SimOrderJob.mark_defective(...)
@@ -1088,7 +1088,7 @@ Aufgabe
 ├── Job als defekt markieren
 ├── Defektzeit und Defektkontext speichern
 ├── general_state auf "defect" setzen
-├── bearbeitungs_state unverändert lassen
+├── processing_state unverändert lassen
 ├── bisherige defect_recovery_strategy zurücksetzen
 └── passiven Jobprozess aktivieren
 
@@ -1097,7 +1097,7 @@ Eingaben
 ├── machine
 ├── product_state_before
 ├── product_state_target
-└── defekt_schwergrad
+└── defect_severity
 
 Ausgabe
 └── keine direkte Rückgabe

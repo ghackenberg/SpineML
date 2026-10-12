@@ -93,16 +93,16 @@ location                 aktueller Aufenthaltsort des Jobs
                          (z. B. Store, Roboter oder Maschine)
 selected_operation       nächste geplante Operation
 selected_machine         nächste geplante Maschine
-bearbeitungs_state       Produktionszustand
+processing_state       Produktionszustand
 general_state            intakt, defect oder ausschuss
 due_state                None, "on-time" oder "late"
-defekt_schwergrad        Schweregrad eines Defekts
+defect_severity        Schweregrad eines Defekts
 defect_operation         Operation, die den Defekt verursacht hat
 defect_machine            Maschine, die den Defekt verursacht hat
 defect_recovery_strategy gewählte Qualitätsstrategie
 defect_count             Anzahl erkannter Defekte
-nacharbeit_count         Anzahl der Nacharbeitsschritte
-ausschuss_count          Anzahl der Ausschussentscheidungen
+rework_count         Anzahl der Nacharbeitsschritte
+scrap_count          Anzahl der Ausschussentscheidungen
 downgraded                True, wenn der Job herabgestuft wurde
 downgrade_product_type    der akzeptierte niedrigere Produkttyp
 completed_time           Abschlusszeitpunkt
@@ -170,8 +170,8 @@ folgende Ausschnitt ist direkt aus dem Quellcode übernommen:
 ```python
         total_tardiness = 0.0
         unfinished_jobs = 0
-        nacharbeit_job_count = 0.0
-        ausschuss_job_count = 0.0
+        rework_job_count = 0.0
+        scrap_job_count = 0.0
         downgraded_job_count = 0.0
         intact_jobs = 0
         defect_jobs = 0
@@ -189,7 +189,7 @@ folgende Ausschnitt ist direkt aus dem Quellcode übernommen:
                 continue
             else:
                 completed_times.append(float(job.completed_time))
-                if job.general_state.get() == "intakt":
+                if job.general_state.get() == "intact":
                     intact_jobs += 1
                 completion_time = float(job.completed_time)
 
@@ -199,10 +199,10 @@ folgende Ausschnitt ist direkt aus dem Quellcode übernommen:
                 order_completion_times.get(order_name, 0.0),
             )
 
-            nacharbeit_job_count += (
-                1.0 if getattr(job, "nacharbeit_count", 0) > 0 else 0.0
+            rework_job_count += (
+                1.0 if getattr(job, "rework_count", 0) > 0 else 0.0
             )
-            ausschuss_job_count += float(getattr(job, "ausschuss_count", 0))
+            scrap_job_count += float(getattr(job, "scrap_count", 0))
 
         for order in {job.order for job in jobs}:
             if order.name in unfinished_orders:
@@ -529,11 +529,11 @@ Nach der Bearbeitung prüft die Maschine den Job mit einem eigenen
 Zufallsgenerator. Der relevante Code lautet:
 
 ```python
-defekt_schwergrad = None
+defect_severity = None
 
 quality_key = (
     f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-    f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+    f"{job.number}|{operation.name}|{job.rework_count}"
 ).encode("utf-8")
 
 quality_rng = random.Random(
@@ -544,12 +544,12 @@ quality_rng = random.Random(
 )
 
 if quality_rng.random() < operation.defect_probability:
-    defekt_schwergrad = quality_rng.random()
+    defect_severity = quality_rng.random()
 ```
 
 Die Ausführung ist nacheinander:
 
-1. `defekt_schwergrad = None` bedeutet: Zunächst wurde kein Defekt gefunden.
+1. `defect_severity = None` bedeutet: Zunächst wurde kein Defekt gefunden.
 2. `quality_key` verbindet den Simulations-Seed mit Szenario, Auftrag, Job,
    Operation und Nacharbeitszähler. Jeder Prüfversuch bekommt dadurch einen
    eindeutigen Schlüssel. gleicher Job und gleicher Nacharbeitszähler → gleiches Ergebnis
@@ -559,11 +559,11 @@ Die Ausführung ist nacheinander:
    Die Zahl liegt zwischen `0` und `1`. Ist sie kleiner als
    `operation.defect_probability`, entsteht ein Defekt.
 5. Nur bei einem Defekt wird eine zweite Zufallszahl erzeugt. Sie wird als
-   `defekt_schwergrad` zwischen `0` (leicht) und `1` (schwer) gespeichert.
+   `defect_severity` zwischen `0` (leicht) und `1` (schwer) gespeichert.
 
 Beispiel: Bei `defect_probability = 0.20` führt der erste Wert `0.13` zu
 einem Defekt; der zweite Wert `0.74` ist dann dessen Schweregrad. Der erste
-Wert `0.67` führt dagegen zu keinem Defekt, und `defekt_schwergrad` bleibt
+Wert `0.67` führt dagegen zu keinem Defekt, und `defect_severity` bleibt
 `None`. Der Nacharbeitszähler sorgt dafür, dass erneute Bearbeitungen eine
 neue, aber mit demselben Seed reproduzierbare Prüfung erhalten.
 
@@ -780,8 +780,8 @@ completed_jobs
 unfinished_jobs
 intact_jobs
 defect_jobs
-nacharbeit_job_count
-ausschuss_job_count
+rework_job_count
+scrap_job_count
 downgraded_job_count
 ```
 
@@ -1240,16 +1240,16 @@ Bridge. Beim Erzeugen werden alle Laufzeitfelder mit Anfangswerten belegt:
 ```text
 released = False
 location = "start_storage"
-bearbeitungs_state = "unconfigured"
-general_state = "intakt"
+processing_state = "unconfigured"
+general_state = "intact"
 due_state = None
 completed_time = None
 process_finished = False
 downgraded = False
 downgrade_product_type = None
 defect_count = 0
-nacharbeit_count = 0
-ausschuss_count = 0
+rework_count = 0
+scrap_count = 0
 ```
 
 ### Entscheidungszyklus
@@ -1473,10 +1473,10 @@ target_product_length, target_product_width, target_product_depth
 target_product_weight, quantity
 earliest_start_time, latest_end_time, released
 downgraded, downgrade_product_type_id, queue_priority
-bearbeitungs_state, general_state, due_state
+processing_state, general_state, due_state
 defect_detected_time, defect_operation_id, defect_machine_id
 defect_product_state_before, defect_product_state_target
-defekt_schwergrad, defect_recovery_strategy, waiting_for_recovery_transport
+defect_severity, defect_recovery_strategy, waiting_for_recovery_transport
 completed_time, location, selected_operation_id, selected_machine_id
 ```
 
@@ -1653,10 +1653,10 @@ Ein Job kann diese Aktionen erhalten:
 release_job
 wait_job
 complete_job
-job_nacharbeiten_auf_defektmaschine
-job_nacharbeiten_auf_alternativer_maschine
-produkt_herabstufen
-job_ausschuss
+job_rework_on_defect_machine
+job_rework_on_alternative_machine
+downgrade_product
+job_scrap
 ```
 
 Die Reihenfolge der Prüfung ist:
@@ -1726,7 +1726,7 @@ Das verhindert, dass dieselbe Place-Aktion mehrfach bewertet wird, nur weil sie
 Ein Defekt ist technisch nacharbeitbar, wenn gilt:
 
 ```text
-0.001 ≤ defekt_schwergrad < 0.6
+0.001 ≤ defect_severity < 0.6
 ```
 
 Dann werden – soweit Kapazität und Maschinenzustand es erlauben – Nacharbeit
@@ -1805,16 +1805,16 @@ place_short_transport_time
 place_machine_queue
 place_shortest_processing_time
 release_edd
-nacharbeit_defektmaschine
-nacharbeit_alternative_maschine
-produkt_herabstufen
+rework_defect_machine_deadline_penalty_weight
+rework_alternative_machine_deadline_penalty_weight
+downgrade_product
 wait_defect_job
-job_ausschuss
-nacharbeit_not_allowed_downgrade_bonus
-deadline_pressure_ausschuss_bonus
+job_scrap
+rework_not_allowed_downgrade_bonus_weight
+deadline_pressure_scrap_bonus_weight
 deadline_missed_wait_penalty
-nacharbeit_defektmaschine_not_allowed
-nacharbeit_alternative_maschine_not_allowed
+rework_defect_machine_deadline_penalty_weight
+rework_alternative_machine_deadline_penalty_weight
 defect_edd
 defect_repair_quality
 ```
@@ -1842,16 +1842,16 @@ Die im Launcher verwendeten Ausgangswerte sind:
 | `place_machine_queue`                         |         0.25 | kurze Maschinenwarteschlange                |
 | `place_shortest_processing_time`              |         0.15 | kurze Zieloperation                         |
 | `release_edd`                                 |         0.70 | Termin-Dringlichkeit bei Freigabe           |
-| `nacharbeit_defektmaschine`                   |         1.00 | Nacharbeit auf Ursprungsmaschine            |
-| `nacharbeit_alternative_maschine`             |         0.80 | Nacharbeit auf Alternativmaschine           |
-| `produkt_herabstufen`                         |         0.40 | Herabstufung eines Defektjobs               |
+| `rework_defect_machine_deadline_penalty_weight`                   |         1.00 | Nacharbeit auf Ursprungsmaschine            |
+| `rework_alternative_machine_deadline_penalty_weight`             |         0.80 | Nacharbeit auf Alternativmaschine           |
+| `downgrade_product`                         |         0.40 | Herabstufung eines Defektjobs               |
 | `wait_defect_job`                             |         0.20 | Warten bei Defekt                           |
-| `job_ausschuss`                               |         0.00 | Ausschussentscheidung                       |
-| `nacharbeit_not_allowed_downgrade_bonus`      |         0.40 | Bonus für Herabstufung ohne Nacharbeit     |
-| `deadline_pressure_ausschuss_bonus`           |         0.50 | Ausschussbonus bei Termin-Dringlichkeit     |
+| `job_scrap`                               |         0.00 | Ausschussentscheidung                       |
+| `rework_not_allowed_downgrade_bonus_weight`      |         0.40 | Bonus für Herabstufung ohne Nacharbeit     |
+| `deadline_pressure_scrap_bonus_weight`           |         0.50 | Ausschussbonus bei Termin-Dringlichkeit     |
 | `deadline_missed_wait_penalty`                |         0.20 | Warteabzug bei verpasster Deadline          |
-| `nacharbeit_defektmaschine_not_allowed`       |         0.00 | Nacharbeit auf Defektmaschine nicht erlaubt |
-| `nacharbeit_alternative_maschine_not_allowed` |         0.00 | Nacharbeit alternativ nicht erlaubt         |
+| `rework_defect_machine_deadline_penalty_weight`       |         0.00 | Nacharbeit auf Defektmaschine nicht erlaubt |
+| `rework_alternative_machine_deadline_penalty_weight` |         0.00 | Nacharbeit alternativ nicht erlaubt         |
 | `defect_edd`                                  |         0.20 | EDD-Anteil in Defektentscheidungen          |
 | `defect_repair_quality`                       |         0.10 | erwartete Reparaturqualität                |
 
@@ -1968,11 +1968,11 @@ Nach der Bearbeitungszeit erzeugt die Maschine einen eigenen Zufalls-
 Generator. Der konkrete Code sieht so aus:
 
 ```python
-defekt_schwergrad = None
+defect_severity = None
 
 quality_key = (
     f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-    f"{job.number}|{operation.name}|{job.nacharbeit_count}"
+    f"{job.number}|{operation.name}|{job.rework_count}"
 ).encode("utf-8")
 
 quality_rng = random.Random(
@@ -1986,7 +1986,7 @@ quality_rng = random.Random(
 Die einzelnen Zeilen bedeuten:
 
 ```text
-defekt_schwergrad = None
+defect_severity = None
     Am Anfang ist noch kein Defekt festgestellt.
 
 quality_key = ...
@@ -2011,7 +2011,7 @@ Der Vorteil des eigenen Schlüssels ist die Reproduzierbarkeit: Derselbe Seed,
 derselbe Job, dieselbe Operation und derselbe Nacharbeitsversuch erzeugen
 wieder denselben Zufallsablauf. Der Qualitätszufall verändert dabei nicht den
 allgemeinen Zufallsstrom der restlichen Simulation. Der
-`nacharbeit_count` sorgt dafür, dass der erste Versuch (`0`) und spätere
+`rework_count` sorgt dafür, dass der erste Versuch (`0`) und spätere
 Nacharbeitsversuche (`1`, `2`, ...) unterschiedliche, aber weiterhin
 reproduzierbare Prüfungen erhalten.
 
@@ -2020,7 +2020,7 @@ ist:
 
 ```python
 if quality_rng.random() < operation.defect_probability:
-    defekt_schwergrad = quality_rng.random()
+    defect_severity = quality_rng.random()
 ```
 
 Dabei passiert Folgendes:
@@ -2029,10 +2029,10 @@ Dabei passiert Folgendes:
    (einschließlich) und `1` (ausschließlich). Ist sie kleiner als
    `operation.defect_probability`, entsteht ein Defekt.
 2. Nur wenn ein Defekt entstanden ist, liefert der zweite Aufruf eine weitere
-   Zahl zwischen `0` und `1`. Diese Zahl wird als `defekt_schwergrad`
+   Zahl zwischen `0` und `1`. Diese Zahl wird als `defect_severity`
    gespeichert: nahe `0` bedeutet leicht, nahe `1` bedeutet schwer.
 3. Ist die erste Zahl nicht kleiner als die Wahrscheinlichkeit, bleibt
-   `defekt_schwergrad` `None`; die Bearbeitung gilt dann als intakt.
+   `defect_severity` `None`; die Bearbeitung gilt dann als intakt.
 
 Beispiel: Bei `defect_probability = 0.20` bedeutet ein erster Zufallswert von
 `0.13` einen Defekt (13 % < 20 %). Der zweite Wert `0.74` ist dann der
@@ -2044,10 +2044,10 @@ auch wenn sich die Transportreihenfolge der Simulation ändert.
 
 ### Bedeutung des Nacharbeitszählers
 
-Der `nacharbeit_count` ist Teil des Schlüssels. Die erste Ausführung einer
-Operation verwendet zum Beispiel den Schlüssel mit `nacharbeit_count=0`. Wird
+Der `rework_count` ist Teil des Schlüssels. Die erste Ausführung einer
+Operation verwendet zum Beispiel den Schlüssel mit `rework_count=0`. Wird
 dieselbe Operation nach einem Defekt erneut ausgeführt, verwendet sie
-`nacharbeit_count=1`. Ein weiterer Versuch verwendet `2`.
+`rework_count=1`. Ein weiterer Versuch verwendet `2`.
 
 Dadurch sind wiederholte Bearbeitungen derselben Job-Operation unterscheidbare
 und dennoch reproduzierbare Zufallsereignisse. Der Zähler ändert nicht die
@@ -2062,7 +2062,7 @@ general_state
     defect → Defekt wurde erkannt und benötigt eine Entscheidung
     ausschuss → Job wird als Ausschuss beendet
 
-bearbeitungs_state
+processing_state
     Name des aktuellen Produktzustands
 
 defect_recovery_strategy
@@ -2074,7 +2074,7 @@ defect_recovery_strategy
 
 Bei erfolgreicher Nacharbeit wird der Bearbeitungszustand wieder auf den
 Zustand vor der defekten Operation gesetzt. Die historischen Felder
-`defect_count`, `nacharbeit_count` und `defect_operation` bleiben trotzdem
+`defect_count`, `rework_count` und `defect_operation` bleiben trotzdem
 erhalten.
 
 ### Qualitätsentscheidungen
@@ -2110,8 +2110,8 @@ class GlobalSimulationMetrics:
     total_transport_time: float = 0.0
     tool_change_time: float = 0.0
     blocking_time: float = 0.0
-    nacharbeit_job_count: float = 0.0
-    ausschuss_job_count: float = 0.0
+    rework_job_count: float = 0.0
+    scrap_job_count: float = 0.0
     unfinished_jobs: int = 0
     total_jobs: int = 0
     completed_jobs: int = 0
@@ -2126,8 +2126,8 @@ Die daraus abgeleiteten Raten lauten:
 completion_rate = completed_jobs / total_jobs
 intact_rate     = intact_jobs / total_jobs
 unfinished_rate = unfinished_jobs / total_jobs
-rework_rate     = nacharbeit_job_count / total_jobs
-scrap_rate      = ausschuss_job_count / total_jobs
+rework_rate     = rework_job_count / total_jobs
+scrap_rate      = scrap_job_count / total_jobs
 defect_rate     = defect_jobs / total_jobs
 downgrade_rate  = downgraded_job_count / total_jobs
 ```
@@ -2142,15 +2142,15 @@ defect_jobs
     jeder Job mit defect_count > 0, auch wenn er später repariert wurde
 
 intact_jobs
-    nur abgeschlossene Jobs mit general_state == "intakt"
+    nur abgeschlossene Jobs mit general_state == "intact"
 
 unfinished_jobs
     Jobs ohne completed_time
 
-nacharbeit_job_count
-    jeder Job mit nacharbeit_count > 0 höchstens einmal
+rework_job_count
+    jeder Job mit rework_count > 0 höchstens einmal
 
-ausschuss_job_count
+scrap_job_count
     Anzahl der Ausschussentscheidungen
 
 downgraded_job_count

@@ -11,7 +11,6 @@ class Layout:
         self.storage_capacity = storage_capacity
         self.storage_out_time = storage_out_time
         self.storage_in_time = storage_in_time
-        self.storage_capacity = storage_capacity
         
         self.corridors: list[Corridor] = []
         

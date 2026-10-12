@@ -18,9 +18,11 @@ class SimLayout(sim.Component):
 
         products = [order.product_type for order in scenario.orders]
 
+        # Ermittelt das größte Produktgewicht im Szenario.
         self.max_product_weight = max(
             float(product.weight) for product in products
         )
+        # Ermittelt das größte Produktvolumen im Szenario.
         self.max_product_volume = max(
             float(product.length * product.width * product.depth)
             for product in products

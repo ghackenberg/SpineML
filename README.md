@@ -53,8 +53,8 @@ konkreten Maschine. Der Standardwert ist `1.0`.
 
 Der Faktor wird bei der Berechnung der Bearbeitungsdauer berücksichtigt: Die
 Operationsdauer wird vereinfacht durch `processing_speed_factor` geteilt.
-Ein Faktor von `2.0` bedeutet daher ungefähr die doppelte Geschwindigkeit,
-ein Faktor von `0.5` ungefähr die halbe Geschwindigkeit.
+Ein Faktor von `2.0` verkürzt die Bearbeitungsdauer daher ungefähr auf die
+Hälfte. Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
 
 ## Schutzwerkzeugzeiten
 

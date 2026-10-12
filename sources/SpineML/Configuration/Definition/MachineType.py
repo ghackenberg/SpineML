@@ -31,9 +31,9 @@ class MachineType:
         from .ToolType import ToolType
 
         tool_types: list[ToolType] = []
-        for process_step in self.operations:
-            if process_step.tool_type not in tool_types:
-                tool_types.append(process_step.tool_type)
+        for operation in self.operations:
+            if operation.tool_type not in tool_types:
+                tool_types.append(operation.tool_type)
         return tool_types
     
 MACHINE_TYPES: list[MachineType] = []

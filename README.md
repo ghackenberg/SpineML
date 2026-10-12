@@ -90,9 +90,9 @@ diese Aktion aus.
 
 ## `SimLayout.py`
 
-`SimLayout` baut aus einem konfigurierten `Layout` die Laufzeitumgebung auf.
-Dabei werden die Lagerkapazitäten der Konfiguration an die Salabim-Stores
-weitergegeben:
+`SimLayout` ist eine Salabim-Komponente und bildet ein konfiguriertes
+`Layout` als Simulationslayout ab. Dabei werden die Lagerkapazitäten der
+Konfiguration an die Salabim-Stores weitergegeben:
 
 - Start- und Endlager verwenden `layout.storage_capacity`.
 - Jeder Korridor erhält drei Stores mit `corridor.storage_capacity`.

@@ -20,6 +20,8 @@ class Machine:
         input_storage_capacity: int,
         output_storage_capacity: int,
         tool_types: list[ToolType] | None = None,
+
+        # Bearbeitungsgeschwindigkeit
         processing_speed_factor: float = 1.0,
     ) -> None:
 
@@ -51,6 +53,7 @@ class Machine:
 
         return f"{self.name}"
 
+    # Berechnet eine größenabhängige Bearbeitungszeit; SimMachine verwendet aktuell einen eigenen Größenfaktor.
     def dimension_processing_time(self, product_type: ProductType) -> float:
 
         return (

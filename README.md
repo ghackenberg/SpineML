@@ -31,6 +31,27 @@ verwenden darf. Für eine Maschine können beispielsweise `tool_type_1` und
 Wenn `tool_types` nicht angegeben wird, ermittelt die Maschine ihre
 Werkzeugtypen automatisch aus den Operationen ihres `machine_type`.
 
+Ein `MachineType` beschreibt dabei nur die allgemeine Maschinenklasse und die
+Operationen, die für diese Klasse vorgesehen sind. Eine konkrete Maschine
+dieses Typs muss deshalb nicht automatisch alle diese Operationen ausführen
+können und nicht alle dafür benötigten Werkzeuge besitzen. Das Werkzeugmagazin
+ist eine Eigenschaft der konkreten Maschine.
+
+Beispiel: Zwei CNC-Maschinen können denselben `MachineType` haben, aber
+unterschiedlich ausgestattet sein:
+
+```python
+Machine("CNC A", cnc_type, ..., tool_types=[turning_tool, milling_tool])
+Machine("CNC B", cnc_type, ..., tool_types=[milling_tool])
+```
+
+Eine Operation ist nur dann auf einer konkreten Maschine ausführbar, wenn der
+`MachineType` passt und das benötigte Werkzeug im Werkzeugmagazin vorhanden ist.
+Ohne explizite `tool_types`-Liste bleibt das frühere Verhalten erhalten: Alle
+Maschinen desselben Typs erhalten die aus den Operationen abgeleitete
+Werkzeugliste. Die explizite Liste ermöglicht somit eine realistischere
+Darstellung unterschiedlich ausgestatteter Maschinen.
+
 ## Grundwert der Verarbeitungsgeschwindigkeit
 
 Eine Maschine enthält einen konfigurierten

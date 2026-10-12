@@ -62,14 +62,6 @@ Der Wert gehört zur Fabrikkonfiguration und wird in der `Machine` gespeichert.
 Die Erzeugung und Verwendung des effektiven Laufzeitfaktors erfolgt im
 Simulationskern `SimMachine`.
 
-Zusätzlich besitzt `Machine` die Methode
-`dimension_processing_time(product_type)`. Sie berechnet einen
-größenabhängigen Zeitwert aus Länge, Breite und Tiefe des Produkts. Das ist
-etwas anderes als der `processing_speed_factor`: Die Dimension-Methode bezieht
-sich auf das Produkt, der Geschwindigkeitsfaktor auf die Maschine. Im aktuellen
-Simulationsablauf verwendet `SimMachine` diese Hilfsmethode noch nicht; die
-effektive Dauer wird dort mit einem eigenen Produktgrößenfaktor berechnet.
-
 ## Schutzwerkzeugzeiten
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.

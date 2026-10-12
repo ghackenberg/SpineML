@@ -2,10 +2,7 @@ class Machine:
 
     """Representation of machines."""
 
-    DIMENSION_PROCESSING_TIME_FACTOR = 0.01
-
     from ..Definition import MachineType
-    from ..Definition import ProductType
     from ..Definition import ToolType
     
     from .Corridor import Corridor
@@ -52,12 +49,5 @@ class Machine:
     def __repr__(self) -> str:
 
         return f"{self.name}"
-
-    # Berechnet eine größenabhängige Bearbeitungszeit; SimMachine verwendet aktuell einen eigenen Größenfaktor.
-    def dimension_processing_time(self, product_type: ProductType) -> float:
-
-        return (
-            product_type.length + product_type.width + product_type.depth
-        ) * self.DIMENSION_PROCESSING_TIME_FACTOR
 
 MACHINES: list[Machine] = []

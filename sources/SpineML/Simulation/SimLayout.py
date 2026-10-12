@@ -17,8 +17,6 @@ class SimLayout(sim.Component):
         self.bridge = bridge
 
         products = [order.product_type for order in scenario.orders]
-        if not products:
-            raise ValueError("The scenario must contain at least one order.")
 
         self.max_product_weight = max(
             float(product.weight) for product in products

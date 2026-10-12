@@ -51,8 +51,7 @@ konkreten Maschine. Der Standardwert ist `1.0`.
 - größer als `1.0`: die Maschine arbeitet schneller
 - kleiner als `1.0`: die Maschine arbeitet langsamer
 
-Der Faktor wird bei der Berechnung der Bearbeitungsdauer berücksichtigt: Die
-Operationsdauer wird vereinfacht durch `processing_speed_factor` geteilt.
+Der Faktor beeinflusst die Bearbeitungsdauer des Jobs.
 Ein Faktor von `2.0` verkürzt die Bearbeitungsdauer daher ungefähr auf die
 Hälfte. Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
 

@@ -45,7 +45,8 @@ class SimMachine(sim.Component):
         self.dummy_tool_mounted = True
         self.processing_speed_factor = machine.processing_speed_factor
 
-        # Zufällige Abweichung der Bearbeitungsdauer um ungefähr plus/minus 10 Prozent.
+        # Modelliert Material-, Werkzeug- und weitere Maschineneinflüsse mit einer
+        # zufälligen Abweichung der Bearbeitungsdauer von ungefähr plus/minus 10 Prozent.
         self.processing_variation = random.uniform(0.90, 1.10)
         self.startup_delay = random.uniform(0.0, 4.0)
         self._startup_delay_applied = False

@@ -31,7 +31,6 @@ class SimMachine(sim.Component):
         self.max_product_volume = float(max_product_volume)
 
 
-        self.machine.processing_speed_factor = random.uniform(0.45, 2.00)
         self.bridge = bridge
         machine_side = "left" if self.machine.left else "right"
         self.policy_id = f"SimMachine:{self.machine.name}:{machine_side}"

@@ -20,16 +20,13 @@ class SimMachine(sim.Component):
         x: float,
         y: float,
         *args,
-        # Größtes Produktgewicht aller Aufträge im Szenario.
         max_product_weight: float,
-        # Größtes Produktvolumen aller Aufträge im Szenario.
         max_product_volume: float,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.machine = machine
-        # Szenarioweites maximales Produktgewicht und -volumen.
         self.max_product_weight = float(max_product_weight)
         self.max_product_volume = float(max_product_volume)
 
@@ -45,12 +42,8 @@ class SimMachine(sim.Component):
         self.dummy_tool_mounted = True
         self.processing_speed_factor = machine.processing_speed_factor
 
-        # Modelliert Material-, Werkzeug- und weitere Maschineneinflüsse mit einer
-        # zufälligen Abweichung der Bearbeitungsdauer von ungefähr plus/minus 10 Prozent.
         self.processing_variation = random.uniform(0.90, 1.10)
-        # Zufällige einmalige Anlaufverzögerung der Maschine in Simulationszeiteinheiten.
         self.startup_delay = random.uniform(0.0, 4.0)
-        # Merkt, ob die Anlaufverzögerung bereits angewendet wurde.
         self._startup_delay_applied = False
 
         self.tool_types = list(machine.tool_types)
@@ -182,7 +175,6 @@ class SimMachine(sim.Component):
     # Führt die angeforderte Bewegung oder Aktion aus.
     def execute_process_action(self, action):
         job = self.current_job
-        # Die Anlaufverzögerung wird nur vor der ersten Bearbeitung angewendet.
         if not self._startup_delay_applied and self.startup_delay > 0:
             self.state.set("waiting")
             yield self.hold(self.startup_delay)

@@ -32,6 +32,8 @@ class SimMachine(sim.Component):
         # Szenarioweites maximales Produktgewicht und -volumen.
         self.max_product_weight = float(max_product_weight)
         self.max_product_volume = float(max_product_volume)
+
+
         self.machine.processing_speed_factor = random.uniform(0.45, 2.00)
         self.bridge = bridge
         machine_side = "left" if self.machine.left else "right"
@@ -42,6 +44,8 @@ class SimMachine(sim.Component):
         self.tool_type: ToolType | None = None
         self.dummy_tool_mounted = True
         self.processing_speed_factor = machine.processing_speed_factor
+
+        # Zufällige Abweichung der Bearbeitungsdauer um ungefähr plus/minus 10 Prozent.
         self.processing_variation = random.uniform(0.90, 1.10)
         self.startup_delay = random.uniform(0.0, 4.0)
         self._startup_delay_applied = False

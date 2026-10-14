@@ -48,7 +48,9 @@ class SimMachine(sim.Component):
         # Modelliert Material-, Werkzeug- und weitere Maschineneinflüsse mit einer
         # zufälligen Abweichung der Bearbeitungsdauer von ungefähr plus/minus 10 Prozent.
         self.processing_variation = random.uniform(0.90, 1.10)
+        # Zufällige einmalige Anlaufverzögerung der Maschine in Simulationszeiteinheiten.
         self.startup_delay = random.uniform(0.0, 4.0)
+        # Merkt, ob die Anlaufverzögerung bereits angewendet wurde.
         self._startup_delay_applied = False
 
         self.tool_types = list(machine.tool_types)
@@ -180,6 +182,7 @@ class SimMachine(sim.Component):
     # Führt die angeforderte Bewegung oder Aktion aus.
     def execute_process_action(self, action):
         job = self.current_job
+        # Die Anlaufverzögerung wird nur vor der ersten Bearbeitung angewendet.
         if not self._startup_delay_applied and self.startup_delay > 0:
             self.state.set("waiting")
             yield self.hold(self.startup_delay)

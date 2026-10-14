@@ -45,7 +45,9 @@ Operationen und Werkzeuge haben.
 ### Verarbeitungsgeschwindigkeit
 
 `processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
-konkreten Maschine. Der Standardwert ist `1.0`.
+konkreten Maschine. Wird kein Wert angegeben, wird bei der Erstellung der
+Maschine zufällig ein Wert zwischen `0.45` und `2.0` gewählt. Ein ausdrücklich
+angegebener Wert wird unverändert übernommen.
 
 - `1.0`: normale Geschwindigkeit
 - größer als `1.0`: die Maschine arbeitet schneller
@@ -56,6 +58,9 @@ des Jobs beziehungsweise Produkts, während es eine Operation auf dieser
 Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst. Ein Faktor von
 `2.0` verkürzt die Bearbeitungsdauer ungefähr auf die Hälfte; ein Faktor von
 `0.5` verlängert sie ungefähr auf das Doppelte.
+
+`SimMachine` übernimmt diesen Faktor aus der konfigurierten `Machine` und
+verwendet ihn bei der Berechnung der Bearbeitungsdauer.
 
 ## Schutzwerkzeugzeiten
 

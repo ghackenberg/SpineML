@@ -1,3 +1,6 @@
+import random
+
+
 class Machine:
 
     """Representation of machines."""
@@ -19,7 +22,7 @@ class Machine:
         tool_types: list[ToolType] | None = None,
 
         # Bearbeitungsgeschwindigkeit
-        processing_speed_factor: float = 1.0,
+        processing_speed_factor: float | None = None,
     ) -> None:
 
         self.name = name
@@ -28,7 +31,11 @@ class Machine:
         self.left = left
         self.input_storage_capacity = input_storage_capacity
         self.output_storage_capacity = output_storage_capacity
-        self.processing_speed_factor = processing_speed_factor
+        self.processing_speed_factor = (
+            random.uniform(0.45, 2.0)
+            if processing_speed_factor is None
+            else float(processing_speed_factor)
+        )
         self.dummy_tool_mount_time = 1.0
         self.dummy_tool_unmount_time = 1.0
         self.tool_types = (

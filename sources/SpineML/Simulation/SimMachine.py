@@ -20,7 +20,9 @@ class SimMachine(sim.Component):
         x: float,
         y: float,
         *args,
+        # Größtes Produktgewicht aller Aufträge im Szenario.
         max_product_weight: float,
+        # Größtes Produktvolumen aller Aufträge im Szenario.
         max_product_volume: float,
         **kwargs,
     ):

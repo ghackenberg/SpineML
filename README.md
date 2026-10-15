@@ -244,7 +244,8 @@ Punkte erweitert:
   `job.defect_recovery_strategy`.
 - Der Runner setzt mit `random.seed(seed)` den Startwert für den globalen
   Python-Zufallszahlengenerator. Dadurch sind
-  `SimMachine.processing_variation`, `SimMachine.startup_delay`,
+  `SimMachine.processing_speed_factor`, `SimMachine.processing_variation`,
+  `SimMachine.startup_delay`,
   `SimRobot.movement_speed_multiplier` und die zufälligen Entscheidungen des
   `ActionSelector` reproduzierbar. `sim.Environment(random_seed=seed)` setzt
   zusätzlich den Seed für Salabim.
@@ -254,10 +255,10 @@ Punkte erweitert:
   erhält derselbe Job bei gleicher Ausgangslage immer dieselbe Entscheidung,
   ob ein Defekt entsteht, und denselben `defect_severity`. Wird der Seed oder
   der Kontext geändert, kann auch das Qualitätsergebnis anders ausfallen.
-- Ist `Machine.processing_speed_factor` nicht gesetzt, erzeugt `SimMachine`
-  ihren Geschwindigkeitsfaktor erst nach dem gesetzten Seed. Dadurch ist auch
-  dieser Zufallswert pro Seed reproduzierbar; ein ausdrücklich konfigurierter
-  Wert wird unverändert verwendet.
+- `Machine` verwendet den neutralen Basiswert `1.0`. Beim Aufbau von
+  `SimMachine` wird dieser nach dem gesetzten Seed mit einem Zufallsfaktor
+  zwischen `0.45` und `2.0` multipliziert. Dadurch ist der resultierende
+  `SimMachine.processing_speed_factor` bei gleichem Seed reproduzierbar.
 
 #### Aufbau und Laufzeitdaten
 
@@ -280,13 +281,13 @@ Punkte erweitert:
   `self.tool_type = None` und `self.current_job = None` sind. Das bedeutet:
   Das Schutzwerkzeug ist montiert, aber noch kein Produktionswerkzeug und kein
   Job geladen.
-- `self.processing_speed_factor` verwendet den ausdrücklich konfigurierten
-  Wert oder erzeugt bei fehlender Konfiguration einmalig einen Zufallswert
-  zwischen `0.45` und `2.0`. `self.processing_variation` wird einmalig zufällig
-  zwischen `0.90` und `1.10` erzeugt und multipliziert später die
-  Bearbeitungsdauer. `self.startup_delay` wird einmalig zwischen `0` und `4`
-  Zeiteinheiten erzeugt und nur vor der ersten Bearbeitung angewendet;
-  `_startup_delay_applied` verhindert eine Wiederholung bei weiteren Jobs.
+- `self.processing_speed_factor` entsteht aus dem Basiswert `1.0` und einem
+  einmaligen Zufallsfaktor zwischen `0.45` und `2.0`. `self.processing_variation`
+  wird einmalig zufällig zwischen `0.90` und `1.10` erzeugt und multipliziert
+  später die Bearbeitungsdauer. `self.startup_delay` wird einmalig zwischen
+  `0` und `4` Zeiteinheiten erzeugt und nur vor der ersten Bearbeitung
+  angewendet; `_startup_delay_applied` verhindert eine Wiederholung bei
+  weiteren Jobs.
 
 #### Prozess und Aktionen
 

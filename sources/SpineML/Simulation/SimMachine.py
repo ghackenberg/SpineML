@@ -39,11 +39,7 @@ class SimMachine(sim.Component):
 
         self.tool_type: ToolType | None = None
         self.dummy_tool_mounted = True
-        self.processing_speed_factor = (
-            machine.processing_speed_factor
-            if machine.processing_speed_factor is not None
-            else random.uniform(0.45, 2.0)
-        )
+        self.processing_speed_factor = machine.processing_speed_factor * random.uniform(0.45, 2.0)
 
         self.processing_variation = random.uniform(0.90, 1.10)
         self.startup_delay = random.uniform(0.0, 4.0)

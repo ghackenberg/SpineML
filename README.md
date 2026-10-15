@@ -1,10 +1,7 @@
 # Fabrikkonfiguration
 
-Dieser Abschnitt beschreibt die Konfigurationsklassen im Foroogh-Zweig. Im
-ursprünglichen `main`-Stand enthielt `Layout` nur die Grunddaten des Layouts
-und `Machine` nur die Zuordnung zu Maschinentyp und Korridor. Im Foroogh-Zweig
-wurden zusätzliche Eigenschaften ergänzt, damit die Fabrik genauer beschrieben
-werden kann.
+Dieser Abschnitt beschreibt die Konfigurationsklassen und die Eigenschaften,
+mit denen die Fabrik genauer beschrieben werden kann.
 
 ## `Layout.py`
 
@@ -73,9 +70,8 @@ Demontage.
 
 # Diskrete Simulation
 
-Die folgenden Klassen waren bereits im ursprünglichen `main`-Stand vorhanden.
-Im Foroogh-Zweig wurde ihre Ausführung erweitert: Jobs, Maschinen und Roboter
-planen keine Route mehr selbst, sondern melden ihren Zustand an die
+Jobs, Maschinen und Roboter planen keine Route mehr selbst, sondern melden
+ihren Zustand an die
 `SimulationBridge`, erhalten eine Aktion von der Steuerung und führen genau
 diese Aktion aus.
 
@@ -95,20 +91,16 @@ Konfiguration an die Salabim-Stores weitergegeben:
   ihre eigene ID. Komponenten registrieren außerdem – soweit vorhanden – die
   Stores, die sie selbst besitzen oder verwalten.
 
-## Unterschiede zu `main`: `SimCorridor.py` und `SimCorridorArm.py`
+## `SimCorridor.py` und `SimCorridorArm.py`
 
-Die Grundstruktur dieser beiden Klassen war bereits in `main` vorhanden: Die
-drei Korridor-Stores werden erzeugt, bei der `SimulationBridge` registriert und
-an die Korridorarme weitergegeben. Auch die Korridorarme erzeugen weiterhin die
-zugehörigen `SimMachine`-Komponenten und den Korridorroboter.
+`SimCorridor` erzeugt die drei Korridor-Stores, registriert den Korridor
+zusammen mit diesen Stores bei der `SimulationBridge` und erzeugt den linken
+und rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
+`SimMachine`-Komponenten und den Korridorroboter. Die Werte
+`max_product_weight` und `max_product_volume` werden von `SimLayout` aus dem
+Szenario ermittelt und an jede Maschine weitergegeben.
 
-Im `Foroogh`-Zweig werden `max_product_weight` und `max_product_volume` nun
-verpflichtend von `SimLayout` an `SimCorridor` und weiter an jede Maschine
-übergeben. Die früheren Standardwerte `1.0` in den Konstruktoren wurden
-entfernt. Dadurch verwendet die Laufzeitberechnung immer die tatsächlich aus
-dem Szenario ermittelten Produktgrößen.
-
-Die erzeugten Laufzeitkomponenten registrieren sich weiterhin selbst mit ihren
+Die erzeugten Laufzeitkomponenten registrieren sich selbst mit ihren
 IDs und – soweit vorhanden – ihren eigenen Stores. Ein- und Ausgangspuffer der
 Maschinen bleiben getrennte Stores.
 
@@ -217,13 +209,10 @@ und meldet Lade- und Bewegungszustände.
 ### `SimMachine` (Maschine)
 
 `SimMachine` ist eine Salabim-Komponente für genau eine konfigurierte
-Maschine. Im `Foroogh`-Zweig führt sie keine eigene Produktionsplanung mehr
-durch. Die Steuerung liefert über die `SimulationBridge` die konkrete Aktion;
+Maschine. Sie führt keine eigene Produktionsplanung durch. Die Steuerung
+liefert über die `SimulationBridge` die konkrete Aktion;
 `SimMachine` führt diese Aktion im Simulationskern aus und meldet danach den
 neuen Zustand zurück.
-
-Gegenüber dem ursprünglichen `main`-Stand wurden insbesondere die folgenden
-Punkte erweitert:
 
 - Die Steuerung richtet die Aktion an die ausgewählte Maschine und sendet in
   der Aktions-Payload den ausgewählten Job, die Operation und das Werkzeug.
@@ -472,8 +461,7 @@ stateDiagram-v2
 ## `SimScenario.py` und `SimCompletionWatcher`
 
 `SimScenario` erzeugt die Laufzeitobjekte für alle Aufträge und verbindet sie
-mit der Bridge. Gegenüber dem ursprünglichen `main` enthält der Foroogh-Zweig
-zusätzlich den `SimCompletionWatcher`.
+mit der Bridge und erstellt den `SimCompletionWatcher`.
 
 ### Automatisches Simulationsende
 

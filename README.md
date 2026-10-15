@@ -274,16 +274,23 @@ Punkte erweitert:
 - `max_product_weight` und `max_product_volume` sind die größten Werte aller
   Produkte im Szenario. Sie werden für die Größenanpassung der
   Bearbeitungsdauer verwendet.
-- `tool_types` ist die Werkzeugliste der konkreten Maschine. Für jeden
-  Werkzeugtyp werden die aktuelle und die erwartete nächste Lebensdauer sowie
-  die zugehörigen Simulationszeitpunkte gespeichert.
-- Zu Beginn ist das Schutzwerkzeug (`dummy_tool`) montiert. Das aktuelle
-  Produktionswerkzeug steht in `self.tool_type`; der aktuell bearbeitete Job
-  in `self.current_job`.
-- `processing_speed_factor` wird aus der konfigurierten `Machine` übernommen.
-  Zusätzlich erzeugt `SimMachine` eine einmalige Laufzeitvariation zwischen
-  `0.90` und `1.10` sowie eine einmalige Anlaufverzögerung zwischen `0` und
-  `4` Zeiteinheiten.
+- `self.tool_types` ist eine Kopie der Werkzeugliste der konkreten
+  `Machine`. Für jeden Werkzeugtyp verwaltet `SimMachine` vier Werte:
+  `remaining_life_units` ist der aktuelle Restwert,
+  `remaining_life_units_t` dessen gültiger Simulationszeitpunkt,
+  `remaining_life_units_next` der erwartete Restwert nach der laufenden
+  Operation und `remaining_life_units_next_t` der Zeitpunkt, an dem dieser
+  erwartete Wert erreicht wird.
+- Zu Beginn gilt `self.dummy_tool_mounted = True`, während
+  `self.tool_type = None` und `self.current_job = None` sind. Das bedeutet:
+  Das Schutzwerkzeug ist montiert, aber noch kein Produktionswerkzeug und kein
+  Job geladen.
+- `self.processing_speed_factor` übernimmt den Geschwindigkeitsfaktor aus der
+  konfigurierten `Machine`. `self.processing_variation` wird einmalig zufällig
+  zwischen `0.90` und `1.10` erzeugt und multipliziert später die
+  Bearbeitungsdauer. `self.startup_delay` wird einmalig zwischen `0` und `4`
+  Zeiteinheiten erzeugt und nur vor der ersten Bearbeitung angewendet;
+  `_startup_delay_applied` verhindert eine Wiederholung bei weiteren Jobs.
 
 #### Prozess und Aktionen
 

@@ -425,9 +425,15 @@ stateDiagram-v2
     blocked --> waiting: output buffer available
 
     waiting --> waiting: wait_machine
-    waiting --> waiting: pick_machine_job and load selected job
     waiting --> working: process_machine_job with keep_tool
     waiting --> unmounting: process_machine_job with tool change
+
+    note right of waiting
+        pick_machine_job lädt den ausgewählten Job
+        und speichert ihn in current_job.
+        Die Maschine bleibt wartend, bis
+        process_machine_job empfangen wird.
+    end note
 
     unmounting --> mounting: old tool removed
     mounting --> working: new tool mounted

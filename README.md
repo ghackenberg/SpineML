@@ -219,8 +219,11 @@ Punkte erweitert:
 
 - Die Steuerung richtet die Aktion an die ausgewählte Maschine und sendet in
   der Aktions-Payload den ausgewählten Job, die Operation und das Werkzeug.
-  `SimMachine` nimmt diese Werte entgegen und führt genau diese Auswahl aus;
-  sie sucht keinen Ersatzjob und keine alternative Operation selbst.
+  `SimMachine` nimmt diese Werte entgegen und führt genau diese Auswahl aus.
+  Sie entscheidet nicht selbst über den nächsten Job, die nächste Operation
+  oder das nächste Werkzeug. Ist der ausgewählte Job nicht verfügbar, führt sie
+  keine automatische Ersatzsuche durch; die Steuerung muss eine neue Aktion
+  senden.
 - `SimLayout` ermittelt aus allen Aufträgen das größte Produktgewicht und
   -volumen. Diese beiden Referenzwerte werden an jede `SimMachine` übergeben;
   dadurch wird die Größe jedes bearbeiteten Produkts relativ zum Szenario

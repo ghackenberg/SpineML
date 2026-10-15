@@ -310,6 +310,17 @@ Die `process_machine_job`-Payload enthält unter anderem `operation`,
 `remaining_life_units_before_operation`, `tool_setup_action` und
 `target_store`.
 
+Die Lebensdauer- und Zielwerte bedeuten:
+
+- `total_life_units`: vollständige Lebensdauer des verwendeten Werkzeugs.
+- `consumed_life_units`: Lebensdauer, die die aktuelle Operation verbraucht.
+- `remaining_life_units_before_operation`: verbleibende Lebensdauer vor Beginn
+  der Operation.
+- `tool_setup_action`: Anweisung, ob das Werkzeug beibehalten, montiert,
+  demontiert oder ersetzt wird.
+- `target_store`: Ausgangspuffer, in den die Maschine den Job nach der
+  Verarbeitung ablegt.
+
 Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
 
 - `keep_tool`: Das aktuelle Werkzeug bleibt montiert.

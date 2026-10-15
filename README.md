@@ -239,13 +239,17 @@ Punkte erweitert:
   eine konkrete Aktion. Nach der Bearbeitung legt sie den aktualisierten Job ab,
   setzt `current_job` zurück und meldet den Zustand beim nächsten
   `request_action()` erneut.
-- `SimMachine` aktualisiert am Job den Standort, die Warteschlangenpriorität,
-  den Produktzustand und den allgemeinen Zustand. Bei einem Defekt schreibt sie
-  über `mark_defective()` außerdem den Defektzähler, den Schweregrad, die
-  verursachende Operation und Maschine sowie die Produktzustände vor und nach
-  der fehlerhaften Operation. Nach der Bearbeitung setzt sie die ausgewählte
-  Operation und Maschine zurück, beendet eine laufende Recovery-Markierung und
-  entfernt bei einem intakten Ergebnis eine alte Rework-Strategie.
+- `SimMachine` aktualisiert am Job die Attribute `job.location`,
+  `job.queue_priority`, `job.processing_state` und `job.general_state`. Bei
+  einem Defekt schreibt `mark_defective()` außerdem
+  `job.defect_count`, `job.defect_detected_time`, `job.defect_severity`,
+  `job.defect_operation`, `job.defect_machine`,
+  `job.defect_product_state_before` und `job.defect_product_state_target`.
+  Nach der Bearbeitung setzt sie `job.selected_operation` und
+  `job.selected_machine` auf `None`, beendet mit
+  `job.recovery_in_progress = False` eine laufende Recovery-Markierung und
+  entfernt bei einem intakten Ergebnis die alte Rework-Strategie aus
+  `job.defect_recovery_strategy`.
 - Der Runner setzt denselben Seed für Python und Salabim und übergibt ihn an
   `SimMachine.QUALITY_SEED`. Dadurch sind die im Lauf erzeugten Werte
   `SimMachine.processing_variation`, `SimMachine.startup_delay`,

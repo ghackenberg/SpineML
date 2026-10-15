@@ -44,24 +44,15 @@ Operationen und Werkzeuge haben.
 
 ### Verarbeitungsgeschwindigkeit
 
-`processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
-konkreten Maschine. Ein ausdrücklich angegebener Wert wird in der
-Fabrikkonfiguration gespeichert. Wird kein Wert angegeben, erzeugt
-`SimMachine` beim Aufbau der Simulationsmaschine nach dem gesetzten Seed einen
-Zufallswert zwischen `0.45` und `2.0`.
+`processing_speed_factor` ist ein Faktor für die Bearbeitungsdauer. Er wird bei
+der Berechnung der Dauer einer Operation verwendet.
 
 - `1.0`: normale Geschwindigkeit
-- größer als `1.0`: die Maschine arbeitet schneller
-- kleiner als `1.0`: die Maschine arbeitet langsamer
+- größer als `1.0`: kürzere Bearbeitungsdauer
+- kleiner als `1.0`: längere Bearbeitungsdauer
 
-Der Faktor gehört zur konkreten Maschine und beeinflusst die Bearbeitungsdauer
-des Jobs beziehungsweise Produkts, während es eine Operation auf dieser
-Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst. Ein Faktor von
-`2.0` verkürzt die Bearbeitungsdauer ungefähr auf die Hälfte; ein Faktor von
-`0.5` verlängert sie ungefähr auf das Doppelte.
-
-`SimMachine` verwendet den ausdrücklich konfigurierten Wert oder den dort
-erzeugten Zufallswert bei der Berechnung der Bearbeitungsdauer.
+Ein Faktor von `2.0` verkürzt die Bearbeitungsdauer ungefähr auf die Hälfte.
+Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
 
 ## Schutzwerkzeugzeiten
 

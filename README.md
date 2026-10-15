@@ -45,7 +45,7 @@ Operationen und Werkzeuge haben.
 ### Verarbeitungsgeschwindigkeit
 
 `processing_speed_factor` beschreibt die Verarbeitungsgeschwindigkeit der
-Maschine. Er beeinflusst die Bearbeitungsdauer eines Jobs bei der Ausführung
+Maschine und beeinflusst die Bearbeitungsdauer des Jobs bei der Ausführung
 seiner Operation.
 
 - `1.0`: normale Geschwindigkeit

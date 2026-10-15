@@ -460,8 +460,13 @@ stateDiagram-v2
 
 ## `SimScenario.py` und `SimCompletionWatcher`
 
-`SimScenario` erzeugt die Laufzeitobjekte für alle Aufträge und verbindet sie
-mit der Bridge und erstellt den `SimCompletionWatcher`.
+`SimScenario` erzeugt für jeden Auftrag ein `SimOrder`-Objekt. Dieses erzeugt
+für jedes bestellte Produktstück ein `SimOrderJob`-Objekt. Die
+`SimulationBridge` wird an diese Objekte weitergegeben, damit sie Aktionen
+empfangen und Zustände melden können.
+
+Zusätzlich erstellt `SimScenario` den `SimCompletionWatcher`. Dieser prüft, ob
+alle Jobs abgeschlossen sind, und beendet dann die Simulation.
 
 ### Automatisches Simulationsende
 

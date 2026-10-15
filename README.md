@@ -282,6 +282,14 @@ Die Maschine wählt weder selbst einen Job noch eine Operation oder ein
 Werkzeug. Fehlt der ausgewählte Job im angegebenen Store, wird die Pick-Aktion
 ohne Bearbeitung beendet.
 
+`request_action()` hat zwei Aufgaben: Es markiert die Maschine als wartend und
+ruft intern eine Zustandsmeldung an die Bridge aus. `notify_state_change()`
+hat dagegen nur die zweite Aufgabe. Die separate Meldung nach dem Ablegen eines
+Jobs ist deshalb sinnvoll, weil die Bridge sofort über den neuen Jobstandort,
+den Pufferinhalt und den Maschinenzustand informiert werden soll, ohne die
+Maschine dadurch erneut als wartend zu markieren oder direkt eine Aktion
+anzufordern.
+
 #### Werkzeugwechsel und Lebensdauer
 
 Die `process_machine_job`-Payload enthält unter anderem `operation`,

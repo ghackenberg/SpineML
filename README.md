@@ -168,10 +168,16 @@ stateDiagram-v2
     processing --> defect: Defekt erkannt
     defect --> processing: Nacharbeit
     defect --> scrap: Ausschuss
+    defect --> downgraded: Herabstufung
     next_product_state --> completed: Zielprodukt erreicht
+    downgraded --> completed: Zum Endlager
     completed --> [*]
     scrap --> [*]
 ```
+
+`downgraded` ist im Diagramm als eigener Ablaufzustand dargestellt. Im Code
+wird er nicht als eigener `general_state` gespeichert, sondern durch
+`downgraded=True` und den erreichten Produktzustand gekennzeichnet.
 
 ## `SimRobot.py`, `SimRobotMain.py` und `SimRobotCorridorArm.py`
 

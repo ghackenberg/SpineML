@@ -105,15 +105,20 @@ Lagerzeiten. Ein- und Ausgangspuffer der Maschinen bleiben getrennte Stores.
 
 ## `SimOrder.py` und `SimOrderJob.py`
 
-`SimOrder` erzeugt für jedes bestellte Produkt eine eigene
-`SimOrderJob`-Komponente. Ein `SimOrderJob` repräsentiert damit genau einen
-Job. Die Steuerung wählt über die Bridge die nächste Operation und Maschine;
-der Job speichert diese Auswahl und seinen aktuellen Zustand.
+`SimOrder` erzeugt für jedes einzelne bestellte Produktstück eine eigene
+`SimOrderJob`-Komponente. Ein `SimOrderJob` beschreibt deshalb genau ein
+Werkstück.
 
-`SimOrderJob` reagiert unter anderem auf `release_job`, `wait_job`,
+Die Steuerung entscheidet über die `SimulationBridge`, welche Operation auf
+welcher Maschine ausgeführt wird. Der Job speichert diese Auswahl und seinen
+aktuellen Zustand.
+
+Über Aktionen kann die Steuerung den Job freigeben oder warten lassen,
+Nacharbeit auf einer Maschine oder einer alternativen Maschine anfordern, den
+Job herabstufen, ihn als Ausschuss markieren oder ihn abschließen. Dafür werden
+unter anderem die Aktionen `release_job`, `wait_job`,
 `job_rework_on_defect_machine`, `job_rework_on_alternative_machine`,
-`downgrade_product`, `job_scrap` und `complete_job`. Dadurch können Freigabe,
-Nacharbeit, Herabstufung, Ausschuss und Abschluss von außen gesteuert werden.
+`downgrade_product`, `job_scrap` und `complete_job` verwendet.
 
 ## Laufzeitstatus eines `SimOrderJob`
 

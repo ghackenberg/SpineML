@@ -274,8 +274,10 @@ Punkte erweitert:
 - `max_product_weight` und `max_product_volume` sind die größten Werte aller
   Produkte im Szenario. Sie werden für die Größenanpassung der
   Bearbeitungsdauer verwendet.
-- `self.tool_types` ist eine Kopie der Werkzeugliste der konkreten
-  `Machine`. Für jeden Werkzeugtyp verwaltet `SimMachine` vier Werte:
+- `self.tool_types` ist eine eigene Kopie der Werkzeugliste der konkreten
+  `Machine`. Dadurch kann die Simulation ihre Laufzeitliste unabhängig von der
+  unveränderten Fabrikkonfiguration verwalten. Für jeden Werkzeugtyp verwaltet
+  `SimMachine` vier Werte:
   `remaining_life_units` ist der aktuelle Restwert,
   `remaining_life_units_t` dessen gültiger Simulationszeitpunkt,
   `remaining_life_units_next` der erwartete Restwert nach der laufenden

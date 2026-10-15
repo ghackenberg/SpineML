@@ -323,9 +323,9 @@ Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
 Wenn die verbleibende Lebensdauer für den Verbrauch der Operation nicht
 ausreicht, wird beim Werkzeugwechsel ein neues Werkzeug mit
 `total_life_units` angenommen. Nach der Operation wird die Lebensdauer um
-`consumed_life_units` reduziert. Die erwarteten Lebensdauerwerte werden
-während der Verarbeitung für die Visualisierung interpoliert und nach dem
-Abschluss auf den tatsächlichen Restwert gesetzt.
+`consumed_life_units` reduziert. Während der Verarbeitung wird der erwartete
+Restwert anhand der geplanten Dauer geführt. Nach dem Abschluss wird er auf den
+tatsächlichen Restwert gesetzt.
 
 #### Verarbeitungsdauer
 

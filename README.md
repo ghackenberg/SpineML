@@ -135,7 +135,7 @@ Simulationsereignis, andere werden aus einer Aktion übernommen.
 | `general_state`               | Aktueller Qualitäts- und Produktionsstatus:`intact`, `defect` oder `scrap`.                  | Der Simulationskern initialisiert`intact`, setzt bei `mark_defective()` auf `defect`, setzt nach erfolgreicher Verarbeitung wieder `intact` und übernimmt `scrap` aus der Scrap-Aktion. | Der Status bestimmt, welcher nächste Aktionspfad beobachtet werden kann.                               |
 | `due_state`                   | Terminstatus, zum Beispiel`on-time` oder `late`.                                             | `SimOrderJob` übernimmt den von der Steuerung berechneten Wert aus der Abschlussaktion.                                                                                                       | Der einzelne Job erhält seinen Terminstatus.                                                           |
 | `downgraded`                  | Gibt an, ob das Produkt herabgestuft wurde.                                                  | `SimOrderJob` übernimmt das Flag aus der Herabstufungsaktion. Die Entscheidung und der Wert im Payload kommen aus der Steuerung.                                                              | Herabgestufte Jobs dürfen nicht mehr die normale Zielroute verwenden.                                  |
-| `downgrade_product_type`      | Ziel-Produkttyp des herabgestuften Jobs, zum Beispiel weiterhin `poliert`.                  | `SimOrderJob` übernimmt den Ziel-Produkttyp aus der Herabstufungsaktion; der Job wird nicht auf den vorherigen Produkttyp zurückgesetzt.                                                     | `downgraded=True` markiert die geringere Qualität; der Job benötigt keine weitere normale Operation und wird zum Endlager weitergeleitet.                       |
+| `downgrade_product_type`      | Produkttyp, mit dem der herabgestufte Job abgeschlossen wird, zum Beispiel weiterhin `poliert`. | `SimOrderJob` übernimmt den Produkttyp aus der Herabstufungsaktion; der Job wird nicht auf den vorherigen Produkttyp zurückgesetzt.                                                        | `downgraded=True` markiert die geringere Qualität; der Job benötigt keine weitere normale Operation und wird zum Endlager weitergeleitet.                       |
 | `defect_detected_time`        | Zeitpunkt der Defekterkennung.                                                               | `SimOrderJob.mark_defective()` speichert `env.now()` des Simulationskerns.                                                                                                                     | Der Defektzeitpunkt bleibt für Diagnose und Auswertung erhalten.                                       |
 | `defect_operation`            | Operation, die den Defekt verursacht hat.                                                    | `SimMachine` übergibt die gerade ausgeführte Operation an `mark_defective()`, das sie im Job speichert.                                                                                      | Die historische Defektursache bleibt bekannt.                                                           |
 | `defect_machine`              | Maschine, auf der der Defekt entstanden ist.                                                 | `SimMachine` übergibt sich selbst an `mark_defective()`, das die Maschine im Job speichert.                                                                                                   | Die historische Defektmaschine wird für Recovery und Kennzahlen benötigt.                             |
@@ -757,6 +757,12 @@ Kandidaten werden gemeinsam erzeugt, aber nicht gemeinsam ausgeführt.
 
 Wenn Nacharbeit technisch nicht möglich ist, wird stattdessen ausschließlich
 `job_scrap` erzeugt.
+
+Eine Herabstufung kann nach jeder fehlerhaften Operation erfolgen. Der dabei
+verwendete Produkttyp ist der vorgesehene Produkttyp dieser Operation und kann
+deshalb auch ein Zwischenprodukt sein; er muss nicht dem endgültigen
+Auftragsziel entsprechen. Der Job bleibt in diesem Produktzustand, wird aber
+zusätzlich mit `downgraded=True` als qualitativ herabgestuft markiert.
 
 Beispiel für eine Herabstufungsaktion:
 

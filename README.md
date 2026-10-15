@@ -239,9 +239,13 @@ Punkte erweitert:
   eine konkrete Aktion. Nach der Bearbeitung legt sie den aktualisierten Job ab,
   setzt `current_job` zurück und meldet den Zustand beim nächsten
   `request_action()` erneut.
-- `SimOrderJob` speichert Defektzähler, Schweregrad, verursachende Operation
-  und Maschine, Produktzustände vor und nach der fehlerhaften Operation,
-  Recovery-Strategie, Rework-Zähler, Herabstufung und Ausschuss getrennt.
+- `SimMachine` aktualisiert am Job den Standort, die Warteschlangenpriorität,
+  den Produktzustand und den allgemeinen Zustand. Bei einem Defekt schreibt sie
+  über `mark_defective()` außerdem den Defektzähler, den Schweregrad, die
+  verursachende Operation und Maschine sowie die Produktzustände vor und nach
+  der fehlerhaften Operation. Nach der Bearbeitung setzt sie die ausgewählte
+  Operation und Maschine zurück, beendet eine laufende Recovery-Markierung und
+  entfernt bei einem intakten Ergebnis eine alte Rework-Strategie.
 - Der Runner setzt denselben Seed für Python, Salabim und
   `SimMachine.QUALITY_SEED`. Dadurch sind die zufällige Laufzeitvariation und
   die Qualitätsprüfung reproduzierbar. Der `quality_key` unterscheidet dabei

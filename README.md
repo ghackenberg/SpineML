@@ -364,6 +364,36 @@ Schutzwerkzeug montieren. Diese Abschlusszeiten werden als
 Werkzeugwechselzeiten gemessen; der Makespan bleibt dabei auf den letzten
 Jobabschluss bezogen.
 
+#### UML-Zustandsdiagramm von `SimMachine`
+
+Das Diagramm zeigt die Zustände der Maschine während eines normalen
+Simulationslaufs. Die Jobauswahl erfolgt weiterhin durch die Steuerung über
+die `SimulationBridge`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> waiting
+
+    waiting --> blocked: output buffer unavailable
+    blocked --> waiting: output buffer available
+
+    waiting --> waiting: wait_machine
+    waiting --> waiting: pick_machine_job and load selected job
+    waiting --> working: process_machine_job with keep_tool
+    waiting --> unmounting: process_machine_job with tool change
+
+    unmounting --> mounting: old tool removed
+    mounting --> working: new tool mounted
+    working --> returning: processing finished
+    returning --> waiting: job placed in target store
+    returning --> blocked: output buffer unavailable
+
+    note right of working
+        Quality check and defect handling
+        take place after processing.
+    end note
+```
+
 ## Werkzeuglebensdauer und Schutzwerkzeug
 
 Die Steuerung verwendet für die Maschine die Aktionstypen

@@ -405,8 +405,9 @@ Die wichtigsten Maschinenzustände sind:
 Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
 einmalige Salabim-Komponente das noch montierte Produktionswerkzeug entfernen
 und wieder das Schutzwerkzeug montieren. Sie ist eine eigene Komponente, weil
-dieser Abschlussprozess genau einmal und unabhängig von der normalen
-Jobverarbeitung ausgeführt wird. Die benötigte Zeit wird als
+`SimMachine` die Jobs in einer wiederholten `while`-Schleife verarbeitet,
+während dieser Abschlussprozess genau einmal nach dem Lauf ausgeführt wird.
+Die benötigte Zeit wird als
 Werkzeugwechselzeit erfasst; der Makespan bleibt auf den letzten Jobabschluss
 bezogen.
 

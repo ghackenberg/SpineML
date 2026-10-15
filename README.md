@@ -105,11 +105,10 @@ Lagerzeiten. Ein- und Ausgangspuffer der Maschinen bleiben getrennte Stores.
 
 ## `SimOrder.py` und `SimOrderJob.py`
 
-`SimOrder` erzeugt für die bestellte Menge die einzelnen `SimOrderJob`-
-Komponenten. Im ursprünglichen `main` wählte ein Job beim Erzeugen zufällig
-eine Operations- und Maschinenroute. Im Foroogh-Zweig übernimmt diese Auswahl
-die Steuerung über die Bridge. Der Job speichert nur die ausgewählten
-Operationen, Maschinen und seinen aktuellen Zustand.
+`SimOrder` erzeugt für jedes bestellte Produkt eine eigene
+`SimOrderJob`-Komponente. Ein `SimOrderJob` repräsentiert damit genau einen
+Job. Die Steuerung wählt über die Bridge die nächste Operation und Maschine;
+der Job speichert diese Auswahl und seinen aktuellen Zustand.
 
 `SimOrderJob` reagiert unter anderem auf `release_job`, `wait_job`,
 `job_rework_on_defect_machine`, `job_rework_on_alternative_machine`,

@@ -256,13 +256,13 @@ Punkte erweitert:
   `SimRobot.movement_speed_multiplier` und die zufälligen Entscheidungen des
   `ActionSelector` reproduzierbar. `sim.Environment(random_seed=seed)` setzt
   zusätzlich den Seed für Salabim.
-- Separat übergibt der Runner denselben Wert an
-  `SimMachine.QUALITY_SEED`. Dieser Wert wird nur in den `quality_key` der
-  Qualitätsprüfung aufgenommen. Daraus entsteht der lokale `quality_rng`; bei
-  gleichem Kontext sind dadurch die Defektentscheidung aus dem Vergleich mit
-  `operation.defect_probability` und der Wert `defect_severity` gleich.
-  Der `quality_key` unterscheidet Szenario, Auftrag, Job, Operation und
-  Rework-Durchlauf.
+- Der Runner übergibt denselben normalen Simulations-`seed` zusätzlich an
+  `SimMachine.QUALITY_SEED`; ein neuer oder zusätzlicher Seed wird dabei nicht
+  erzeugt. `SimMachine` nimmt diesen Wert zusammen mit Szenario, Auftrag, Job,
+  Operation und Rework-Durchlauf in den `quality_key` auf. Aus diesem Schlüssel
+  wird der lokale `quality_rng` erzeugt. Bei gleichem Kontext sind dadurch die
+  Defektentscheidung aus dem Vergleich mit `operation.defect_probability` und
+  der Wert `defect_severity` gleich.
 - Der konfigurierte `Machine.processing_speed_factor` wird von `SimMachine`
   nur übernommen und dort nicht erneut zufällig erzeugt.
 

@@ -21,7 +21,7 @@ class SimRobot(sim.Component):
         self.next_z = z
         self.next_t = self.env.now()
         self.configured_movement_speed = 1.0
-        self.movement_speed_multiplier = random.uniform(0.95, 1.05)
+        self.movement_speed_multiplier = 1.0
         self.movement_speed = 0.0
 
         self.state_move = sim.State("Move", value="waiting", env=self.env)
@@ -66,9 +66,13 @@ class SimRobot(sim.Component):
         )
         return job
 
+    def effective_movement_speed(self, speed: float) -> float:
+        self.movement_speed_multiplier = random.uniform(0.95, 1.05)
+        return speed * self.movement_speed_multiplier
+
     # Führt die angeforderte Bewegung oder Aktion aus.
     def move_x(self, next_x: float, speed: float):
-        effective_speed = speed * self.movement_speed_multiplier
+        effective_speed = self.effective_movement_speed(speed)
         self.movement_speed = effective_speed
         duration = abs(next_x - self.x) / effective_speed
         self.t = self.env.now()
@@ -84,7 +88,7 @@ class SimRobot(sim.Component):
         
     # Führt die angeforderte Bewegung oder Aktion aus.
     def move_y(self, next_y: float, speed: float):
-        effective_speed = speed * self.movement_speed_multiplier
+        effective_speed = self.effective_movement_speed(speed)
         self.movement_speed = effective_speed
         duration = abs(next_y - self.y) / effective_speed
         self.t = self.env.now()
@@ -100,7 +104,7 @@ class SimRobot(sim.Component):
         
     # Führt die angeforderte Bewegung oder Aktion aus.
     def move_z(self, next_z: float, speed: float):
-        effective_speed = speed * self.movement_speed_multiplier
+        effective_speed = self.effective_movement_speed(speed)
         self.movement_speed = effective_speed
         duration = abs(next_z - self.z) / effective_speed
         self.t = self.env.now()

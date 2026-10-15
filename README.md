@@ -195,11 +195,11 @@ und meldet Lade- und Bewegungszustände.
   aus. Die Roboter wählen keinen Ersatzjob und keine neue Route. Die feste
   Grundgeschwindigkeit wird in `SimRobotMain.py` auf `2.0` und in
   `SimRobotCorridorArm.py` auf `1.5` gesetzt.
-- **Seed/Reproduzierbarkeit:** `SimRobot.py` erzeugt pro Roboter einen Faktor
-  zwischen `0.95` und `1.05`. Die effektive Geschwindigkeit berechnet sich bei
-  jeder Bewegung als `Grundgeschwindigkeit × Zufallsfaktor`. Dadurch sind die
-  effektive Geschwindigkeit und die Bewegungsdauer für X, Y und Z bei gleichem
-  Seed reproduzierbar.
+- **Seed/Reproduzierbarkeit:** `SimRobot.py` erzeugt bei jeder Bewegung einen
+  neuen Faktor zwischen `0.95` und `1.05`. Die effektive Geschwindigkeit
+  berechnet sich als `Grundgeschwindigkeit × Zufallsfaktor`. Dadurch sind die
+  Geschwindigkeitsschwankungen und die Bewegungsdauer für X, Y und Z bei
+  gleichem Seed reproduzierbar.
 - **Zustandsmeldung:** Nach Pick und Place werden Jobstandort, Beladung und
   Roboterzustand über die Bridge gemeldet. Beim Ablegen im Endlager wird
   außerdem `completed_time` gesetzt.

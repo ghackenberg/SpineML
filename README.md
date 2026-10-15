@@ -45,9 +45,10 @@ Operationen und Werkzeuge haben.
 ### Verarbeitungsgeschwindigkeit
 
 `processing_speed_factor` beschreibt die Bearbeitungsgeschwindigkeit der
-konkreten Maschine. Wird kein Wert angegeben, wird bei der Erstellung der
-Maschine zufällig ein Wert zwischen `0.45` und `2.0` gewählt. Ein ausdrücklich
-angegebener Wert wird unverändert übernommen.
+konkreten Maschine. Ein ausdrücklich angegebener Wert wird in der
+Fabrikkonfiguration gespeichert. Wird kein Wert angegeben, erzeugt
+`SimMachine` beim Aufbau der Simulationsmaschine nach dem gesetzten Seed einen
+Zufallswert zwischen `0.45` und `2.0`.
 
 - `1.0`: normale Geschwindigkeit
 - größer als `1.0`: die Maschine arbeitet schneller
@@ -59,8 +60,8 @@ Maschine ausführt. Er ist keine Eigenschaft des Produkts selbst. Ein Faktor von
 `2.0` verkürzt die Bearbeitungsdauer ungefähr auf die Hälfte; ein Faktor von
 `0.5` verlängert sie ungefähr auf das Doppelte.
 
-`SimMachine` übernimmt diesen Faktor aus der konfigurierten `Machine` und
-verwendet ihn bei der Berechnung der Bearbeitungsdauer.
+`SimMachine` verwendet den ausdrücklich konfigurierten Wert oder den dort
+erzeugten Zufallswert bei der Berechnung der Bearbeitungsdauer.
 
 ## Schutzwerkzeugzeiten
 
@@ -262,8 +263,10 @@ Punkte erweitert:
   erhält derselbe Job bei gleicher Ausgangslage immer dieselbe Entscheidung,
   ob ein Defekt entsteht, und denselben `defect_severity`. Wird der Seed oder
   der Kontext geändert, kann auch das Qualitätsergebnis anders ausfallen.
-- Der konfigurierte `Machine.processing_speed_factor` wird von `SimMachine`
-  nur übernommen und dort nicht erneut zufällig erzeugt.
+- Ist `Machine.processing_speed_factor` nicht gesetzt, erzeugt `SimMachine`
+  ihren Geschwindigkeitsfaktor erst nach dem gesetzten Seed. Dadurch ist auch
+  dieser Zufallswert pro Seed reproduzierbar; ein ausdrücklich konfigurierter
+  Wert wird unverändert verwendet.
 
 #### Aufbau und Laufzeitdaten
 
@@ -286,8 +289,9 @@ Punkte erweitert:
   `self.tool_type = None` und `self.current_job = None` sind. Das bedeutet:
   Das Schutzwerkzeug ist montiert, aber noch kein Produktionswerkzeug und kein
   Job geladen.
-- `self.processing_speed_factor` übernimmt den Geschwindigkeitsfaktor aus der
-  konfigurierten `Machine`. `self.processing_variation` wird einmalig zufällig
+- `self.processing_speed_factor` verwendet den ausdrücklich konfigurierten
+  Wert oder erzeugt bei fehlender Konfiguration einmalig einen Zufallswert
+  zwischen `0.45` und `2.0`. `self.processing_variation` wird einmalig zufällig
   zwischen `0.90` und `1.10` erzeugt und multipliziert später die
   Bearbeitungsdauer. `self.startup_delay` wird einmalig zwischen `0` und `4`
   Zeiteinheiten erzeugt und nur vor der ersten Bearbeitung angewendet;

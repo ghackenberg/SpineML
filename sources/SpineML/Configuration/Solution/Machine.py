@@ -1,6 +1,3 @@
-import random
-
-
 class Machine:
 
     """Representation of machines."""
@@ -32,7 +29,7 @@ class Machine:
         self.input_storage_capacity = input_storage_capacity
         self.output_storage_capacity = output_storage_capacity
         self.processing_speed_factor = (
-            random.uniform(0.45, 2.0)
+            None
             if processing_speed_factor is None
             else float(processing_speed_factor)
         )

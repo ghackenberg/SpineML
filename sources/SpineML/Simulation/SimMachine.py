@@ -39,7 +39,11 @@ class SimMachine(sim.Component):
 
         self.tool_type: ToolType | None = None
         self.dummy_tool_mounted = True
-        self.processing_speed_factor = machine.processing_speed_factor
+        self.processing_speed_factor = (
+            machine.processing_speed_factor
+            if machine.processing_speed_factor is not None
+            else random.uniform(0.45, 2.0)
+        )
 
         self.processing_variation = random.uniform(0.90, 1.10)
         self.startup_delay = random.uniform(0.0, 4.0)
@@ -185,8 +189,6 @@ class SimMachine(sim.Component):
         remaining_life_units_before_operation = action.payload[
             "remaining_life_units_before_operation"
         ]
-        self.processing_speed_factor = self.machine.processing_speed_factor
-
         tool_setup_action = action.payload["tool_setup_action"]
         if tool_setup_action == "unmount_dummy_tool_and_mount_tool":
             self.state.set("unmounting")

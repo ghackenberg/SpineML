@@ -300,7 +300,7 @@ class SimulationObjectObserver:
             "corridor_id": machine.machine.corridor.name,
             "left": machine.machine.left,
             "state": machine.state.get(),
-            "processing_speed_factor": machine.machine.processing_speed_factor,
+            "processing_speed_factor": machine.processing_speed_factor,
             "is_idle": machine.current_job is None and machine.state.get() == "waiting",
             "has_current_job": machine.current_job is not None,
             "can_process_current_job": (

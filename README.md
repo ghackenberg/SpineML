@@ -250,18 +250,21 @@ Punkte erweitert:
   `job.recovery_in_progress = False` eine laufende Recovery-Markierung und
   entfernt bei einem intakten Ergebnis die alte Rework-Strategie aus
   `job.defect_recovery_strategy`.
-- Der Runner setzt denselben Seed für Python und Salabim und übergibt ihn an
-  `SimMachine.QUALITY_SEED`. Dadurch sind die im Lauf erzeugten Werte
+- Der Runner setzt mit `random.seed(seed)` den Startwert für den globalen
+  Python-Zufallszahlengenerator. Dadurch sind
   `SimMachine.processing_variation`, `SimMachine.startup_delay`,
   `SimRobot.movement_speed_multiplier` und die zufälligen Entscheidungen des
-  `ActionSelector` reproduzierbar. Der konfigurierte
-  `Machine.processing_speed_factor` wird von `SimMachine` nur übernommen und
-  dort nicht erneut zufällig erzeugt.
-- Die Qualitätsprüfung verwendet zusätzlich den lokalen `quality_rng`. Bei
-  gleichem `quality_key` sind sowohl die Defektentscheidung aus dem Vergleich
-  mit `operation.defect_probability` als auch der daraus erzeugte Wert
-  `defect_severity` gleich. Der `quality_key` unterscheidet Szenario, Auftrag,
-  Job, Operation und Rework-Durchlauf.
+  `ActionSelector` reproduzierbar. `sim.Environment(random_seed=seed)` setzt
+  zusätzlich den Seed für Salabim.
+- Separat übergibt der Runner denselben Wert an
+  `SimMachine.QUALITY_SEED`. Dieser Wert wird nur in den `quality_key` der
+  Qualitätsprüfung aufgenommen. Daraus entsteht der lokale `quality_rng`; bei
+  gleichem Kontext sind dadurch die Defektentscheidung aus dem Vergleich mit
+  `operation.defect_probability` und der Wert `defect_severity` gleich.
+  Der `quality_key` unterscheidet Szenario, Auftrag, Job, Operation und
+  Rework-Durchlauf.
+- Der konfigurierte `Machine.processing_speed_factor` wird von `SimMachine`
+  nur übernommen und dort nicht erneut zufällig erzeugt.
 
 #### Aufbau und Laufzeitdaten
 

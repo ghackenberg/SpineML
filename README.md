@@ -402,12 +402,6 @@ Die wichtigsten Maschinenzustände sind:
 - `working`: Die Operation wird ausgeführt.
 - `returning`: Die Verarbeitung ist beendet und der Job wird abgelegt.
 
-Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
-einmalige Salabim-Komponente das Produktionswerkzeug entfernen und wieder das
-Schutzwerkzeug montieren. Diese Abschlusszeiten werden als
-Werkzeugwechselzeiten gemessen; der Makespan bleibt dabei auf den letzten
-Jobabschluss bezogen.
-
 #### UML-Zustandsdiagramm von `SimMachine`
 
 Das Diagramm zeigt die Zustände der Maschine während eines normalen
@@ -438,23 +432,14 @@ stateDiagram-v2
     end note
 ```
 
-## Werkzeuglebensdauer und Schutzwerkzeug
+## `SimMachineShutdown`
 
-Die Steuerung verwendet für die Maschine die Aktionstypen
-`pick_machine_job`, `process_machine_job` und `wait_machine`. In der
-`process_machine_job`-Payload steht zusätzlich `tool_setup_action`:
-`keep_tool`, `unmount_dummy_tool_and_mount_tool`, `unmount_and_mount_tool` oder
-`replace_tool_same_type`.
-
-`SimMachine` führt diese Werkzeugaktion aus, verbraucht während der Operation
-`consumed_life_units` und aktualisiert danach
-`remaining_life_units`. Montage, Demontage und Werkzeugwechsel benötigen dabei
-Simulationszeit.
-
-Am Ende des Simulationslaufs kann der optionale Abschlussprozess
-`SimMachineShutdown` ein noch montiertes Produktionswerkzeug entfernen und
-wieder das Schutzwerkzeug montieren. Dieser Prozess gehört nicht zur normalen
-Jobverarbeitung; damit endet die Maschine in einem definierten Werkzeugzustand.
+`SimMachineShutdown` ist eine optionale, einmalige Salabim-Komponente für das
+Ende des Simulationslaufs. Sie entfernt ein noch montiertes
+Produktionswerkzeug und montiert wieder das Schutzwerkzeug. Dadurch endet die
+Maschine in einem definierten Werkzeugzustand. Die dafür benötigte Zeit wird
+als Werkzeugwechselzeit erfasst; der Makespan bleibt auf den letzten
+Jobabschluss bezogen.
 
 ## `SimScenario.py` und `SimCompletionWatcher`
 

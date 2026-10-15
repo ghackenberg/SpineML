@@ -208,30 +208,161 @@ und meldet Lade- und Bewegungszustände.
 
 ### `SimMachine` (Maschine)
 
-- **Aktionen der Steuerung:** `pick_machine_job`, `process_machine_job` und
-  `wait_machine`; Operation, Werkzeug und Lebensdauerwerte kommen im Payload.
-- **Simulationskern:** Führt genau die ausgewählte Operation aus, berechnet
-  ihre Dauer, führt Werkzeugwechsel und Lebensdauerverbrauch aus und prüft den
-  Ausgangspuffer. Die Maschine wählt weder Job noch Operation selbst.
-- **Bearbeitungsdauer:** Die Dauer wird aus der Operationsdauer, der
-  Produktgröße, der Maschinengeschwindigkeit und einer kleinen
-  Laufzeitvariation berechnet.
-- **Seed/Reproduzierbarkeit:** Die Laufzeitvariation ist ein Zufallsfaktor für
-  die Bearbeitungsdauer. Bei gleicher Konfiguration und gleichem Seed entsteht
-  daher dieselbe Bearbeitungsdauer.
+`SimMachine` ist eine Salabim-Komponente für genau eine konfigurierte
+Maschine. Im `Foroogh`-Zweig führt sie keine eigene Produktionsplanung mehr
+durch. Die Steuerung liefert über die `SimulationBridge` die konkrete Aktion;
+`SimMachine` führt diese Aktion im Simulationskern aus und meldet danach den
+neuen Zustand zurück.
 
-  Unabhängig davon entscheidet die Qualitätsprüfung zuerst, ob ein Defekt
-  entsteht, und erzeugt bei einem Defekt zusätzlich den `defect_severity`.
-  Bei gleicher Konfiguration und gleichem Seed entstehen daher dieselben
-  Defekte und dieselben Schweregrade.
+Gegenüber dem ursprünglichen `main`-Stand wurden insbesondere die folgenden
+Punkte erweitert:
 
-  ```python
-  defect = quality_rng.random() < operation.defect_probability; defect_severity = quality_rng.random() if defect else None
-  ```
-- **Zustandsmeldung:** Meldet `waiting` (bereit), `working` (Bearbeitung) und
-  `blocked` (der Ausgangspuffer kann den fertigen Job nicht aufnehmen) sowie
-  die fertige Ablage. Bei einem Defekt speichert sie Schweregrad, Operation,
-  Maschine und Produktzustände im Job und meldet die Änderung über die Bridge.
+- Die Steuerung wählt Job, Operation, Maschine und Werkzeug; die Maschine führt
+  keine zufällige eigene Route mehr aus.
+- Die Produktgröße des gesamten Szenarios wird an die Maschine übergeben und
+  fließt in die Bearbeitungsdauer ein.
+- Werkzeugmagazin, Werkzeugwechsel, Werkzeuglebensdauer und Schutzwerkzeug
+  werden als Laufzeitverhalten modelliert.
+- Maschinenzustände und Aktionen werden über die `SimulationBridge` zwischen
+  Steuerung und Simulationskern ausgetauscht.
+- Defekte, Schweregrade, Recovery, Herabstufung und Ausschuss werden als
+  getrennte Laufzeitinformationen im Job gespeichert.
+- Die Defektprüfung und die Laufzeitabweichungen sind über den Seed
+  reproduzierbar.
+
+#### Aufbau und Laufzeitdaten
+
+- `self.machine` verweist auf die Fabrikkonfiguration der Maschine.
+- `store_in` und `store_out` sind getrennte Eingangs- und Ausgangspuffer mit
+  den konfigurierten Kapazitäten.
+- `max_product_weight` und `max_product_volume` sind die größten Werte aller
+  Produkte im Szenario. Sie werden für die Größenanpassung der
+  Bearbeitungsdauer verwendet.
+- `tool_types` ist die Werkzeugliste der konkreten Maschine. Für jeden
+  Werkzeugtyp werden die aktuelle und die erwartete nächste Lebensdauer sowie
+  die zugehörigen Simulationszeitpunkte gespeichert.
+- Zu Beginn ist das Schutzwerkzeug (`dummy_tool`) montiert. Das aktuelle
+  Produktionswerkzeug steht in `self.tool_type`; der aktuell bearbeitete Job
+  in `self.current_job`.
+- `processing_speed_factor` wird aus der konfigurierten `Machine` übernommen.
+  Zusätzlich erzeugt `SimMachine` eine einmalige Laufzeitvariation zwischen
+  `0.90` und `1.10` sowie eine einmalige Anlaufverzögerung zwischen `0` und
+  `4` Zeiteinheiten.
+
+#### Prozess und Aktionen
+
+Der Prozess läuft wiederholt ab:
+
+1. Ist der Ausgangspuffer voll, setzt die Maschine den Zustand `blocked`,
+   sonst `waiting`.
+2. Die Maschine meldet ihren Zustand mit `bridge.request_action(self)` und
+   wartet auf die von der Steuerung gelieferte Aktion.
+3. Bei `pick_machine_job` nimmt sie genau den im Payload genannten Job aus dem
+   genannten Store. Sie aktualisiert dessen `location`, übernimmt die
+   `queue_priority` und speichert den Job in `self.current_job`.
+4. Bei `process_machine_job` führt sie genau die übergebene Operation mit dem
+   übergebenen Werkzeug aus.
+5. Bei `wait_machine` wartet sie eine Simulationszeiteinheit und fordert
+   anschließend eine neue Aktion an.
+
+Die Maschine wählt weder selbst einen Job noch eine Operation oder ein
+Werkzeug. Fehlt der ausgewählte Job im angegebenen Store, wird die Pick-Aktion
+ohne Bearbeitung beendet.
+
+#### Werkzeugwechsel und Lebensdauer
+
+Die `process_machine_job`-Payload enthält unter anderem `operation`,
+`tool_type`, `total_life_units`, `consumed_life_units`,
+`remaining_life_units_before_operation`, `tool_setup_action` und
+`target_store`.
+
+Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
+
+- `keep_tool`: Das aktuelle Werkzeug bleibt montiert.
+- `unmount_dummy_tool_and_mount_tool`: Das Schutzwerkzeug wird entfernt und
+  das Produktionswerkzeug montiert.
+- `unmount_and_mount_tool`: Das bisherige Produktionswerkzeug wird entfernt
+  und das neue Werkzeug montiert.
+- `replace_tool_same_type`: Das verbrauchte Werkzeug wird entfernt und durch
+  ein Werkzeug desselben Typs ersetzt.
+
+Wenn die verbleibende Lebensdauer für den Verbrauch der Operation nicht
+ausreicht, wird beim Werkzeugwechsel ein neues Werkzeug mit
+`total_life_units` angenommen. Nach der Operation wird die Lebensdauer um
+`consumed_life_units` reduziert. Die erwarteten Lebensdauerwerte werden
+während der Bearbeitung für die Visualisierung interpoliert und nach dem
+Abschluss auf den tatsächlichen Restwert gesetzt.
+
+#### Bearbeitungsdauer
+
+Zuerst werden relative Größenwerte gebildet:
+
+```python
+weight_ratio = product.weight / max_product_weight
+volume_ratio = product_volume / max_product_volume
+size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
+```
+
+Bei Werten zwischen `0` und `1` liegt `size_factor` zwischen `1.0` und `2.0`.
+Die endgültige Dauer wird danach so berechnet:
+
+```python
+duration = operation.duration * size_factor / processing_speed_factor
+duration *= processing_variation
+```
+
+Damit beeinflussen die Operationsdauer, die Produktgröße, die
+Maschinengeschwindigkeit und eine kleine zufällige Laufzeitabweichung die
+Bearbeitungsdauer. Vor der ersten Bearbeitung wird zusätzlich die einmalige
+Anlaufverzögerung der Maschine ausgeführt.
+
+#### Defektprüfung und Recovery
+
+Nach Ablauf der Bearbeitungsdauer erzeugt die Maschine einen deterministischen
+Qualitätszufallszahlengenerator. Sein Schlüssel enthält den Simulations-Seed,
+das Szenario, den Auftrag, den Job, die Operation und den `rework_count`.
+Die erste Zufallszahl wird mit `operation.defect_probability` verglichen. Nur
+bei einem Defekt wird eine zweite Zufallszahl als `defect_severity` erzeugt.
+
+```python
+defect = quality_rng.random() < operation.defect_probability
+defect_severity = quality_rng.random() if defect else None
+```
+
+Bei gleichem Seed und gleichem Kontext entstehen dadurch dieselbe
+Defektentscheidung und derselbe Schweregrad. Ein relevanter Defekt ab
+`0.001` wird mit `job.mark_defective()` gespeichert. Dabei werden Operation,
+Maschine, Produktzustand vor der Operation, Zielzustand und Schweregrad im Job
+festgehalten. Ohne relevanten Defekt setzt die Maschine den erzeugten
+Produktzustand und den allgemeinen Zustand auf `intact`.
+
+Nach einer abgeschlossenen Nacharbeitsbearbeitung wird
+`recovery_in_progress` zurückgesetzt. Die alte Auswahl von Operation und
+Maschine wird gelöscht, damit die Steuerung die nächste Aktion neu bestimmen
+kann. Die Auswahl der Recovery-Strategie selbst kommt aus der Steuerung; die
+Simulation speichert sie nur und entfernt eine erledigte Rework-Strategie.
+
+#### Abschluss der Bearbeitung und Zustände
+
+Nach der Bearbeitung wird der Job mit seiner Priorität in den im Payload
+genannten Zielstore gelegt, seine `location` wird aktualisiert und die Bridge
+über `notify_state_change()` informiert. Danach wird `current_job` auf `None`
+gesetzt; die Maschine ist wieder frei.
+
+Die wichtigsten Maschinenzustände sind:
+
+- `waiting`: Die Maschine wartet auf eine Aktion.
+- `blocked`: Der Ausgangspuffer kann keinen fertigen Job aufnehmen.
+- `unmounting`: Ein Schutz- oder Produktionswerkzeug wird entfernt.
+- `mounting`: Ein Produktions- oder Schutzwerkzeug wird montiert.
+- `working`: Die Operation wird ausgeführt.
+- `returning`: Die Bearbeitung ist beendet und der Job wird abgelegt.
+
+Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
+einmalige Salabim-Komponente das Produktionswerkzeug entfernen und wieder das
+Schutzwerkzeug montieren. Diese Abschlusszeiten werden als
+Werkzeugwechselzeiten gemessen; der Makespan bleibt dabei auf den letzten
+Jobabschluss bezogen.
 
 ## Werkzeuglebensdauer und Schutzwerkzeug
 

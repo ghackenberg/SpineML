@@ -278,7 +278,6 @@ class SimMachine(sim.Component):
 
         yield self.to_store(action.payload["target_store"], job, priority=job.queue_priority)
         job.location = action.payload["target_store"].name()
-        yield self.bridge.notify_state_change(self)
 
         self.current_job = None
 

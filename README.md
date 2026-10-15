@@ -233,8 +233,9 @@ Punkte erweitert:
   Produktionswerkzeug und montiert wieder das Schutzwerkzeug.
 - Zu Beginn jeder Prozessschleife meldet `SimMachine` ihren Zustand über
   `bridge.request_action(self)`. Danach empfängt sie mit `bridge.action(self)`
-  eine konkrete Aktion. Nach der Bearbeitung meldet sie den aktualisierten Job
-  und Maschinenzustand mit `notify_state_change()` zurück.
+  eine konkrete Aktion. Nach der Bearbeitung legt sie den aktualisierten Job ab,
+  setzt `current_job` zurück und meldet den Zustand beim nächsten
+  `request_action()` erneut.
 - `SimOrderJob` speichert Defektzähler, Schweregrad, verursachende Operation
   und Maschine, Produktzustände vor und nach der fehlerhaften Operation,
   Recovery-Strategie, Rework-Zähler, Herabstufung und Ausschuss getrennt.
@@ -284,11 +285,9 @@ ohne Bearbeitung beendet.
 
 `request_action()` hat zwei Aufgaben: Es markiert die Maschine als wartend und
 ruft intern eine Zustandsmeldung an die Bridge aus. `notify_state_change()`
-hat dagegen nur die zweite Aufgabe. Die separate Meldung nach dem Ablegen eines
-Jobs ist deshalb sinnvoll, weil die Bridge sofort über den neuen Jobstandort,
-den Pufferinhalt und den Maschinenzustand informiert werden soll, ohne die
-Maschine dadurch erneut als wartend zu markieren oder direkt eine Aktion
-anzufordern.
+hat dagegen nur die zweite Aufgabe und wird von anderen Laufzeitkomponenten für
+Zustandsänderungen ohne neue Aktionsanforderung verwendet. Für `SimMachine`
+reicht nach dem Ablegen des Jobs die nächste `request_action()`-Anfrage aus.
 
 #### Werkzeugwechsel und Lebensdauer
 
@@ -366,9 +365,9 @@ Simulation speichert sie nur und entfernt eine erledigte Rework-Strategie.
 #### Abschluss der Bearbeitung und Zustände
 
 Nach der Bearbeitung wird der Job mit seiner Priorität in den im Payload
-genannten Zielstore gelegt, seine `location` wird aktualisiert und die Bridge
-über `notify_state_change()` informiert. Danach wird `current_job` auf `None`
-gesetzt; die Maschine ist wieder frei.
+genannten Zielstore gelegt und seine `location` wird aktualisiert. Danach wird
+`current_job` auf `None` gesetzt; die Maschine ist wieder frei und meldet ihren
+neuen Zustand mit der nächsten `request_action()`-Anfrage.
 
 Die wichtigsten Maschinenzustände sind:
 

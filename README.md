@@ -402,6 +402,14 @@ Die wichtigsten Maschinenzustände sind:
 - `working`: Die Operation wird ausgeführt.
 - `returning`: Die Verarbeitung ist beendet und der Job wird abgelegt.
 
+Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
+einmalige Salabim-Komponente das noch montierte Produktionswerkzeug entfernen
+und wieder das Schutzwerkzeug montieren. Sie ist eine eigene Komponente, weil
+dieser Abschlussprozess genau einmal und unabhängig von der normalen
+Jobverarbeitung ausgeführt wird. Die benötigte Zeit wird als
+Werkzeugwechselzeit erfasst; der Makespan bleibt auf den letzten Jobabschluss
+bezogen.
+
 #### UML-Zustandsdiagramm von `SimMachine`
 
 Das Diagramm zeigt die Zustände der Maschine während eines normalen
@@ -431,15 +439,6 @@ stateDiagram-v2
         take place after processing.
     end note
 ```
-
-## `SimMachineShutdown`
-
-`SimMachineShutdown` ist eine optionale, einmalige Salabim-Komponente für das
-Ende des Simulationslaufs. Sie entfernt ein noch montiertes
-Produktionswerkzeug und montiert wieder das Schutzwerkzeug. Dadurch endet die
-Maschine in einem definierten Werkzeugzustand. Die dafür benötigte Zeit wird
-als Werkzeugwechselzeit erfasst; der Makespan bleibt auf den letzten
-Jobabschluss bezogen.
 
 ## `SimScenario.py` und `SimCompletionWatcher`
 

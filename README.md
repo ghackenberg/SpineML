@@ -52,7 +52,7 @@ seiner Operation.
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.
 Es ist kein Produktionswerkzeug. Die Maschine startet damit in einem
-definierten Zustand. Vor der ersten Bearbeitung wird es entfernt und das
+definierten Zustand. Vor der ersten Verarbeitung wird es entfernt und das
 benötigte Produktionswerkzeug montiert. Nach dem Simulationslauf wird das
 Produktionswerkzeug wieder entfernt und das Schutzwerkzeug montiert.
 
@@ -131,9 +131,9 @@ Simulationsereignis, andere werden aus einer Aktion übernommen.
 | `process_finished`            | Gibt an, ob der Jobprozess beendet werden darf.                                              | `SimOrderJob` setzt das Flag, wenn die Aktion `finish_process=True` enthält. `SimCompletionWatcher` liest es.                                                                                 | Der Jobprozess kann beendet und die Simulation automatisch gestoppt werden.                             |
 | `location`                    | Aktueller Aufenthaltsort des Jobs, zum Beispiel Store oder Roboter.                          | Die Laufzeitobjekte aktualisieren den Ort nach Pick und Place. Der Zielort wird von der Steuerungsaktion vorgegeben.                                                                           | Der Aufenthaltsort wird der nächsten Beobachtung bereitgestellt.                                       |
 | `selected_operation`          | Nächste ausgewählte Operation.                                                             | `SimOrderJob` übernimmt die Operation aus dem Aktions-Payload und speichert sie; die Steuerung liefert die Auswahl.                                                                           | Die Maschine weiß, welche Operation ausgeführt werden soll.                                           |
-| `selected_machine`            | Maschine für die ausgewählte nächste Operation.                                           | `SimOrderJob` übernimmt die Maschine aus dem Aktions-Payload und speichert sie; die Steuerung liefert die Auswahl.                                                                            | Transport und Bearbeitung werden zu dieser Maschine geführt.                                           |
-| `processing_state`            | Aktueller Produktzustand, zum Beispiel`unconfigured` oder ein Produkttyp.                    | Der Simulationskern initialisiert`unconfigured`, übernimmt bei Recovery den im Payload angegebenen Ausgangszustand und setzt nach erfolgreicher Bearbeitung den erzeugten Produkttyp.         | Die weitere Produktionsroute hängt vom aktuellen Produktzustand ab.                                    |
-| `general_state`               | Aktueller Qualitäts- und Produktionsstatus:`intact`, `defect` oder `scrap`.                  | Der Simulationskern initialisiert`intact`, setzt bei `mark_defective()` auf `defect`, setzt nach erfolgreicher Bearbeitung wieder `intact` und übernimmt `scrap` aus der Scrap-Aktion. | Der Status bestimmt, welcher nächste Aktionspfad beobachtet werden kann.                               |
+| `selected_machine`            | Maschine für die ausgewählte nächste Operation.                                           | `SimOrderJob` übernimmt die Maschine aus dem Aktions-Payload und speichert sie; die Steuerung liefert die Auswahl.                                                                            | Transport und Verarbeitung werden zu dieser Maschine geführt.                                           |
+| `processing_state`            | Aktueller Produktzustand, zum Beispiel`unconfigured` oder ein Produkttyp.                    | Der Simulationskern initialisiert`unconfigured`, übernimmt bei Recovery den im Payload angegebenen Ausgangszustand und setzt nach erfolgreicher Verarbeitung den erzeugten Produkttyp.         | Die weitere Produktionsroute hängt vom aktuellen Produktzustand ab.                                    |
+| `general_state`               | Aktueller Qualitäts- und Produktionsstatus:`intact`, `defect` oder `scrap`.                  | Der Simulationskern initialisiert`intact`, setzt bei `mark_defective()` auf `defect`, setzt nach erfolgreicher Verarbeitung wieder `intact` und übernimmt `scrap` aus der Scrap-Aktion. | Der Status bestimmt, welcher nächste Aktionspfad beobachtet werden kann.                               |
 | `due_state`                   | Terminstatus, zum Beispiel`on-time` oder `late`.                                             | `SimOrderJob` übernimmt den von der Steuerung berechneten Wert aus der Abschlussaktion.                                                                                                       | Der einzelne Job erhält seinen Terminstatus.                                                           |
 | `downgraded`                  | Gibt an, ob das Produkt herabgestuft wurde.                                                  | `SimOrderJob` übernimmt das Flag aus der Herabstufungsaktion. Die Entscheidung und der Wert im Payload kommen aus der Steuerung.                                                              | Herabgestufte Jobs dürfen nicht mehr die normale Zielroute verwenden.                                  |
 | `downgrade_product_type`      | Produktzustand, auf den ein Job herabgestuft wurde.                                          | `SimOrderJob` speichert den Produktzustand aus der Herabstufungsaktion.                                                                                                                        | Der neue Produktzustand bestimmt die weitere Behandlung.                                                |
@@ -144,7 +144,7 @@ Simulationsereignis, andere werden aus einer Aktion übernommen.
 | `defect_product_state_target` | Produktzustand, den die fehlerhafte Operation erzeugen sollte.                               | `SimMachine` speichert den `produces_product_type` der ausgeführten Operation über `mark_defective()`.                                                                                       | Nach erfolgreicher Nacharbeit soll dieser Zielzustand wieder erreicht werden, zum Beispiel Produkt B.   |
 | `defect_severity`             | Schweregrad des Defekts im Bereich von`0.0` bis `1.0`.                                       | `SimMachine` erzeugt ihn mit einem aus Simulations-Seed und Jobdaten abgeleiteten `quality_rng` und speichert ihn bei einem Defekt.                                                            | Bei`0.001` bis `<0.6` kann die Steuerung Nacharbeit anbieten; ab `0.6` bleibt nur Scrap.                |
 | `defect_recovery_strategy`    | Ausgewählte Strategie, zum Beispiel Nacharbeit oder Ausschuss.                              | `SimOrderJob` speichert die Strategie aus dem Aktions-Payload; bei einem neuen Defekt löscht `mark_defective()` die alte Strategie. Die Auswahl kommt aus der Steuerung.                      | Die nächste Simulation beobachtet, welche Defektbehandlung aktiv ist.                                  |
-| `recovery_in_progress`        | Gibt an, dass eine ausgewählte Recovery-Strategie noch transportiert oder ausgeführt wird. | `SimOrderJob` setzt es beim Empfang einer Nacharbeitsaktion auf `True`. `SimMachine` setzt es nach der Nacharbeitsbearbeitung auf `False`.                                                     | Verhindert eine neue Recovery-Entscheidung, solange die laufende Recovery noch nicht abgeschlossen ist. |
+| `recovery_in_progress`        | Gibt an, dass eine ausgewählte Recovery-Strategie noch transportiert oder ausgeführt wird. | `SimOrderJob` setzt es beim Empfang einer Nacharbeitsaktion auf `True`. `SimMachine` setzt es nach der Nacharbeit auf `False`.                                                     | Verhindert eine neue Recovery-Entscheidung, solange die laufende Recovery noch nicht abgeschlossen ist. |
 | `defect_count`                | Anzahl erkannter Defekte dieses Jobs.                                                        | `mark_defective()` erhöht den Zähler im Simulationskern.                                                                                                                                     | Wird für Qualitätskennzahlen und Diagnosen gezählt.                                                  |
 | `rework_count`                | Anzahl ausgelöster Rework-Aktionen.                                                          | `SimOrderJob` erhöht den Zähler, wenn eine Rework-Aktion ausgeführt wird.                                                                                                                   | Wird für Kennzahlen und den nächsten Quality-Key verwendet.                                           |
 | `scrap_count`                 | Anzahl der Scrap-Entscheidungen.                                                             | `SimOrderJob` erhöht den Zähler, wenn eine `job_scrap`-Aktion ausgeführt wird.                                                                                                              | Wird als globale Qualitätskennzahl ausgewertet.                                                        |
@@ -212,8 +212,8 @@ Punkte erweitert:
   senden.
 - `SimLayout` ermittelt aus allen Aufträgen das größte Produktgewicht und
   -volumen. Diese beiden Referenzwerte werden an jede `SimMachine` übergeben;
-  dadurch wird die Größe jedes bearbeiteten Produkts relativ zum Szenario
-  bewertet und die Bearbeitungsdauer angepasst.
+  dadurch wird die Größe jedes verarbeiteten Produkts relativ zum Szenario
+  bewertet und die Verarbeitungsdauer angepasst.
 - Jede konkrete Maschine besitzt eine eigene Werkzeugliste. Bei einer
   `process_machine_job`-Aktion montiert oder demontiert sie entsprechend
   `tool_setup_action` das benötigte Werkzeug und verbraucht während der
@@ -222,7 +222,7 @@ Punkte erweitert:
   Produktionswerkzeug und montiert wieder das Schutzwerkzeug.
 - Zu Beginn jeder Prozessschleife meldet `SimMachine` ihren Zustand über
   `bridge.request_action(self)`. Danach empfängt sie mit `bridge.action(self)`
-  eine konkrete Aktion. Nach der Bearbeitung legt sie den aktualisierten Job ab,
+  eine konkrete Aktion. Nach der Verarbeitung legt sie den aktualisierten Job ab,
   setzt `current_job` zurück und meldet den Zustand beim nächsten
   `request_action()` erneut.
 - `SimMachine` aktualisiert am Job die Attribute `job.location`,
@@ -231,7 +231,7 @@ Punkte erweitert:
   `job.defect_count`, `job.defect_detected_time`, `job.defect_severity`,
   `job.defect_operation`, `job.defect_machine`,
   `job.defect_product_state_before` und `job.defect_product_state_target`.
-  Nach der Bearbeitung setzt sie `job.selected_operation` und
+  Nach der Verarbeitung setzt sie `job.selected_operation` und
   `job.selected_machine` auf `None`, beendet mit
   `job.recovery_in_progress = False` eine laufende Recovery-Markierung und
   entfernt bei einem intakten Ergebnis die alte Rework-Strategie aus
@@ -261,7 +261,7 @@ Punkte erweitert:
   den konfigurierten Kapazitäten.
 - `max_product_weight` und `max_product_volume` sind die größten Werte aller
   Produkte im Szenario. Sie werden für die Größenanpassung der
-  Bearbeitungsdauer verwendet.
+  Verarbeitungsdauer verwendet.
 - `self.tool_types` ist eine eigene Kopie der Werkzeugliste der konkreten
   `Machine`. Dadurch kann die Simulation ihre Laufzeitliste unabhängig von der
   unveränderten Fabrikkonfiguration verwalten. Für jeden Werkzeugtyp verwaltet
@@ -278,8 +278,8 @@ Punkte erweitert:
 - `self.processing_speed_factor` entsteht aus dem Basiswert `1.0` und einem
   einmaligen Zufallsfaktor zwischen `0.45` und `2.0`. `self.processing_variation`
   wird einmalig zufällig zwischen `0.90` und `1.10` erzeugt und multipliziert
-  später die Bearbeitungsdauer. `self.startup_delay` wird einmalig zwischen
-  `0` und `4` Zeiteinheiten erzeugt und nur vor der ersten Bearbeitung
+  später die Verarbeitungsdauer. `self.startup_delay` wird einmalig zwischen
+  `0` und `4` Zeiteinheiten erzeugt und nur vor der ersten Verarbeitung
   angewendet; `_startup_delay_applied` verhindert eine Wiederholung bei
   weiteren Jobs.
 
@@ -301,7 +301,7 @@ Der Prozess läuft wiederholt ab:
 
 Die Maschine wählt weder selbst einen Job noch eine Operation oder ein
 Werkzeug. Fehlt der ausgewählte Job im angegebenen Store, wird die Pick-Aktion
-ohne Bearbeitung beendet.
+ohne Verarbeitung beendet.
 
 #### Werkzeugwechsel und Lebensdauer
 
@@ -324,10 +324,10 @@ Wenn die verbleibende Lebensdauer für den Verbrauch der Operation nicht
 ausreicht, wird beim Werkzeugwechsel ein neues Werkzeug mit
 `total_life_units` angenommen. Nach der Operation wird die Lebensdauer um
 `consumed_life_units` reduziert. Die erwarteten Lebensdauerwerte werden
-während der Bearbeitung für die Visualisierung interpoliert und nach dem
+während der Verarbeitung für die Visualisierung interpoliert und nach dem
 Abschluss auf den tatsächlichen Restwert gesetzt.
 
-#### Bearbeitungsdauer
+#### Verarbeitungsdauer
 
 Zuerst werden relative Größenwerte gebildet:
 
@@ -347,12 +347,12 @@ duration *= processing_variation
 
 Damit beeinflussen die Operationsdauer, die Produktgröße, die
 Maschinengeschwindigkeit und eine kleine zufällige Laufzeitabweichung die
-Bearbeitungsdauer. Vor der ersten Bearbeitung wird zusätzlich die einmalige
+Verarbeitungsdauer. Vor der ersten Verarbeitung wird zusätzlich die einmalige
 Anlaufverzögerung der Maschine ausgeführt.
 
 #### Defektprüfung und Recovery
 
-Nach Ablauf der Bearbeitungsdauer erzeugt die Maschine einen deterministischen
+Nach Ablauf der Verarbeitungsdauer erzeugt die Maschine einen deterministischen
 Qualitätszufallszahlengenerator. Sein Schlüssel enthält den Simulations-Seed,
 das Szenario, den Auftrag, den Job, die Operation und den `rework_count`.
 Die erste Zufallszahl wird mit `operation.defect_probability` verglichen. Nur
@@ -370,15 +370,15 @@ Maschine, Produktzustand vor der Operation, Zielzustand und Schweregrad im Job
 festgehalten. Ohne relevanten Defekt setzt die Maschine den erzeugten
 Produktzustand und den allgemeinen Zustand auf `intact`.
 
-Nach einer abgeschlossenen Nacharbeitsbearbeitung wird
+Nach abgeschlossener Nacharbeit wird
 `recovery_in_progress` zurückgesetzt. Die alte Auswahl von Operation und
 Maschine wird gelöscht, damit die Steuerung die nächste Aktion neu bestimmen
 kann. Die Auswahl der Recovery-Strategie selbst kommt aus der Steuerung; die
 Simulation speichert sie nur und entfernt eine erledigte Rework-Strategie.
 
-#### Abschluss der Bearbeitung und Zustände
+#### Abschluss der Verarbeitung und Zustände
 
-Nach der Bearbeitung wird der Job mit seiner Priorität in den im Payload
+Nach der Verarbeitung wird der Job mit seiner Priorität in den im Payload
 genannten Zielstore gelegt und seine `location` wird aktualisiert. Danach wird
 `current_job` auf `None` gesetzt; die Maschine ist wieder frei und meldet ihren
 neuen Zustand mit der nächsten `request_action()`-Anfrage.
@@ -390,7 +390,7 @@ Die wichtigsten Maschinenzustände sind:
 - `unmounting`: Ein Schutz- oder Produktionswerkzeug wird entfernt.
 - `mounting`: Ein Produktions- oder Schutzwerkzeug wird montiert.
 - `working`: Die Operation wird ausgeführt.
-- `returning`: Die Bearbeitung ist beendet und der Job wird abgelegt.
+- `returning`: Die Verarbeitung ist beendet und der Job wird abgelegt.
 
 Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
 einmalige Salabim-Komponente das Produktionswerkzeug entfernen und wieder das
@@ -444,7 +444,7 @@ Simulationszeit.
 Am Ende des Simulationslaufs kann der optionale Abschlussprozess
 `SimMachineShutdown` ein noch montiertes Produktionswerkzeug entfernen und
 wieder das Schutzwerkzeug montieren. Dieser Prozess gehört nicht zur normalen
-Jobbearbeitung; damit endet die Maschine in einem definierten Werkzeugzustand.
+Jobverarbeitung; damit endet die Maschine in einem definierten Werkzeugzustand.
 
 ## `SimScenario.py` und `SimCompletionWatcher`
 
@@ -663,7 +663,7 @@ austauschbaren Bausteinen, die sie miteinander verbindet:
   Aktionen für das aktuell betrachtete wartende Simulationsobjekt.
 - `ActionEvaluator` bewertet diese Aktionen anhand gewichteter
   Dispatching-Regeln, zum Beispiel EDD-Termindruck, Queue-Priorität,
-  Transportzeit, Bearbeitungszeit, Werkzeugzustand und Defekt-Recovery.
+  Transportzeit, Verarbeitungszeit, Werkzeugzustand und Defekt-Recovery.
 - `ActionSelector` wählt normalerweise die Aktion mit dem höchsten Score aus.
   Der `BaselineActionSelector` kann gelegentlich auch eine fast gleich gute
   Alternative zur Exploration auswählen.
@@ -825,7 +825,7 @@ Beispiel für eine Place-Aktion des Main-Roboters:
 2. Für einen geladenen Job `process_machine_job` bei freiem Ausgangspuffer;
    bei fehlender Kapazität `wait_machine` (Beispiel: voller Ausgangspuffer).
 
-Beispiel für eine Bearbeitungsaktion:
+Beispiel für eine Verarbeitungsaktion:
 
 ```json
 {
@@ -934,7 +934,7 @@ aus dem aktuellen Lösungsraum.
 Eine Dispatching-Regel ist eine lokale Prioritätsregel für bereits verfügbare
 Jobs oder Aktionen. `EDD` (Earliest Due Date) bevorzugt beispielsweise den Job
 mit dem frühesten Fälligkeitstermin. Weitere Regeln können kurze Transporte,
-kurze Bearbeitungen, eine hohe Warteschlangenpriorität oder einen günstigen
+kurze Operationen, eine hohe Warteschlangenpriorität oder einen günstigen
 Werkzeugzustand bevorzugen.
 
 Der `ActionEvaluator` verbindet mehrere solcher Regeln zu einem Score. Der
@@ -1127,9 +1127,9 @@ Skalierungsformeln beschrieben wurden, sind:
      `EDD` beschreibt, wie dringend die Freigabe des Jobs im aktuellen
      Simulationszeitpunkt ist. `release_edd_weight` beschreibt die relative
      Wichtigkeit dieses Termindrucks innerhalb der Freigabebewertung.
-  2. **Durchschnittliche Routenbearbeitungszeit:**
-     `Kehrwertskalierung(erwartete Bearbeitungszeit) × release_average_route_duration_weight`.
-     Die erwartete Bearbeitungszeit ist der Durchschnitt der Gesamtzeiten aller
+  2. **Durchschnittliche Routenverarbeitungszeit:**
+     `Kehrwertskalierung(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
+     Die erwartete Verarbeitungszeit ist der Durchschnitt der Gesamtzeiten aller
      möglichen Operationsrouten, weil beim Freigeben noch keine Route feststeht.
      Kürzere durchschnittliche Routen erhalten durch die Kehrwertskalierung
      einen höheren Teilwert. `release_average_route_duration_weight` beschreibt
@@ -1158,7 +1158,7 @@ Skalierungsformeln beschrieben wurden, sind:
 - Maschinen-Pick (`pick_machine_job`, in `evaluate_machine_pick_action()`):
 
   1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Eine höhere
-     Priorität macht den Job für die Maschinenbearbeitung dringlicher.
+     Priorität macht den Job für die Verarbeitung auf der Maschine dringlicher.
   2. **Operationsdauer:** `Kehrwertskalierung(Operationsdauer) × machine_pick_operation_duration_weight`. Kürzere Operationen erhalten
      einen höheren Teilwert.
   3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`. Der Teilwert ist `1`, wenn das benötigte

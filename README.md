@@ -317,12 +317,6 @@ Die Maschine wählt weder selbst einen Job noch eine Operation oder ein
 Werkzeug. Fehlt der ausgewählte Job im angegebenen Store, wird die Pick-Aktion
 ohne Bearbeitung beendet.
 
-`request_action()` hat zwei Aufgaben: Es markiert die Maschine als wartend und
-ruft intern eine Zustandsmeldung an die Bridge aus. `notify_state_change()`
-hat dagegen nur die zweite Aufgabe und wird von anderen Laufzeitkomponenten für
-Zustandsänderungen ohne neue Aktionsanforderung verwendet. Für `SimMachine`
-reicht nach dem Ablegen des Jobs die nächste `request_action()`-Anfrage aus.
-
 #### Werkzeugwechsel und Lebensdauer
 
 Die `process_machine_job`-Payload enthält unter anderem `operation`,

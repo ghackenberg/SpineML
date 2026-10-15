@@ -48,13 +48,6 @@ Operationen und Werkzeuge haben.
 Maschine und beeinflusst die Verarbeitungsdauer des Jobs bei der Ausführung
 seiner Operation.
 
-- `1.0`: normale Geschwindigkeit
-- größer als `1.0`: kürzere Bearbeitungsdauer
-- kleiner als `1.0`: längere Bearbeitungsdauer
-
-Ein Faktor von `2.0` verkürzt die Verarbeitungsdauer ungefähr auf die Hälfte.
-Ein Faktor von `0.5` verlängert sie ungefähr auf das Doppelte.
-
 ## Schutzwerkzeugzeiten
 
 Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.

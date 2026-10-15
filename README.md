@@ -246,10 +246,18 @@ Punkte erweitert:
   der fehlerhaften Operation. Nach der Bearbeitung setzt sie die ausgewählte
   Operation und Maschine zurück, beendet eine laufende Recovery-Markierung und
   entfernt bei einem intakten Ergebnis eine alte Rework-Strategie.
-- Der Runner setzt denselben Seed für Python, Salabim und
-  `SimMachine.QUALITY_SEED`. Dadurch sind die zufällige Laufzeitvariation und
-  die Qualitätsprüfung reproduzierbar. Der `quality_key` unterscheidet dabei
-  Szenario, Auftrag, Job, Operation und Rework-Durchlauf.
+- Der Runner setzt denselben Seed für Python und Salabim und übergibt ihn an
+  `SimMachine.QUALITY_SEED`. Dadurch sind die im Lauf erzeugten Werte
+  `SimMachine.processing_variation`, `SimMachine.startup_delay`,
+  `SimRobot.movement_speed_multiplier` und die zufälligen Entscheidungen des
+  `ActionSelector` reproduzierbar. Der konfigurierte
+  `Machine.processing_speed_factor` wird von `SimMachine` nur übernommen und
+  dort nicht erneut zufällig erzeugt.
+- Die Qualitätsprüfung verwendet zusätzlich den lokalen `quality_rng`. Bei
+  gleichem `quality_key` sind sowohl die Defektentscheidung aus dem Vergleich
+  mit `operation.defect_probability` als auch der daraus erzeugte Wert
+  `defect_severity` gleich. Der `quality_key` unterscheidet Szenario, Auftrag,
+  Job, Operation und Rework-Durchlauf.
 
 #### Aufbau und Laufzeitdaten
 

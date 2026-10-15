@@ -89,16 +89,20 @@ Konfiguration an die Salabim-Stores weitergegeben:
 - Jeder Korridor erhält drei Stores mit `corridor.storage_capacity`.
 - Das maximale Produktgewicht und -volumen werden aus den Aufträgen ermittelt
   und an die Maschinen für die Laufzeitberechnung weitergegeben.
-- Der Main-Roboter, die Korridore und die Maschinen werden mit der
-  `SimulationBridge` verbunden.
+- `SimLayout` reicht die `SimulationBridge` an die Laufzeitkomponenten weiter.
+  Die jeweiligen Komponenten registrieren sich beim Erzeugen selbst: Der
+  Main-Roboter, jeder Korridorroboter, jede Maschine und jeder Job registrieren
+  ihre eigene ID. Komponenten registrieren außerdem – soweit vorhanden – die
+  Stores, die sie selbst besitzen oder verwalten.
 
 ## `SimCorridor.py` und `SimCorridorArm.py`
 
-`SimCorridor` erzeugt die drei Korridor-Stores und jeweils einen linken und
-rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
-`SimMachine`-Komponenten und den Korridorroboter. Beide Klassen registrieren
-die Laufzeitobjekte an der Bridge und übergeben die Produktgrößen an die
-Maschinen.
+`SimCorridor` erzeugt die drei Korridor-Stores und registriert den Korridor
+zusammen mit diesen Stores bei der `SimulationBridge`. Danach erzeugt er den
+linken und rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
+`SimMachine`-Komponenten und den Korridorroboter; diese Komponenten registrieren
+sich jeweils selbst mit ihren IDs und ihren eigenen Stores. Die Produktgrößen
+werden an jede Maschine weitergegeben.
 
 Die Roboter berücksichtigen beim Ein- und Auslagern die konfigurierten
 Lagerzeiten. Ein- und Ausgangspuffer der Maschinen bleiben getrennte Stores.

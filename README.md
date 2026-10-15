@@ -358,8 +358,7 @@ duration *= processing_variation
 
 Damit beeinflussen die Operationsdauer, die Produktgröße, die
 Maschinengeschwindigkeit und eine kleine zufällige Laufzeitabweichung die
-Verarbeitungsdauer. Vor der ersten Verarbeitung wird zusätzlich die einmalige
-Anlaufverzögerung der Maschine ausgeführt.
+Verarbeitungsdauer.
 
 #### Defektprüfung und Recovery
 

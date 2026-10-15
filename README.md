@@ -227,8 +227,10 @@ Punkte erweitert:
   bewertet und die Bearbeitungsdauer angepasst.
 - Jede konkrete Maschine besitzt eine eigene Werkzeugliste. Bei einer
   `process_machine_job`-Aktion montiert oder demontiert sie entsprechend
-  `tool_setup_action` das benötigte Werkzeug, verbraucht während der Operation
-  `consumed_life_units` und kann am Ende wieder das Schutzwerkzeug montieren.
+  `tool_setup_action` das benötigte Werkzeug und verbraucht während der
+  Operation `consumed_life_units`. Erst der separate Abschlussprozess
+  `SimMachineShutdown` entfernt nach dem Simulationslauf ein noch montiertes
+  Produktionswerkzeug und montiert wieder das Schutzwerkzeug.
 - Zu Beginn jeder Prozessschleife meldet `SimMachine` ihren Zustand über
   `bridge.request_action(self)`. Danach empfängt sie mit `bridge.action(self)`
   eine konkrete Aktion. Nach der Bearbeitung meldet sie den aktualisierten Job

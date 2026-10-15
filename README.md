@@ -95,17 +95,22 @@ Konfiguration an die Salabim-Stores weitergegeben:
   ihre eigene ID. Komponenten registrieren außerdem – soweit vorhanden – die
   Stores, die sie selbst besitzen oder verwalten.
 
-## `SimCorridor.py` und `SimCorridorArm.py`
+## Unterschiede zu `main`: `SimCorridor.py` und `SimCorridorArm.py`
 
-`SimCorridor` erzeugt die drei Korridor-Stores und registriert den Korridor
-zusammen mit diesen Stores bei der `SimulationBridge`. Danach erzeugt er den
-linken und rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
-`SimMachine`-Komponenten und den Korridorroboter; diese Komponenten registrieren
-sich jeweils selbst mit ihren IDs und ihren eigenen Stores. Die Produktgrößen
-werden an jede Maschine weitergegeben.
+Die Grundstruktur dieser beiden Klassen war bereits in `main` vorhanden: Die
+drei Korridor-Stores werden erzeugt, bei der `SimulationBridge` registriert und
+an die Korridorarme weitergegeben. Auch die Korridorarme erzeugen weiterhin die
+zugehörigen `SimMachine`-Komponenten und den Korridorroboter.
 
-Die Roboter berücksichtigen beim Ein- und Auslagern die konfigurierten
-Lagerzeiten. Ein- und Ausgangspuffer der Maschinen bleiben getrennte Stores.
+Im `Foroogh`-Zweig werden `max_product_weight` und `max_product_volume` nun
+verpflichtend von `SimLayout` an `SimCorridor` und weiter an jede Maschine
+übergeben. Die früheren Standardwerte `1.0` in den Konstruktoren wurden
+entfernt. Dadurch verwendet die Laufzeitberechnung immer die tatsächlich aus
+dem Szenario ermittelten Produktgrößen.
+
+Die erzeugten Laufzeitkomponenten registrieren sich weiterhin selbst mit ihren
+IDs und – soweit vorhanden – ihren eigenen Stores. Ein- und Ausgangspuffer der
+Maschinen bleiben getrennte Stores.
 
 ## `SimOrder.py` und `SimOrderJob.py`
 

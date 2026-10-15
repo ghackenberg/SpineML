@@ -217,8 +217,10 @@ neuen Zustand zurück.
 Gegenüber dem ursprünglichen `main`-Stand wurden insbesondere die folgenden
 Punkte erweitert:
 
-- Die Steuerung wählt Job, Operation, Maschine und Werkzeug; die Maschine führt
-  keine zufällige eigene Route mehr aus.
+- Die Steuerung richtet die Aktion an die ausgewählte Maschine und sendet in
+  der Aktions-Payload den ausgewählten Job, die Operation und das Werkzeug.
+  `SimMachine` nimmt diese Werte entgegen und führt genau diese Auswahl aus;
+  sie sucht keinen Ersatzjob und keine alternative Operation selbst.
 - `SimLayout` ermittelt aus allen Aufträgen das größte Produktgewicht und
   -volumen. Diese beiden Referenzwerte werden an jede `SimMachine` übergeben;
   dadurch wird die Größe jedes bearbeiteten Produkts relativ zum Szenario
@@ -227,12 +229,17 @@ Punkte erweitert:
   `process_machine_job`-Aktion montiert oder demontiert sie entsprechend
   `tool_setup_action` das benötigte Werkzeug, verbraucht während der Operation
   `consumed_life_units` und kann am Ende wieder das Schutzwerkzeug montieren.
-- Maschinenzustände und Aktionen werden über die `SimulationBridge` zwischen
-  Steuerung und Simulationskern ausgetauscht.
-- Defekte, Schweregrade, Recovery, Herabstufung und Ausschuss werden als
-  getrennte Laufzeitinformationen im Job gespeichert.
-- Die Defektprüfung und die Laufzeitabweichungen sind über den Seed
-  reproduzierbar.
+- Zu Beginn jeder Prozessschleife meldet `SimMachine` ihren Zustand über
+  `bridge.request_action(self)`. Danach empfängt sie mit `bridge.action(self)`
+  eine konkrete Aktion. Nach der Bearbeitung meldet sie den aktualisierten Job
+  und Maschinenzustand mit `notify_state_change()` zurück.
+- `SimOrderJob` speichert Defektzähler, Schweregrad, verursachende Operation
+  und Maschine, Produktzustände vor und nach der fehlerhaften Operation,
+  Recovery-Strategie, Rework-Zähler, Herabstufung und Ausschuss getrennt.
+- Der Runner setzt denselben Seed für Python, Salabim und
+  `SimMachine.QUALITY_SEED`. Dadurch sind die zufällige Laufzeitvariation und
+  die Qualitätsprüfung reproduzierbar. Der `quality_key` unterscheidet dabei
+  Szenario, Auftrag, Job, Operation und Rework-Durchlauf.
 
 #### Aufbau und Laufzeitdaten
 

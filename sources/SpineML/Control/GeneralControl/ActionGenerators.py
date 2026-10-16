@@ -8,8 +8,9 @@ class SpineActionGenerator(ActionGenerator):
     MAX_REWORK_DEFECT_SEVERITY = 0.6
 
 
-    # Erzeugt Aktionskandidaten und entfernt exakt doppelte Aktionen.
-    # Beispiel: Zwei gleiche wait_job-Aktionen werden zu einer einzigen Aktion.
+    # Erzeugt alle technisch möglichen Aktionskandidaten und entfernt exakt
+    # doppelte Aktionen. wait_job ist meist eine Fallback-Aktion; die Prüfung
+    # gilt aber auch für doppelte Routen- oder Maschinenkandidaten.
     def generate_actions(self, observation: PolicyObservation) -> list[dict]:
         """Erzeugt technisch mögliche Aktionen und entfernt identische Duplikate."""
         actions = self._generate_actions(observation)

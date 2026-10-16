@@ -29,8 +29,9 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     # Example: inverse_scale(1.0) returns 0.5.
     @staticmethod
     def inverse_scale(value: float) -> float:
-        nonnegative_value = max(float(value), 0.0)
-        return 1.0 / (1.0 + nonnegative_value)
+        # Negative Werte werden nicht stillschweigend begrenzt; die Aufrufer
+        # übergeben hier nur nichtnegative Zeit-, Distanz- oder Mengenwerte.
+        return 1.0 / (1.0 + float(value))
 
     # Convert a non-negative raw value to an increasing, dimensionless score:
     # 0 returns 0; as the value grows, the result approaches 1. This function

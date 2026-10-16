@@ -656,8 +656,11 @@ Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
 - `general_state == "defect"`
   - `recovery_in_progress == True` → nur `wait_job`.
   - Rework technisch nicht möglich → nur `job_scrap`.
-  - Nacharbeit technisch möglich → mehrere mögliche Recovery-Aktionen und
-    `wait_job`.
+  - Nacharbeit technisch möglich → Nacharbeitsaktionen, `downgrade_product`
+    und `wait_job`.
+- `downgraded == True`
+  - Keine normale weitere Produktionsroute; der erreichte Produktzustand bleibt
+    erhalten und der Job wird zum Endlager transportiert.
 - `released == False`
   - `release_job` und zusätzlich `wait_job`.
 - Alle anderen Jobzustände

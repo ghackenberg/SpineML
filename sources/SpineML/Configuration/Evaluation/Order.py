@@ -12,6 +12,7 @@ class Order:
         self.name = name
         self.quantity = quantity
         self.earliest_start_time = earliest_start_time
+        # Spätester Abschlusszeitpunkt dieses Auftrags; gilt für alle daraus erzeugten Jobs.
         self.latest_end_time = latest_end_time
         self.product_type = product_type
         self.scenario = scenario

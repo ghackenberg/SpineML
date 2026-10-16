@@ -561,14 +561,11 @@ sequenceDiagram
     participant Sim as Simulationsobjekt
     participant Bridge as SimulationBridge
     participant Policy as GeneratorSelectorPolicy
-    participant Selector as ActionSelector
 
     Sim->>Bridge: request_action() oder notify_state_change()
     Bridge->>Bridge: Trigger sammeln und Snapshot erstellen
     Bridge->>Policy: PolicyObservation mit IDs
-    Policy->>Policy: Aktionen erzeugen und bewerten
-    Policy->>Selector: Kandidaten auswählen
-    Selector-->>Policy: PolicyDecision mit Aktions-IDs
+    Policy->>Policy: Aktionen erzeugen, bewerten und auswählen
     Policy-->>Bridge: PolicyDecision
     Bridge->>Bridge: IDs in echte Objekte auflösen
     Bridge-->>Sim: SimulationAction im Aktions-Store

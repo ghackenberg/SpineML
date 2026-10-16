@@ -481,11 +481,17 @@ ab und sammelt anschließend die globalen Kennzahlen.
 
 # SimulationBridge
 
-Jobs, Maschinen, der Main-Roboter und die Korridorarm-Roboter sind an die
-`SimulationBridge` angeschlossen. Der wiederkehrende Ablauf einer
-Simulationskomponente besteht darin, mit `request_action(self)` eine Aktion
-anzufordern und anschließend mit `action(self)` die ausgewählte Aktion zu
-empfangen.
+Jobs, Maschinen, der Main-Roboter und die Korridorarm-Roboter registrieren sich
+bei der `SimulationBridge`, weil sie Aktionen von der Policy anfordern und
+ausführen. Korridore und Stores werden zusätzlich für die ID-Auflösung
+registriert. `SimLayout`, `SimScenario` und `SimCompletionWatcher` benötigen
+keine eigenen Aktionen und werden deshalb nicht als aktionsfähige Objekte
+registriert.
+
+Der wiederkehrende Ablauf eines aktionsfähigen Simulationsobjekts besteht
+darin, mit `request_action(self)` seinen aktuellen Zustand an die Bridge zu
+melden und eine neue Policy-Entscheidung anzufordern. Anschließend empfängt es
+mit `action(self)` die ausgewählte Aktion.
 
 Die Bridge trennt die für die Policy sichtbaren IDs von den echten
 Salabim-Komponenten:

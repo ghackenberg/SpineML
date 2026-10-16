@@ -597,47 +597,6 @@ flowchart TD
     H --> I[Simulationskern führt die<br/>ausgewählten Aktionen aus]
 ```
 
-### UML-Klassendiagramm der GeneralControl
-
-```mermaid
-classDiagram
-    class Policy {
-        <<abstract>>
-        +make_decision(observation)
-    }
-    class GeneratorSelectorPolicy {
-        +make_decision(observation)
-    }
-    class ActionGenerator {
-        <<abstract>>
-        +generate_actions(observation)
-    }
-    class ActionEvaluator {
-        <<abstract>>
-        +prepare_action_candidate(action, observation)
-        +evaluate_action(action, observation)
-    }
-    class ActionSelector {
-        <<abstract>>
-        +select_action(actions, evaluator, observation, target_id)
-    }
-    class SpineActionGenerator
-    class LocalHeuristicActionEvaluator
-    class BaselineActionSelector
-    class PolicyObservation
-    class PolicyDecision
-
-    Policy <|-- GeneratorSelectorPolicy
-    ActionGenerator <|-- SpineActionGenerator
-    ActionEvaluator <|-- LocalHeuristicActionEvaluator
-    ActionSelector <|-- BaselineActionSelector
-    GeneratorSelectorPolicy --> ActionGenerator : verwendet
-    GeneratorSelectorPolicy --> ActionEvaluator : verwendet
-    GeneratorSelectorPolicy --> ActionSelector : verwendet
-    GeneratorSelectorPolicy --> PolicyObservation : liest
-    GeneratorSelectorPolicy --> PolicyDecision : erstellt
-```
-
 ## GeneratorSelectorPolicy
 
 Aus Sicht der Simulation ist `GeneratorSelectorPolicy` die Policy. Sie ist

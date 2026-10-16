@@ -522,6 +522,11 @@ Salabim-Komponenten:
   enthalten sein.
 - Die Bridge ruft danach die Policy mit einer `PolicyObservation` auf. Die
   Policy liefert eine `PolicyDecision` mit ausgewählten Aktionen und IDs.
+  Vor der Verwendung prüft die Bridge, ob die `state_version` des Snapshots
+  noch dem aktuellen Simulationszustand entspricht. Falls sich der Zustand
+  während der Policy-Entscheidung geändert hat, erstellt sie den Snapshot und
+  die Entscheidung erneut. Dadurch erhält die Policy nur einen aktuellen
+  Snapshot.
   Die Bridge löst diese IDs in echte Simulationsobjekte auf und legt jede
   ausführbare `SimulationAction` im persönlichen Aktions-Store des jeweiligen
   Zielobjekts ab.
@@ -547,51 +552,6 @@ flowchart TD
     I --> J[Simulationskomponente empfängt die Aktion<br/>und führt sie mit Salabim aus]
     J --> K[Zustandsänderung erneut an die<br/>SimulationBridge melden]
     K -. nächster Simulationszyklus .-> A
-```
-
-## UML-Klassendiagramm der SimulationBridge
-
-Die Bridge verbindet den objektorientierten Simulationskern mit der
-ID-basierten Policy-Schnittstelle. Die Simulation arbeitet intern weiterhin mit
-echten Python- und Salabim-Objekten.
-
-```mermaid
-classDiagram
-    class SimulationBridge {
-        +register(policy_object_id, simulation_object)
-        +request_action(sender)
-        +notify_state_change(sender)
-        +create_policy_observation()
-        +create_simulation_actions(decision)
-        +action(target)
-    }
-    class Policy {
-        <<abstract>>
-        +make_decision(observation)
-    }
-    class PolicyObservation {
-        +simulation_configuration_snapshot
-        +current_object_id
-    }
-    class PolicyDecision {
-        +actions
-    }
-    class PolicyTrigger {
-        +event_id
-        +sender_id
-        +state_version
-    }
-    class SimulationAction {
-        +target
-        +action_type
-        +payload
-    }
-
-    SimulationBridge --> Policy : ruft auf
-    SimulationBridge --> PolicyObservation : erstellt
-    SimulationBridge --> PolicyTrigger : erzeugt
-    SimulationBridge --> SimulationAction : erstellt
-    Policy --> PolicyDecision : liefert
 ```
 
 ## UML-Sequenzdiagramm eines Simulationszyklus

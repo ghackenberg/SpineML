@@ -284,9 +284,13 @@ class SpineActionGenerator(ActionGenerator):
             # Gibt nur die bereits ausgewählte Nacharbeitsoperation und -maschine zurück.
             return [
                 {
+                    # Enthält nur die bereits ausgewählte Nacharbeitsoperation.
                     "operation_sequence": [job["selected_operation_id"]],
+                    # Enthält nur die bereits ausgewählte Nacharbeitsmaschine.
                     "machine_sequence": [job["selected_machine_id"]],
+                    # Gibt die als Nächstes auszuführende Nacharbeitsoperation an.
                     "next_operation_id": job["selected_operation_id"],
+                    # Gibt die für diese Operation ausgewählte Maschine an.
                     "next_machine_id": job["selected_machine_id"],
                 }
             ]

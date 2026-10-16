@@ -14,8 +14,10 @@ if TYPE_CHECKING:
 
 
 class SimulationObjectObserver:
+    """Wandelt Laufzeitobjekte in ID-basierte Beobachtungen für die Policy um."""
+
     @classmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Wählt anhand des konkreten Laufzeittyps die passende Beobachtungsmethode.
     def observe_simulation_object(cls, sender: sim.Component, time: float) -> dict[str, object]:
         from ...Simulation.SimMachine import SimMachine
         from ...Simulation.SimOrderJob import SimOrderJob
@@ -33,7 +35,7 @@ class SimulationObjectObserver:
         raise ValueError(f"Unsupported simulation object '{sender}'")
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt die vollständige Policy-Beobachtung für einen Auftragsjob.
     def observe_order_job(job: SimOrderJob, time: float) -> dict[str, object]:
         return {
             "object_type": "order_job",
@@ -77,7 +79,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt die Policy-Beobachtung für den Main-Roboter inklusive Stores und Job.
     def observe_main_robot(robot: SimRobotMain, time: float) -> dict[str, object]:
         current_job = robot.current_job
         next_operation = None
@@ -173,7 +175,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt die Policy-Beobachtung für einen Korridorroboter inklusive Stores und Job.
     def observe_corridor_arm_robot(robot: SimRobotCorridorArm, time: float) -> dict[str, object]:
         current_job = robot.current_job
         next_operation = None
@@ -263,7 +265,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt die Policy-Beobachtung für eine Maschine inklusive Job- und Werkzeugdaten.
     def observe_machine(machine: SimMachine, time: float) -> dict[str, object]:
         current_job = machine.current_job
         next_operation = None
@@ -340,7 +342,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt eine Beobachtung der Store-Belegung, Kapazität und enthaltenen Jobs.
     def observe_store(store: sim.Store) -> dict[str, object]:
         items = list(store.as_list())
         return {
@@ -378,7 +380,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Liest den angeforderten Wert oder Zustand aus.
+    # Erstellt eine kompakte Jobbeschreibung für Roboter- und Store-Beobachtungen.
     def observe_job_summary(job: SimOrderJob | None) -> dict[str, object] | None:
         if job is None:
             return None
@@ -402,7 +404,7 @@ class SimulationObjectObserver:
         }
 
     @staticmethod
-    # Führt die Funktion mit den übergebenen Werten aus.
+    # Erzeugt aus Auftrag und Jobnummer die stabile ID eines Jobs.
     def job_id(job: SimOrderJob | None) -> str | None:
         if job is None:
             return None
@@ -411,10 +413,10 @@ class SimulationObjectObserver:
         return None
 
 class ConfigurationObjectObserver:
-    """Convert configured factory objects into an ID-only policy model."""
+    """Wandelt die Fabrikkonfiguration in ein ID-basiertes Policy-Modell um."""
 
     @staticmethod
-    # Erstellt das angeforderte Modell, Objekt oder Ergebnis.
+    # Erstellt aus den Konfigurationsobjekten das ID-basierte Policy-Modell.
     def build_policy_configuration_model(
         product_types: list[Any],
         operation_types: list[Any],
@@ -523,12 +525,16 @@ class ConfigurationObjectObserver:
 
 @dataclass(frozen=True)
 class PolicyObservation:
+    """Enthält Konfiguration und aktuellen Simulationszustand für die Policy."""
+
     simulation_configuration_snapshot: dict[str, object]
     current_object_id: str | None = None
 
 
 class PolicyTrigger(sim.Component):
-    # Initialisiert das Objekt mit seinen Eingabewerten.
+    """Meldet der Bridge eine Zustandsänderung eines Simulationsobjekts."""
+
+    # Initialisiert einen Trigger mit ID, Absender, Zustandsversion und Simulationszeit.
     def __init__(
         self,
         event_id: str,
@@ -547,6 +553,8 @@ class PolicyTrigger(sim.Component):
 
 @dataclass(frozen=True)
 class SelectedObjectAction:
+    """Beschreibt eine von der Policy ausgewählte Aktion mit Ziel und Payload."""
+
     target_id: str
     action_type: str
     payload: dict[str, object]
@@ -554,17 +562,21 @@ class SelectedObjectAction:
 
 @dataclass(frozen=True)
 class PolicyDecision:
+    """Enthält die Aktionsauswahl, die die Policy an die Bridge zurückgibt."""
+
     actions: list[SelectedObjectAction]
 
     @classmethod
-    # Führt die Funktion mit den übergebenen Werten aus.
+    # Erstellt eine Entscheidung mit genau einer ausgewählten Aktion.
     def with_single_selected_action(cls, action: dict[str, object], target_id: str) -> PolicyDecision:
         return cls([
             SelectedObjectAction(target_id, action["action_type"], action["payload"])
         ])
 
 class SimulationAction(sim.Component):
-    # Initialisiert das Objekt mit seinen Eingabewerten.
+    """Repräsentiert eine von der Bridge zugestellte ausführbare Aktion."""
+
+    # Initialisiert eine ausführbare Aktion für ein konkretes Simulationsobjekt.
     def __init__(self, event_id: str, target: sim.Component, source_policy_trigger_id: str, action_type: str, time: float, payload: dict[str, object], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.event_id = event_id
@@ -576,15 +588,19 @@ class SimulationAction(sim.Component):
 
 
 class ActionGenerator(ABC):
+    """Schnittstelle zum Erzeugen technisch möglicher Aktionen."""
+
     @abstractmethod
-    # Führt die Funktion mit den übergebenen Werten aus.
+    # Erzeugt die technisch möglichen Aktionen aus einer Policy-Beobachtung.
     def generate_actions(self, observation: "PolicyObservation") -> list[dict[str, Any]]:
         pass
 
 
 class ActionEvaluator(ABC):
+    """Schnittstelle zum Vorbereiten und Bewerten von Aktionskandidaten."""
+
     @abstractmethod
-    # Führt die Funktion mit den übergebenen Werten aus.
+    # Bereitet einen Aktionskandidaten für die Bewertung vor.
     def prepare_action_candidate(
         self,
         action: dict[str, Any],
@@ -593,7 +609,7 @@ class ActionEvaluator(ABC):
         pass
 
     @abstractmethod
-    # Bewertet oder schätzt die übergebenen Daten.
+    # Berechnet den Bewertungswert eines Aktionskandidaten.
     def evaluate_action(
         self,
         action: dict[str, Any],
@@ -603,8 +619,10 @@ class ActionEvaluator(ABC):
 
 
 class ActionSelector(ABC):
+    """Schnittstelle zum Auswählen von Aktionen aus bewerteten Kandidaten."""
+
     @abstractmethod
-    # Wählt ein passendes Objekt oder eine passende Aktion aus.
+    # Wählt aus den bewerteten Kandidaten eine oder mehrere Aktionen aus.
     def select_action(
         self,
         actions: list[dict[str, Any]],
@@ -616,9 +634,8 @@ class ActionSelector(ABC):
         pass
 
 
-# Führt die Funktion mit den übergebenen Werten aus.
 def policy_payload_id_mappings(bridge: Any) -> dict[str, tuple[str, dict]]:
-    """Map policy payload IDs to simulation-side runtime objects."""
+    """Ordnet Payload-IDs den internen Feldern und Registern der Bridge zu."""
     return {
         "target_store_id": (
             "target_store",
@@ -654,14 +671,16 @@ def policy_payload_id_mappings(bridge: Any) -> dict[str, tuple[str, dict]]:
     }
 
 
-# Prüft die angegebene Bedingung.
+# Prüft, ob ein Aktionstyp mit dem Präfix für eine Warteaktion beginnt.
 def is_wait_action(action_type: str) -> bool:
     return action_type.startswith("wait_")
 
 
 
 class Policy(ABC):
+    """Schnittstelle einer Steuerung, die Beobachtungen in Entscheidungen umwandelt."""
+
     @abstractmethod
-    # Führt die Funktion mit den übergebenen Werten aus.
+    # Verarbeitet eine Beobachtung und gibt die ausgewählte Aktion zurück.
     def make_decision(self, observation: PolicyObservation) -> PolicyDecision:
         pass

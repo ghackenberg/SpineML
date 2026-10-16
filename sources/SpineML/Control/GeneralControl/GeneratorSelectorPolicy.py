@@ -44,6 +44,7 @@ class GeneratorSelectorPolicy(Policy):
 
     # Führt die Funktion mit den übergebenen Werten aus.
     def make_decision(self, observation: PolicyObservation) -> PolicyDecision:
+        # Übernimmt den von der SimulationBridge erzeugten Snapshot aus der Observation.
         snapshot = observation.simulation_configuration_snapshot
         selected_actions: list[SelectedObjectAction] = []
 

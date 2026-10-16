@@ -8,9 +8,7 @@ class SpineActionGenerator(ActionGenerator):
     MAX_REWORK_DEFECT_SEVERITY = 0.6
 
 
-    # Erzeugt alle technisch möglichen Aktionskandidaten und entfernt exakt
-    # doppelte Aktionen. wait_job ist meist eine Fallback-Aktion; die Prüfung
-    # gilt aber auch für doppelte Routen- oder Maschinenkandidaten.
+    # Erzeugt technisch mögliche Aktionskandidaten und verhindert doppelte Einträge.
     def generate_actions(self, observation: PolicyObservation) -> list[dict]:
         """Erzeugt technisch mögliche Aktionen und entfernt identische Duplikate."""
         actions = self._generate_actions(observation)

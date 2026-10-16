@@ -51,18 +51,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         weight_sum = 0.0
         for value, weight in weighted_parts:
             score_weight = float(weight)
-            if score_weight <= 0.0:
-                raise ValueError(
-                    "Active heuristic weights must be greater than 0."
-                )
             score_value = float(value)
             weighted_sum += score_value * score_weight
             weight_sum += score_weight
 
-        if weight_sum <= 0.0:
-            raise ValueError(
-                "At least one positive heuristic weight is required."
-            )
         return weighted_sum / weight_sum
 
     # Gibt den Zustand des aktuell von der Policy betrachteten Objekts zurück.

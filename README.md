@@ -860,25 +860,13 @@ der die aktuelle Auswahl mit Heuristiken steuert. Er ersetzt weder den
 `ActionGenerator` (der den zulässigen Lösungsraum erzeugt) noch den
 `ActionSelector` (der eine bewertete Aktion auswählt).
 
-Das zugrunde liegende Problem ist eine dynamische Produktionsplanung. Das
-bedeutet, dass die Planung nicht einmal für die gesamte Produktion festgelegt
-wird, sondern während des laufenden Betriebs immer wieder auf den aktuellen
-Zustand reagiert. Wird zum Beispiel eine Maschine frei, ein Transport beendet,
-ein Store voll, ein Job freigegeben, ein Defekt erkannt oder eine Deadline
-dringend, kann sich die nächste Entscheidung ändern. Für viele Jobs müssen
-gleichzeitig Reihenfolge, Maschine, Route, Transport,
-Werkzeug, Kapazität, Termine und mögliche Defekte berücksichtigt werden. Eine
-exakte mathematische Optimierung müsste dafür sehr viele Kombinationen
-und auch deren zukünftige Folgen prüfen. Solche kombinatorischen Planungs- und
-Scheduling-Probleme sind im Allgemeinen NP-schwer. Das bedeutet hier: Die
-Anzahl möglicher Produktionspläne wächst sehr schnell, sobald weitere Jobs,
-Maschinen, Reihenfolgen, Routen, Kapazitäten oder Deadlines hinzukommen. Ein
-exakt optimaler Plan ist für kleine Beispiele berechenbar, kann bei einer
-größeren Fabrik aber zu lange dauern, um noch rechtzeitig die nächste
-Entscheidung zu treffen. Das Problem ist also mathematisch beschreibbar, aber
-praktisch schwer effizient zu lösen. `HeuristicControl` löst deshalb nicht die
-gesamte Planung optimal, sondern wählt schnell eine vertretbare nächste Aktion
-aus dem aktuellen Lösungsraum.
+Die Heuristiken verwenden den aktuellen Zustand der Simulation. Sie
+berücksichtigen beispielsweise Termindruck, Bearbeitungs- und Transportzeiten,
+Maschinenverfügbarkeit, Werkzeugreserve, Pufferkapazität sowie Defekt- und
+Nacharbeitsmöglichkeiten. Aus diesen Informationen werden für jeden
+Aktionskandidaten Teilwerte und anschließend ein Gesamtscore berechnet. So
+kann der `ActionSelector` die verfügbaren Kandidaten vergleichen und eine
+geeignete nächste Aktion auswählen.
 
 ## ActionEvaluator
 

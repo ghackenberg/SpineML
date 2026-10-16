@@ -501,6 +501,11 @@ Salabim-Komponenten:
 - Bei der Registrierung ordnet die Bridge jeder Policy-ID genau eine
   Simulationskomponente zu und erstellt für diese Komponente einen eigenen
   Aktions-Store.
+- Beispiel: Die Policy sendet `selected_machine_id: "machine_1"`. Die Bridge
+  löst diese ID intern in das echte `SimMachine`-Objekt der Maschine 1 auf.
+  Dadurch bleibt die Policy vom Simulationskern entkoppelt. IDs und die
+  zugehörigen einfachen Daten können außerdem leicht gespeichert, als JSON
+  übertragen oder später über ein Webinterface verwendet werden.
 - Eine Policy-Aktion enthält ebenfalls nur IDs. Die Bridge löst diese IDs in
   die echten Simulationsobjekte und Stores auf und legt die ausführbare Aktion
   nur im Aktions-Store des Zielobjekts ab.
@@ -520,10 +525,10 @@ Salabim-Komponenten:
   ausführbare `SimulationAction` im persönlichen Aktions-Store des jeweiligen
   Zielobjekts ab.
 
-Das gilt für jede Simulationskomponente: Sie meldet ihren aktuellen Zustand,
-wartet auf die Entscheidung der Steuerung, führt diese Entscheidung mit
-Salabim aus und meldet danach die Zustandsänderung wieder an die Bridge. Die
-Simulation wählt dabei keine Ersatzaktion und keine Produktionsroute selbst.
+Für jedes aktionsfähige Simulationsobjekt gilt: Es meldet seinen aktuellen
+Zustand, wartet auf die Entscheidung der Steuerung, führt diese Entscheidung
+mit Salabim aus und meldet danach die Zustandsänderung wieder an die Bridge.
+Die Simulation wählt dabei keine Ersatzaktion und keine Produktionsroute selbst.
 
 Der Ablauf zwischen Bridge, Steuerung und Simulationskomponenten ist:
 

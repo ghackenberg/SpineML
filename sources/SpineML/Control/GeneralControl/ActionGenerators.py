@@ -230,6 +230,7 @@ class SpineActionGenerator(ActionGenerator):
                 model,
             )
             for machine_sequence in machine_sequences:
+                # Überspringt leere Folgen und Routen, die die Defektmaschine erneut verwenden.
                 if not machine_sequence or machine_sequence[0] == defect_machine_id:
                     continue
                 route_options.append({

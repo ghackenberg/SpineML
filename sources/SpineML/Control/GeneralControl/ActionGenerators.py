@@ -31,16 +31,19 @@ class SpineActionGenerator(ActionGenerator):
             if current_state["current_job_id"] is None:
                 return self.create_main_robot_pick_actions(observation)
             return self.create_main_robot_place_actions(observation)
+        
         if current_state["object_type"] == "corridor_arm_robot":
             if current_state["current_job_id"] is None:
                 return self.create_corridor_arm_robot_pick_actions(observation)
             return self.create_corridor_arm_robot_place_actions(observation)
+        
         if current_state["object_type"] == "machine":
             if current_state["current_job_id"] is None:
                 return self.create_machine_pick_actions(observation)
             return self.create_machine_process_actions(observation)
-        actions = []
 
+        
+        actions = []
         # Ein fertiger Job erhält einmalig die Aktion zum Setzen seines Terminstatus.
         if current_state["completed_time"] is not None and current_state["due_state"] is None:
             return self.create_completion_actions_for_job(observation)
@@ -199,9 +202,12 @@ class SpineActionGenerator(ActionGenerator):
         layout_id: str,
         model: dict,
     ) -> list[dict]:
+
+        # Prüft, ob alle IDs für die Berechnung einer alternativen Route vorhanden sind.
         if not defect_operation_id or not defect_machine_id or not target_product_type_id:
             return []
 
+        # Prüft, ob die fehlerhafte Operation im Konfigurationsmodell existiert.
         defect_operation = model["operations_by_id"].get(defect_operation_id)
         if defect_operation is None:
             return []

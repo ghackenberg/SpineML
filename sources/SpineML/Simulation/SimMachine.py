@@ -20,13 +20,16 @@ class SimMachine(sim.Component):
         x: float,
         y: float,
         *args,
+        # Größtes Produktgewicht aller Aufträge im Szenario.
         max_product_weight: float,
+        # Größtes Produktvolumen aller Aufträge im Szenario.
         max_product_volume: float,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.machine = machine
+        # Szenarioweites maximales Produktgewicht und -volumen.
         self.max_product_weight = float(max_product_weight)
         self.max_product_volume = float(max_product_volume)
 
@@ -39,18 +42,34 @@ class SimMachine(sim.Component):
 
         self.tool_type: ToolType | None = None
         self.dummy_tool_mounted = True
+        # Multipliziert den neutralen Basiswert mit einer reproduzierbaren Laufzeitgeschwindigkeit.
         self.processing_speed_factor = machine.processing_speed_factor * random.uniform(0.45, 2.0)
 
+        # Zufällige Abweichung der Bearbeitungsdauer um ungefähr plus/minus 10 Prozent.
+        # Material, Werkzeugzustand
         self.processing_variation = random.uniform(0.90, 1.10)
+
+        # einmalige zufällige Anlaufverzögerung
         self.startup_delay = random.uniform(0.0, 4.0)
+
+
+        #Am Anfang muss sie False sein, damit die Maschine beim ersten Bearbeitungsvorgang wartet. 
+        # Danach wird sie auf True gesetzt, damit die Verzögerung nicht bei jedem Job erneut ausgeführt wird.
         self._startup_delay_applied = False
 
+       
         self.tool_types = list(machine.tool_types)
 
+        # Aktuell verbleibende Werkzeuglebensdauer je Werkzeugtyp.
         self.remaining_life_units: dict[ToolType, int] = {}
+        # Simulationszeitpunkt des aktuell gespeicherten Lebensdauerwerts.
         self.remaining_life_units_t: dict[ToolType, float] = {}
+        # Erwartete Werkzeuglebensdauer nach der laufenden Operation.
         self.remaining_life_units_next: dict[ToolType, int] = {}
+        # Simulationszeitpunkt, an dem der erwartete nächste Wert gilt.
         self.remaining_life_units_next_t: dict[ToolType, float] = {}
+
+
         for tool_type in self.tool_types:
             self.remaining_life_units[tool_type] = tool_type.total_life_units
             self.remaining_life_units_t[tool_type] = self.env.now()
@@ -132,11 +151,17 @@ class SimMachine(sim.Component):
     # Führt den Prozess dieser Simulationskomponente aus.
     def process(self):
         while True:
+
             if self.store_out.available_quantity() <= 0:
                 self.state.set("blocked")
             else:
                 self.state.set("waiting")
+
+
+            # Meldet der Bridge den Zustand und fordert eine neue Aktion an.    
             yield self.bridge.request_action(self)
+
+            # Empfängt die für diese Maschine bestimmte Aktion von der Bridge.
             action = yield self.bridge.action(self)
 
             if action.action_type == "pick_machine_job":
@@ -148,8 +173,10 @@ class SimMachine(sim.Component):
 
     # Führt die angeforderte Bewegung oder Aktion aus.
     def execute_pick_action(self, action):
+
         target_store = action.payload["target_store"]
         selected_job = action.payload["selected_job"]
+
         current_items = target_store.as_list()
         if selected_job not in current_items:
             return None
@@ -164,28 +191,47 @@ class SimMachine(sim.Component):
             target_store,
             filter=is_selected_job,
         )
+
+        # Der Job wurde aus dem Maschineneingangspuffer genommen und befindet sich gerade auf dieser Maschine.
         job.location = f"{self.machine.name}:loaded"
+
+        # Aktualisiert die dynamisch berechnete EDD-/Warteschlangenpriorität des Jobs.
+        # Die Priorität bleibt nicht immer gleich, sondern wird während der Simulation neu berechnet.
         job.queue_priority = action.payload["queue_priority"]
+         
+        # speichert den Job, den die Maschine gerade aus ihrem Eingangspuffer genommen hat und aktuell geladen hat.
         self.current_job = job
 
     # Führt die angeforderte Bewegung oder Aktion aus.
     def execute_process_action(self, action):
+
+
         job = self.current_job
+
+        # Führt die einmalige Anlaufverzögerung der Maschine vor der ersten Bearbeitung aus.
         if not self._startup_delay_applied and self.startup_delay > 0:
+
             self.state.set("waiting")
             yield self.hold(self.startup_delay)
             self._startup_delay_applied = True
+
+
+       
         operation = action.payload["operation"]
         tool_type = action.payload["tool_type"]
 
+        # Gesamte verfügbare Lebensdauer des verwendeten Werkzeugs.
         total_life_units = action.payload["total_life_units"]
 
+        # Werkzeuglebensdauer, die durch die aktuelle Operation verbraucht wird.
         consumed_life_units = action.payload["consumed_life_units"]
 
+        # Verbleibende Werkzeuglebensdauer vor Beginn der aktuellen Operation.
         remaining_life_units_before_operation = action.payload[
             "remaining_life_units_before_operation"
         ]
         tool_setup_action = action.payload["tool_setup_action"]
+
         if tool_setup_action == "unmount_dummy_tool_and_mount_tool":
             self.state.set("unmounting")
             yield self.hold(self.machine.dummy_tool_unmount_time)
@@ -199,23 +245,42 @@ class SimMachine(sim.Component):
             self.state.set("mounting")
             self.tool_type = tool_type
             yield self.hold(self.tool_type.mount_time)
+
+            # Das Werkzeug reicht nicht aus. Deshalb wird angenommen, dass ein neues Werkzeug eingesetzt wurde, 
+            # und die Lebensdauer wird auf die vollständige Lebensdauer zurückgesetzt.
             if remaining_life_units_before_operation < consumed_life_units:
+
                 remaining_life_units_before_operation = total_life_units
 
         product = job.order.product_type
         volume = product.length * product.width * product.depth
+
+        # Verhältnis des Produktgewichts zum größten Produktgewicht im Szenario (0 bis 1).
         weight_ratio = float(product.weight) / self.max_product_weight
+        # Verhältnis des Produktvolumens zum größten Produktvolumen im Szenario (0 bis 1).
         volume_ratio = float(volume) / self.max_product_volume
+        # Vergrößert die Bearbeitungsdauer abhängig von Gewicht und Volumen (1 bis 2).
         size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
 
+
+        
+        # Berechnet die Bearbeitungsdauer abhängig von Operation, Produktgröße und Maschinengeschwindigkeit.
         duration = operation.duration * size_factor / self.processing_speed_factor
+        # Berücksichtigt zusätzlich zufällige Abweichungen durch Material- und Werkzeugbedingungen.
         duration *= self.processing_variation
 
+        # Speichert die Werkzeuglebensdauer, die vor der Operation vorhanden ist.
         self.remaining_life_units[tool_type] = remaining_life_units_before_operation
+
+        # Speichert den aktuellen Simulationszeitpunkt dieses Lebensdauerwerts.
         self.remaining_life_units_t[tool_type] = self.env.now()
+
+        # Berechnet die erwartete Werkzeuglebensdauer nach dem Verbrauch der Operation.
         self.remaining_life_units_next[tool_type] = (
             remaining_life_units_before_operation - consumed_life_units
         )
+
+        # Speichert den Zeitpunkt, an dem der erwartete Restwert erreicht wird.
         self.remaining_life_units_next_t[tool_type] = self.env.now() + duration
 
         self.state.set("working")
@@ -225,19 +290,23 @@ class SimMachine(sim.Component):
 
         defect_severity = None
 
+        # Bei gleichem Seed und Kontext erhält der Job in jedem Lauf dieselbe Defektentscheidung.
         quality_key = (
             f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
             f"{job.number}|{operation.name}|{job.rework_count}"
         ).encode("utf-8")
 
+        # Erzeugt aus dem quality_key einen reproduzierbaren Zufallszahlengenerator.
         quality_rng = random.Random(
             int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
         )
 
+        # Die erste Zufallszahl entscheidet anhand der Wahrscheinlichkeit über einen Defekt.
         if quality_rng.random() < operation.defect_probability:
-         
+            # Die zweite Zufallszahl bestimmt den Schweregrad des Defekts.
             defect_severity = quality_rng.random()
 
+        # Markiert den Job als defekt, wenn ein relevanter Defekt festgestellt wurde.
         if defect_severity is not None and defect_severity >= 0.001:
             job.mark_defective(
                 operation=operation,
@@ -247,8 +316,10 @@ class SimMachine(sim.Component):
                 defect_severity=defect_severity,
             )
         else:
+            # Ohne relevanten Defekt erhält der Job den erzeugten Produktzustand.
             job.processing_state.set(operation.produces_product_type.name)
             job.general_state.set("intact")
+            # Eine eventuell alte Defektstrategie wird bei einem intakten Job entfernt.
             if job.defect_recovery_strategy in {
                 "rework_on_defect_machine",
                 "rework_on_alternative_machine",
@@ -259,16 +330,23 @@ class SimMachine(sim.Component):
         if job.recovery_in_progress:
             job.recovery_in_progress = False
 
+
+        # Die abgeschlossene Operations- und Maschinenauswahl wird zurückgesetzt.
         job.selected_operation = None
         job.selected_machine = None
 
+        # Aktualisiert die verbleibende Werkzeuglebensdauer nach der Operation.
         self.remaining_life_units[tool_type] = (
             remaining_life_units_before_operation - consumed_life_units
         )
+        # Speichert den Zeitpunkt, an dem der aktuelle Restwert gültig ist.
         self.remaining_life_units_t[tool_type] = self.env.now()
+        
+        # Der erwartete Restwert entspricht nach Abschluss dem tatsächlichen Restwert.
         self.remaining_life_units_next[tool_type] = (
             remaining_life_units_before_operation - consumed_life_units
         )
+        # Der erwartete Zeitpunkt ist nach Abschluss ebenfalls der aktuelle Zeitpunkt.
         self.remaining_life_units_next_t[tool_type] = self.env.now()
 
         yield self.to_store(action.payload["target_store"], job, priority=job.queue_priority)

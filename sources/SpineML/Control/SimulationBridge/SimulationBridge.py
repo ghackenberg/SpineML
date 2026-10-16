@@ -24,7 +24,7 @@ from ..Interface.InterfaceTypes import (
 
 class SimulationBridge(sim.Component):
 
-    # Erzeugt die Bridge mit Policy, Trigger-Store, Aktions-Stores und Objektzuordnungen.
+    # Initialisiert die Bridge, die Policy, die Trigger-Warteschlange und alle Zuordnungen.
     def __init__(self, policy: Policy | None = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if policy is None:
@@ -32,37 +32,54 @@ class SimulationBridge(sim.Component):
         else:
             self.policy = policy
 
+        # Zentrale Warteschlange für Trigger, die der Policy neue Zustandsänderungen melden.
         self.policy_trigger_store = sim.Store(
-            "simulation bridge policy triggers",
+            "simulation bridge triggers for policy",
             env=self.env,
         )
-
+ 
+        # Ordnet jeder Simulationskomponente ihren persönlichen Aktions-Store zu.
         self.sim_action_stores: dict[sim.Component, sim.Store] = {}
 
+        # Ordnet eine für die Policy sichtbare ID der echten Simulationskomponente zu.
         self.policy_object_id_to_simulation_object: dict[
             str,
             sim.Component,
         ] = {}
 
+        # Gegenrichtung: Ordnet eine Simulationskomponente ihrer Policy-ID zu.
         self.simulation_object_to_policy_object_id: dict[
             sim.Component,
             str,
         ] = {}
 
+        # Ordnet eine für die Policy sichtbare Store-ID dem echten Salabim-Store zu.
         self.policy_store_id_to_simulation_store: dict[str, sim.Store] = {}
+
+        # Konfigurationsobjekte, die über ihre IDs aufgelöst werden können.
         self.operations_by_id: dict[str, object] = {}
         self.machines_by_id: dict[str, object] = {}
         self.product_types_by_id: dict[str, object] = {}
         self.tool_types_by_id: dict[str, object] = {}
+
+        # Simulationskomponenten, die auf eine Aktion der Policy warten.
         self.sim_objects_waiting_for_action: set[sim.Component] = set()
+
+        # Zuletzt erstellter Snapshot für die Policy.
         self.current_simulation_snapshot: dict[str, object] = {}
+
+        # ID-basiertes Konfigurationsmodell der Fabrik; anfangs noch nicht erstellt.
         self.policy_model: dict[str, object] | None = None
+        
+        # Laufende Nummer für erzeugte Policy-Trigger.
         self._policy_trigger_event_number = 0
+        # Laufende Nummer für erzeugte Simulationsaktionen.
         self._action_event_number = 0
+        # Versionsnummer des aktuellen Simulationszustands.
         self._simulation_state_version = 0
 
 
-    # Registriert ein Simulationsobjekt und erstellt seinen persönlichen Aktions-Store.
+    # Registriert ein Simulationsobjekt, seine Policy-ID und seinen persönlichen Aktions-Store.
     def register(
         self,
         policy_object_id: str,
@@ -91,14 +108,14 @@ class SimulationBridge(sim.Component):
         for store in stores or []:
             self.register_store(store)
 
-    # Registriert einen Corridor für ID-Auflösung, ohne einen Aktions-Store zu erstellen.
+    # Registriert einen Korridor und seine Stores nur für die ID-Auflösung.
     def register_corridor(
         self,
         policy_object_id: str,
         simulation_corridor: sim.Component,
         stores: list[sim.Store] | None = None,
     ):
-        """Register a corridor for internal ID resolution without an action store."""
+        """Registriert einen Korridor ohne eigenen Aktions-Store."""
         registration_is_allowed = self.can_register_policy_object(
             policy_object_id,
             simulation_corridor,
@@ -111,7 +128,7 @@ class SimulationBridge(sim.Component):
         for store in stores or []:
             self.register_store(store)
 
-    # Ordnet die sichtbare Store-ID dem echten Salabim-Store zu.
+    # Ordnet den Namen eines Salabim-Stores seiner sichtbaren Store-ID zu.
     def register_store(self, store: sim.Store):
         policy_store_id = store.name()
         registered_store = self.policy_store_id_to_simulation_store.get(
@@ -121,7 +138,7 @@ class SimulationBridge(sim.Component):
             return
         self.policy_store_id_to_simulation_store[policy_store_id] = store
 
-    # Prüft, ob Policy-ID und Simulationsobjekt noch nicht registriert wurden.
+    # Prüft, ob weder die Policy-ID noch das Simulationsobjekt bereits registriert sind.
     def can_register_policy_object(
         self,
         policy_object_id: str,
@@ -142,12 +159,13 @@ class SimulationBridge(sim.Component):
             return True
 
 
-    # Markiert ein Objekt als wartend und meldet der Policy eine Zustandsänderung.
+    # Markiert ein Objekt als auf eine Aktion wartend und erzeugt einen Policy-Trigger.
     def request_action(self, sender: sim.Component):
         self.sim_objects_waiting_for_action.add(sender)
         return self.notify_state_change(sender)
 
-    # Erzeugt einen Policy-Trigger, damit die Policy eine neue Observation erstellt.
+    # Legt einen Trigger im zentralen Store ab,
+    # damit die Policy den aktuellen Snapshot bewertet.
     def notify_state_change(self, sender: sim.Component):
         self._simulation_state_version += 1
         policy_trigger = PolicyTrigger(
@@ -163,12 +181,15 @@ class SimulationBridge(sim.Component):
         )
 
 
-    # Baut ein ID-basiertes Modell der konfigurierten Fabrik für die Policy.
+    # Erstellt das ID-basierte Konfigurationsmodell der Fabrik für die Policy.
     def build_policy_configuration_model(self) -> dict[str, object]:
-        """Create an ID-only, serializable description of the configured factory."""
+        """Erstellt eine ID-basierte Beschreibung der konfigurierten Fabrik."""
         self.product_types_by_id = {obj.name: obj for obj in PRODUCT_TYPES}
         self.operations_by_id = {obj.name: obj for obj in OPERATION_TYPES}
         self.machines_by_id = {obj.name: obj for obj in MACHINES}
+        #"tool_1": <ToolType-Objekt>,
+        #"tool_1": sichtbare ID
+        #<ToolType-Objekt>: echtes internes Python-Objekt
         self.tool_types_by_id = {obj.name: obj for obj in TOOL_TYPES}
         return ConfigurationObjectObserver.build_policy_configuration_model(
             PRODUCT_TYPES,
@@ -179,7 +200,8 @@ class SimulationBridge(sim.Component):
             LAYOUTS,
         )
 
-    # Liest die aktuellen Zustände aller registrierten Simulationsobjekte als Snapshot.
+    # Sammelt die Zustände aller registrierten Simulationsobjekte und fügt
+    # das ID-basierte Konfigurationsmodell in den Policy-Snapshot ein.
     def build_policy_simulation_snapshot(self) -> dict[str, object]:
         if self.policy_model is None:
             self.policy_model = self.build_policy_configuration_model()
@@ -205,7 +227,7 @@ class SimulationBridge(sim.Component):
         self.current_simulation_snapshot = snapshot
         return snapshot
 
-    # Erstellt aus Snapshot und optionalen Triggern eine PolicyObservation.
+    # Erstellt aus dem aktuellen Snapshot und den auslösenden Triggern eine Beobachtung.
     def create_policy_observation(
         self,
         policy_triggers: list[PolicyTrigger] | None = None,
@@ -227,14 +249,17 @@ class SimulationBridge(sim.Component):
         )
 
 
-    # Wandelt Policy-IDs einer Entscheidung in ausführbare SimulationActions um.
+    # Wandelt die ID-basierte Policy-Entscheidung in ausführbare SimulationActions um.
     def create_simulation_actions(
         self,
         decision,
         source_policy_trigger_id: str,
     ) -> list[SimulationAction]:
-        """Resolve policy IDs and create executable simulation actions."""
+        """Löst IDs im Payload auf und erstellt ausführbare Simulationsaktionen."""
         simulation_actions = []
+        
+        # Erstellt die Zuordnung, mit der Policy-IDs in echte
+        # Simulationsobjekte für den Aktions-Payload umgewandelt werden.
         payload_id_mappings = policy_payload_id_mappings(self)
 
         # Durchläuft alle von der Policy ausgewählten Aktionen.
@@ -243,12 +268,16 @@ class SimulationBridge(sim.Component):
 
             # Durchläuft alle bekannten ID-zu-Objekt-Zuordnungen.
             for policy_id_key, mapping in payload_id_mappings.items():
-                # Überspringt das Mapping, wenn die Aktion diesen Schlüssel nicht enthält.
+                # Enthält der Payload diese ID nicht, wird nur das nächste Mapping geprüft.
                 if policy_id_key not in payload:
                     continue
 
+                # Liest den neuen Feldnamen aus, unter dem das echte Objekt
+                # gespeichert wird, zum Beispiel "selected_job".
                 simulation_object_key = mapping[0]
+                # Liest das Register mit der Zuordnung ID -> echtes Objekt.
                 simulation_object_registry = mapping[1]
+                # Entnimmt die ID, zum Beispiel "job_1", aus dem Policy-Payload.
                 policy_id_value = payload.pop(policy_id_key)
 
                 # Schreibt None oder das anhand der ID gefundene echte Objekt in den Payload.
@@ -269,6 +298,7 @@ class SimulationBridge(sim.Component):
                 env=self.env,
             )
 
+            # Speichert die erzeugte Aktion, damit sie später an ihr Zielobjekt verteilt wird.
             simulation_actions.append(simulation_action)
 
             #simulation_actions = [ SimulationAction für den Main-Roboter,SimulationAction für eine Maschine,]
@@ -276,7 +306,8 @@ class SimulationBridge(sim.Component):
         return simulation_actions
 
 
-    # Liefert dem Zielobjekt die nächste für es bestimmte SimulationAction.
+    # Das Zielobjekt entnimmt seine nächste von der Policy ausgewählte Aktion
+    # aus seinem persönlichen Aktions-Store.
     def action(self, target: sim.Component):
         return target.from_store(self.sim_action_stores[target])
 
@@ -288,19 +319,20 @@ class SimulationBridge(sim.Component):
     ) -> sim.Component:
         return self.policy_object_id_to_simulation_object[policy_object_id]
 
-    # Erzeugt eine fortlaufend eindeutige ID für eine SimulationAction.
+    # Erzeugt die nächste fortlaufende ID für eine SimulationAction.
     def next_action_event_id(self) -> str:
         self._action_event_number += 1
         return f"action_{self._action_event_number}"
 
-    # Erzeugt eine fortlaufend eindeutige ID für einen PolicyTrigger.
+    # Erzeugt die nächste fortlaufende ID für einen PolicyTrigger.
     def next_policy_trigger_event_id(self) -> str:
         self._policy_trigger_event_number += 1
         return f"policy_trigger_{self._policy_trigger_event_number}"
 
 
-    # Verarbeitet Trigger, erstellt Snapshots, ruft die Policy auf und verteilt Aktionen.
+    # Verarbeitet Trigger, erstellt Beobachtungen, ruft die Policy auf und verteilt Aktionen.
     def process(self):
+
         # Wartet dauerhaft auf neue Zustands- (notify_state) oder Aktionsanforderungs-Trigger.
         while True:
             # Entnimmt den ersten wartenden Trigger aus dem zentralen Trigger-Store.
@@ -312,23 +344,30 @@ class SimulationBridge(sim.Component):
             # Beginnt die Trigger-Gruppe mit dem zuerst entnommenen Trigger.
             policy_triggers = [first_policy_trigger]
 
-            # Sammelt weitere Trigger, die zur selben Simulationszeit eingegangen sind.
+            # Die Zustandsänderungen werden gemeinsam in einen Snapshot aufgenommen.
+            #Die Policy entscheidet einmal für diesen gemeinsamen Zustand.
             while self.policy_trigger_store.as_list():
+
                 next_policy_trigger = self.policy_trigger_store.as_list()[0]
+
                 # Beendet die Gruppe, sobald der nächste Trigger eine andere Zeit hat.
                 if next_policy_trigger.time != first_policy_trigger.time:
                     break
+
                 # Entnimmt den gleichzeitigen Trigger aus dem zentralen Store.
                 collected_trigger = yield self.from_store(
                     self.policy_trigger_store
                 )
                 # Fügt den entnommenen Trigger zur aktuellen Gruppe hinzu.
                 policy_triggers.append(collected_trigger)
+
             # Wiederholt Observation und Entscheidung, falls sich der Zustand inzwischen änderte.
             while True:
                 # Erstellt einen Snapshot für alle gesammelten Trigger.
                 policy_snapshot = self.create_policy_observation(policy_triggers)
-                # Lässt die Policy aus dem Snapshot eine Aktionsauswahl treffen.
+                
+                # Übergibt die Beobachtung an die Policy und erhält eine
+                # Entscheidung mit den ausgewählten Aktionen zurück.
                 selected_action_policy = self.policy.make_decision(policy_snapshot)
                 # Liest die Zustandsversion, die im verwendeten Snapshot gespeichert ist.
                 snapshot_state_version = (

@@ -22,11 +22,17 @@ class SimOrderJob(sim.Component):
     def __init__(self, layout: Layout, scenario: Scenario, order: Order, number: int, store_start: sim.Store, bridge: SimulationBridge, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # Fabriklayout, in dem dieser Job simuliert wird.
         self.layout = layout
+        # Szenario, zu dem der Auftrag und der Job gehören.
         self.scenario = scenario
+        # Auftrag, aus dem dieser einzelne Job erzeugt wurde.
         self.order = order
+        # Laufende Nummer des Jobs innerhalb des Auftrags.
         self.number = number
+        # Startlager, in dem der Job zu Beginn abgelegt wird.
         self.store_start = store_start
+        # Bridge für den Austausch von Zuständen und Aktionen mit der Steuerung.
         self.bridge = bridge
 
         self.bridge.register(
@@ -35,31 +41,62 @@ class SimOrderJob(sim.Component):
         )
 
 
-        self.released = False  
-        self.queue_priority = 0.0  
-        self.completed_time = None  
-        self.process_finished = False  
+        # Gibt an, ob der Job für die Produktion freigegeben wurde.
+        self.released = False
+        # Priorität des Jobs in den Simulationswarteschlangen.
+        self.queue_priority = 0.0
+        # Zeitpunkt, an dem der Job vollständig abgeschlossen wurde.
+        self.completed_time = None
+
+        # Gibt an, ob der Prozess dieses Jobs beendet werden darf.
+        self.process_finished = False
+        # Aktueller Aufenthaltsort des Jobs.
         self.location = "start_storage"
-        self.selected_operation: OperationType | None = None  
-        self.selected_machine: Machine | None = None  
+
+        # Von der Steuerung ausgewählte nächste Operation.
+        self.selected_operation: OperationType | None = None
+        # Von der Steuerung ausgewählte Maschine für die nächste Operation.
+        self.selected_machine: Machine | None = None
+
+        # Aktueller Produktzustand bzw. Name des Produkttyps; anfangs "unconfigured".
         self.processing_state = sim.State("ProcessingState", value="unconfigured", env=self.env)
+       
+        # Allgemeiner Qualitätszustand des Jobs: intact, defect oder scrap.
         self.general_state = sim.State("General state", value="intact", env=self.env)
-        self.due_state = sim.State("Due", value=None, env=self.env)  
+        
+        # Aktueller Terminstatus des Jobs, zum Beispiel on-time oder late; anfangs None.
+        self.due_state = sim.State("Due", value=None, env=self.env)
 
-        self.downgraded = False  
-        self.downgrade_product_type = None  
+        # Gibt an, ob der Job herabgestuft wurde.
+        self.downgraded = False
 
-        self.defect_detected_time = None  
-        self.defect_operation: OperationType | None = None  
-        self.defect_machine: Machine | None = None  
-        self.defect_product_state_before = None  
-        self.defect_product_state_target = None  
+        # Ziel-Produkttyp trotz Herabstufung, zum Beispiel weiterhin poliert; anfangs None.
+        self.downgrade_product_type = None
+
+        # Zeitpunkt, an dem der letzte Defekt erkannt wurde.
+        self.defect_detected_time = None
+        # Operation, die den letzten Defekt verursacht hat.
+        self.defect_operation: OperationType | None = None
+        # Maschine, auf der der letzte Defekt entstanden ist.
+        self.defect_machine: Machine | None = None
+
+        
+        # Produktzustand vor der fehlerhaften Operation.
+        self.defect_product_state_before = None
+        # Produktzustand, den die fehlerhafte Operation erzeugen sollte.
+        self.defect_product_state_target = None
+        # Schweregrad des letzten Defekts.
         self.defect_severity = None
-        self.defect_recovery_strategy = None  
-        # Bleibt während des Recovery-Transports und der Recovery-Bearbeitung aktiv.
+        
+        # Ausgewählte Strategie für die Behandlung eines Defekts.
+        self.defect_recovery_strategy = None
+        # Bleibt während des Recovery-Transports und der Recovery-Nacharbeit aktiv.
         self.recovery_in_progress = False
+        # Anzahl der bei diesem Job erkannten Defekte.
         self.defect_count = 0
+        # Anzahl der für diesen Job gestarteten Nacharbeiten.
         self.rework_count = 0
+        # Anzahl der Ausschussentscheidungen; im normalen Ablauf höchstens einmal.
         self.scrap_count = 0
 
     # Führt den Prozess dieser Simulationskomponente aus.
@@ -159,11 +196,13 @@ class SimOrderJob(sim.Component):
                 self.process_finished = True
                 break
 
-    # Setzt oder aktualisiert den angegebenen Zustand.
+    # Wird von SimRobotMain beim Einlagern im Endlager aufgerufen 
+    # und speichert die Abschlusszeit des Jobs.
     def mark_finished(self):
         self.completed_time = self.env.now()
 
-    # Setzt oder aktualisiert den angegebenen Zustand.
+    # Speichert einen von SimMachine festgestellten Defekt 
+    # und seine zugehörigen Daten im Job.
     def mark_defective(
         self,
         operation: OperationType | None = None,

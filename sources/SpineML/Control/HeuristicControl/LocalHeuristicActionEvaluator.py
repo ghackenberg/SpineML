@@ -24,19 +24,12 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             else SpineActionGenerator()
         )
 
-    # Wandelt einen nichtnegativen Rohwert in einen abfallenden, dimensionslosen
-    # Vorteilswert um: 0 ergibt 1; mit wachsendem Wert nähert sich das Ergebnis 0.
-    # Example: inverse_scale(1.0) returns 0.5.
+    # Inverse Skalierung: Kleinere nichtnegative Werte erhalten einen höheren Score.
     @staticmethod
     def inverse_scale(value: float) -> float:
-        # Negative Werte werden nicht stillschweigend begrenzt; die Aufrufer
-        # übergeben hier nur nichtnegative Zeit-, Distanz- oder Mengenwerte.
         return 1.0 / (1.0 + float(value))
 
-    # Convert a non-negative raw value to an increasing, dimensionless score:
-    # 0 returns 0; as the value grows, the result approaches 1. This function
-    # complements inverse scaling and is used when larger values are better.
-    # Example: direct_scale(1.0) returns 0.5.
+    # Direkte Skalierung: Größere nichtnegative Werte erhalten einen höheren Score.
     @staticmethod
     def direct_scale(value: float) -> float:
         nonnegative_value = max(float(value), 0.0)

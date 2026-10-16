@@ -32,8 +32,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     # Direkte Skalierung: Größere nichtnegative Werte erhalten einen höheren Score.
     @staticmethod
     def direct_scale(value: float) -> float:
-        nonnegative_value = max(float(value), 0.0)
-        return nonnegative_value / (1.0 + nonnegative_value)
+        value = float(value)
+        return value / (1.0 + value)
 
     # Normiert einen Wert relativ zu einem konfigurierten Maximum auf [0, 1].
     # Ein nichtpositives Maximum liefert keinen verwertbaren Anteil.

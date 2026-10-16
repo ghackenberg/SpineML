@@ -967,7 +967,7 @@ diese Rohwerte in Teilwerte umgerechnet werden.
 
    `Kehrwertskalierung(x) = 1 / (1 + x)`
 
-   Im Code heißt die Funktion `reciprocal_scale()`. Sie liefert bei `x = 0` den
+   Im Code heißt die Funktion `inverse_scale()`. Sie liefert bei `x = 0` den
    Wert `1`; für endliche Rohwerte liegt sie im Bereich `(0, 1]`. Mit wachsendem
    `x` sinkt der Wert und nähert sich `0`. Kleine Rohwerte erhalten dadurch einen
    höheren Vorteil. Sie verwendet keine beobachteten Minimal- und

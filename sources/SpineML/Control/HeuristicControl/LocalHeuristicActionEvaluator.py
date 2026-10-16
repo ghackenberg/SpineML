@@ -26,15 +26,15 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
     # Wandelt einen nichtnegativen Rohwert in einen abfallenden, dimensionslosen
     # Vorteilswert um: 0 ergibt 1; mit wachsendem Wert nähert sich das Ergebnis 0.
-    # Example: reciprocal_scale(1.0) returns 0.5.
+    # Example: inverse_scale(1.0) returns 0.5.
     @staticmethod
-    def reciprocal_scale(value: float) -> float:
+    def inverse_scale(value: float) -> float:
         nonnegative_value = max(float(value), 0.0)
         return 1.0 / (1.0 + nonnegative_value)
 
     # Convert a non-negative raw value to an increasing, dimensionless score:
     # 0 returns 0; as the value grows, the result approaches 1. This function
-    # complements reciprocal scaling and is used when larger values are better.
+    # complements inverse scaling and is used when larger values are better.
     # Example: direct_scale(1.0) returns 0.5.
     @staticmethod
     def direct_scale(value: float) -> float:
@@ -130,7 +130,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         time_until_deadline = latest_end_time - current_time
         if time_until_deadline >= 0:
             # Je weniger Restzeit vorhanden ist, desto höher ist der Druck.
-            return 0.5 * self.reciprocal_scale(time_until_deadline)
+            return 0.5 * self.inverse_scale(time_until_deadline)
 
         overdue_time = -time_until_deadline
         # Bei einer Überschreitung steigt der Druck mit der Überfälligkeit.
@@ -348,7 +348,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             observation,
         )
         # Kürzere erwartete Bearbeitungszeiten erhalten einen höheren Score.
-        processing_time_score = self.reciprocal_scale(estimated_processing_time)
+        processing_time_score = self.inverse_scale(estimated_processing_time)
         return self.calculate_action_score([
             (edd_priority, self.weights.release_edd_weight),
             (
@@ -519,7 +519,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         parts = [
             (
-                self.reciprocal_scale(
+                self.inverse_scale(
                     float(machine_state["input_storage"]["count"])
                 ),
                 self.weights.defect_recovery_machine_queue_length_weight,
@@ -617,7 +617,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         )
         if movement_speed <= 0.0:
             return None
-        return self.reciprocal_scale(axis_aligned_distance / movement_speed)
+        return self.inverse_scale(axis_aligned_distance / movement_speed)
 
     # Verwendet für die Schätzung die konfigurierte Geschwindigkeit eines
     # Korridorarms im Zielkorridor; falls dieser nicht im Snapshot steht,
@@ -719,7 +719,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         # Fügt den normierten Vorteil einer kurzen Operation als Teilwert hinzu.
         parts.append(
             (
-                self.reciprocal_scale(duration),
+                self.inverse_scale(duration),
                 self.weights.machine_pick_operation_duration_weight,
             )
         )
@@ -771,7 +771,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         if "storage_out_time" not in action["payload"]:
             return None
         storage_out_time = float(action["payload"]["storage_out_time"])
-        return self.reciprocal_scale(storage_out_time)
+        return self.inverse_scale(storage_out_time)
 
 
     # Calculate the weighted average of capacity-,
@@ -858,7 +858,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         if movement_speed <= 0.0:
             return 0.0
         estimated_transport_time = travel_distance / movement_speed
-        return self.reciprocal_scale(estimated_transport_time)
+        return self.inverse_scale(estimated_transport_time)
 
     # Leitet ältere Aufrufe unverändert an evaluate_transport_time weiter.
     # Beispiel: evaluate_short_transport_time(...) liefert exakt denselben Wert wie die Zielmethode.
@@ -889,7 +889,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         if "storage_in_time" not in action["payload"]:
             return None
         storage_in_time = float(action["payload"]["storage_in_time"])
-        return self.reciprocal_scale(storage_in_time)
+        return self.inverse_scale(storage_in_time)
 
     # Bewertet die Länge der Input-Warteschlange der Zielmaschine beim Place.
     # Beispiel: queue_length=2 ergibt den Faktor 1/(1+2)=0.3333 vor der Weightung.
@@ -926,7 +926,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         # Ermittelt die Anzahl der Jobs im Eingangspuffer der Zielmaschine.
         queue_length = float(machine_state["input_storage"]["count"])
         # Je kürzer die Warteschlange, desto höher ist der Score: 1/(1+Anzahl).
-        return self.reciprocal_scale(queue_length)
+        return self.inverse_scale(queue_length)
 
     # Bewertet die Dauer der beim Place ausgewählten nächsten Operation.
     # Beispiel: duration=4 ergibt den Faktor 1/(1+4)=0.2 vor der Weightung.
@@ -954,7 +954,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             return None
         model = observation.simulation_configuration_snapshot["configuration_model"]
         duration = float(model["operations_by_id"][operation_id]["duration"])
-        return self.reciprocal_scale(duration)
+        return self.inverse_scale(duration)
 
 
     # Gibt für eine technisch bereits zugelassene Process-Aktion den neutralen Score 0 zurück.

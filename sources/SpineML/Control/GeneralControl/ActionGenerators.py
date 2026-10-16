@@ -270,6 +270,7 @@ class SpineActionGenerator(ActionGenerator):
     # Bei ausgewählter Nacharbeit wird nur die festgelegte einzelne Route geliefert.
     # Bei normaler Produktion werden alle technisch möglichen Routen zurückgegeben.
     def selectable_routes_for_job(self, job: dict, layout_id: str, model: dict) -> list[dict]:
+        
         # Prüft, ob für den defekten Job bereits eine Nacharbeitsstrategie
         # mit konkreter Operation und Maschine ausgewählt wurde.
         if (
@@ -302,6 +303,7 @@ class SpineActionGenerator(ActionGenerator):
         if current_product_type_id == target_product_type_id:
             return []
 
+        # Ab hier werden nur normale Produktionsrouten für gültige, intakte Jobs berechnet.
         route_options = []
         # Ermittelt alle möglichen Operationsfolgen bis zum Zielprodukt.
         operation_sequences = self.calculate_operation_sequences_between(

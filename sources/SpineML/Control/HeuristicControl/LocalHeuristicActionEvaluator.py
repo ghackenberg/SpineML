@@ -35,15 +35,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         value = float(value)
         return value / (1.0 + value)
 
-    # Normiert einen Wert relativ zu einem konfigurierten Maximum auf [0, 1].
-    # Ein nichtpositives Maximum liefert keinen verwertbaren Anteil.
+    # Berechnet das Verhältnis value/maximum ohne Begrenzung oder Ersatzwert.
     @staticmethod
     def normalize_ratio(value: float, maximum: float) -> float:
-        maximum_value = float(maximum)
-        if maximum_value <= 0.0:
-            return 0.0
-        ratio = float(value) / maximum_value
-        return max(0.0, min(ratio, 1.0))
+        return float(value) / float(maximum)
 
     # Führt Teilbewertungen und ihre weights zum Gesamtscore einer Aktion zusammen.
     # Wenn alle Teilwerte in [0, 1] liegen und die weights positiv sind,

@@ -941,7 +941,7 @@ eine Ja/Nein-Entscheidung darstellen, ordnet er direkt `1` oder `0` zu.
 1. Setze `t = Deadline − aktuelle Zeit`.
 
    - Bei `t ≥ 0` ist noch Zeit bis zur Deadline:
-     `EDD = 0.5 × Kehrwertskalierung(t)`.
+     `EDD = 0.5 × Inverse-Skalierung(t)`.
    - Bei `t < 0` ist der Job überfällig:
      `EDD = 0.5 + 0.5 × Direktskalierung(−t)`.
 
@@ -963,9 +963,9 @@ bevorzugt, wenn sie kleiner sind; freie Kapazität und Werkzeugreserve sind
 vorteilhafter, wenn sie größer sind. Die folgenden Skalierungen zeigen, wie
 diese Rohwerte in Teilwerte umgerechnet werden.
 
-2. **Je kleiner der Rohwert, desto besser: Kehrwertskalierung**
+2. **Je kleiner der Rohwert, desto besser: Inverse-Skalierung**
 
-   `Kehrwertskalierung(x) = 1 / (1 + x)`
+   `Inverse-Skalierung(x) = 1 / (1 + x)`
 
    Im Code heißt die Funktion `inverse_scale()`. Sie liefert bei `x = 0` den
    Wert `1`; für endliche Rohwerte liegt sie im Bereich `(0, 1]`. Mit wachsendem
@@ -975,7 +975,7 @@ diese Rohwerte in Teilwerte umgerechnet werden.
 
    ```mermaid
    xychart-beta
-       title "Kehrwertskalierung: je kleiner x, desto höher der Vorteil"
+       title "Inverse-Skalierung: je kleiner x, desto höher der Vorteil"
        x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
        y-axis "Teilwert" 0 --> 1
        line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
@@ -987,8 +987,8 @@ diese Rohwerte in Teilwerte umgerechnet werden.
    Im Code heißt die Funktion `direct_scale()`. Sie liefert bei `x = 0` den
    Wert `0`; für endliche Rohwerte liegt sie im Bereich `[0, 1)`. Mit wachsendem
    `x` steigt der Wert und nähert sich `1`. Sie ist die Ergänzung der
-   Kehrwertskalierung, denn
-   `Direktskalierung(x) = 1 − Kehrwertskalierung(x)`.
+   Inverse-Skalierung, denn
+   `Direktskalierung(x) = 1 − Inverse-Skalierung(x)`.
 
    ```mermaid
    xychart-beta
@@ -1076,10 +1076,10 @@ Skalierungsformeln beschrieben wurden, sind:
      Simulationszeitpunkt ist. `release_edd_weight` beschreibt die relative
      Wichtigkeit dieses Termindrucks innerhalb der Freigabebewertung.
   2. **Durchschnittliche Routenverarbeitungszeit:**
-     `Kehrwertskalierung(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
+     `Inverse-Skalierung(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
      Die erwartete Verarbeitungszeit ist der Durchschnitt der Gesamtzeiten aller
      möglichen Operationsrouten, weil beim Freigeben noch keine Route feststeht.
-     Kürzere durchschnittliche Routen erhalten durch die Kehrwertskalierung
+     Kürzere durchschnittliche Routen erhalten durch die Inverse-Skalierung
      einen höheren Teilwert. `release_average_route_duration_weight` beschreibt
      die relative Wichtigkeit dieses Kriteriums.
 - Normale Warteaktionen (`wait_*`, in `evaluate_action()`):
@@ -1098,16 +1098,16 @@ Skalierungsformeln beschrieben wurden, sind:
   2. **Entnahmezeit (`storage_out_time`):** Das ist die Zeit, die der
      Quell-Store benötigt, um den Job für den Pick bereitzustellen bzw.
      herauszunehmen. Bewertet wird
-     `Kehrwertskalierung(Entnahmezeit) × pick_source_storage_time_weight`.
+     `Inverse-Skalierung(Entnahmezeit) × pick_source_storage_time_weight`.
      Kürzere Entnahmezeiten erhalten einen höheren Teilwert. Dieser Teilwert
      wird nur erzeugt, wenn `storage_out_time` im Aktions-Payload vorhanden ist.
-  3. **Transportzeit:** `Kehrwertskalierung(Transportzeit) × pick_short_transport_time_weight`. Kürzere Wege zum Pick-Ziel erhalten
+  3. **Transportzeit:** `Inverse-Skalierung(Transportzeit) × pick_short_transport_time_weight`. Kürzere Wege zum Pick-Ziel erhalten
      einen höheren Teilwert.
 - Maschinen-Pick (`pick_machine_job`, in `evaluate_machine_pick_action()`):
 
   1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Eine höhere
      Priorität macht den Job für die Verarbeitung auf der Maschine dringlicher.
-  2. **Operationsdauer:** `Kehrwertskalierung(Operationsdauer) × machine_pick_operation_duration_weight`. Kürzere Operationen erhalten
+  2. **Operationsdauer:** `Inverse-Skalierung(Operationsdauer) × machine_pick_operation_duration_weight`. Kürzere Operationen erhalten
      einen höheren Teilwert.
   3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`. Der Teilwert ist `1`, wenn das benötigte
      Werkzeug bereits montiert ist, sonst `0`. Dieser Teilwert wird nur bei
@@ -1126,16 +1126,16 @@ Skalierungsformeln beschrieben wurden, sind:
 
   1. **Freie Zielkapazität:** `Anteil der freien Zielkapazität × target_store_free_capacity_weight`. Ein größerer Anteil freier Plätze
      erhält einen höheren Teilwert.
-  2. **Transportzeit:** `Kehrwertskalierung(Transportzeit) × place_short_transport_time_weight`. Kürzere Transporte erhalten einen
+  2. **Transportzeit:** `Inverse-Skalierung(Transportzeit) × place_short_transport_time_weight`. Kürzere Transporte erhalten einen
      höheren Teilwert.
-  3. **Einlagerungszeit:** `Kehrwertskalierung(Einlagerungszeit) × place_target_storage_time_weight`. Dieser Teilwert wird nur erzeugt,
+  3. **Einlagerungszeit:** `Inverse-Skalierung(Einlagerungszeit) × place_target_storage_time_weight`. Dieser Teilwert wird nur erzeugt,
      wenn die Einlagerungszeit im Payload vorhanden ist.
   4. **Maschinenwarteschlangenlänge:**
-     `Kehrwertskalierung(Maschinenwarteschlangenlänge) × place_machine_queue_length_weight`. Kürzere Warteschlangen erhalten
+     `Inverse-Skalierung(Maschinenwarteschlangenlänge) × place_machine_queue_length_weight`. Kürzere Warteschlangen erhalten
      einen höheren Teilwert. Dieser Teilwert wird nur bei einer ausgewählten
      Zielmaschine erzeugt.
   5. **Operationsdauer der nächsten Job-Operation:**
-     `Kehrwertskalierung(Operationsdauer) × place_operation_duration_weight`.
+     `Inverse-Skalierung(Operationsdauer) × place_operation_duration_weight`.
      Bewertet wird die im Place-Payload ausgewählte nächste Operation des Jobs.
      Je kürzer diese Operation dauert, desto höher ist ihr Teilwert.
 - Defektaktionen (in `evaluate_defect_action()`): Die Bewertung hängt von der
@@ -1143,7 +1143,7 @@ Skalierungsformeln beschrieben wurden, sind:
 
   - `job_rework_on_defect_machine`:
     1. **Warteschlange der Nacharbeitsmaschine:**
-       `Kehrwertskalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
+       `Inverse-Skalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
     2. **Werkzeugpassung:** `Werkzeugpassung × defect_recovery_tool_match_weight`, wenn die Operation ein Werkzeug
        benötigt.
     3. **Werkzeugreserve:** `Direktskalierung(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`, wenn die
@@ -1153,9 +1153,9 @@ Skalierungsformeln beschrieben wurden, sind:
        abgezogen.
   - `job_rework_on_alternative_machine`:
     1. **Warteschlange der Nacharbeitsmaschine:**
-       `Kehrwertskalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
+       `Inverse-Skalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
     2. **Transportzeit zur Nacharbeitsmaschine:**
-       `Kehrwertskalierung(Transportzeit) × defect_recovery_transport_time_weight`.
+       `Inverse-Skalierung(Transportzeit) × defect_recovery_transport_time_weight`.
     3. **Werkzeugpassung:** `Werkzeugpassung × defect_recovery_tool_match_weight`, wenn die Operation ein Werkzeug
        benötigt.
     4. **Werkzeugreserve:** `Direktskalierung(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`, wenn die

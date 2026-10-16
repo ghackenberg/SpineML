@@ -860,6 +860,13 @@ der die aktuelle Auswahl mit Heuristiken steuert. Er ersetzt weder den
 `ActionGenerator` (der den zulässigen Lösungsraum erzeugt) noch den
 `ActionSelector` (der eine bewertete Aktion auswählt).
 
+Die Steuerung arbeitet mit einer dynamischen Produktionsplanung. Die nächste
+Entscheidung wird nicht einmal für die gesamte Produktion festgelegt, sondern
+bei jeder neuen Beobachtung an den aktuellen Zustand angepasst. Wird zum
+Beispiel eine Maschine frei, ein Transport beendet, ein Store voll, ein Job
+freigegeben oder ein Defekt erkannt, können sich die verfügbaren Kandidaten
+und ihre Bewertungen ändern.
+
 Die Heuristiken verwenden den aktuellen Zustand der Simulation. Sie
 berücksichtigen beispielsweise Termindruck, Bearbeitungs- und Transportzeiten,
 Maschinenverfügbarkeit, Werkzeugreserve, Pufferkapazität sowie Defekt- und

@@ -348,6 +348,8 @@ class SpineActionGenerator(ActionGenerator):
     def create_defect_actions_for_job(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
         snapshot = observation.simulation_configuration_snapshot
+
+
         # True bedeutet: Recovery läuft noch; False prüft neue Defectaktionen.
         if current_state.get("recovery_in_progress"):
             return self.create_wait_actions_for_job(observation)
@@ -356,6 +358,8 @@ class SpineActionGenerator(ActionGenerator):
         # Ohne technisch möglichen defect severity wird nur die Scrapaktion angeboten.
         if not self.rework_is_technically_possible(current_state):
             return self.create_scrap_actions_for_job(observation)
+
+
 
         # Sammelt Rework, Downgrade und Warten gemeinsam;
         actions = []
@@ -374,6 +378,7 @@ class SpineActionGenerator(ActionGenerator):
                 },
             })
 
+
         defect_machine_is_available = self.machine_available_for_rework(
             self.defect_machine_observation(current_state, snapshot)
         )
@@ -388,6 +393,7 @@ class SpineActionGenerator(ActionGenerator):
                 },
             })
 
+        # Liest den erwarteten Produkttyp der fehlerhaften Operation für die Herabstufung.
         downgraded_product_type_id = current_state["defect_product_state_target"]
         actions.append({
             "action_type": "downgrade_product",

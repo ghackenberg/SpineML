@@ -213,6 +213,7 @@ class SpineActionGenerator(ActionGenerator):
             return []
 
         # Berechnet den weiteren Weg nach der wiederholten defect operation bis zum Zielprodukt.
+        # Die ID der defect operation wird anschließend vorne an jede Route angefügt.
         remaining_operation_sequences = self.calculate_operation_sequences_between(
             defect_operation["produces_product_type_id"],
             target_product_type_id,

@@ -24,12 +24,12 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             else SpineActionGenerator()
         )
 
-    # Inverse Skalierung: Kleinere nichtnegative Werte erhalten einen höheren Score.
+    # Inverse Skalierung: Für value >= 0 liegt der Score in (0, 1].
     @staticmethod
     def inverse_scale(value: float) -> float:
         return 1.0 / (1.0 + float(value))
 
-    # Direkte Skalierung: Größere nichtnegative Werte erhalten einen höheren Score.
+    # Direkte Skalierung: Für value >= 0 liegt der Score in [0, 1).
     @staticmethod
     def direct_scale(value: float) -> float:
         value = float(value)

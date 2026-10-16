@@ -515,8 +515,9 @@ Salabim-Komponenten:
 - Die Bridge ist selbst eine Salabim-`sim.Component`. Ihre `process()`-Methode
   wartet auf diesen Store, sammelt weitere Trigger derselben Simulationszeit
   und löst anschließend die Erstellung eines Snapshots aus. Der Snapshot
-  bildet den aktuellen Zustand aller registrierten Simulationsobjekte für die
-  Policy ab. Die Triggerobjekte selbst werden nicht an die Policy übergeben;
+  enthält die aktuellen Zustände aller registrierten Simulationsobjekte sowie
+  das ID-basierte Konfigurationsmodell der Fabrik. Die Triggerobjekte selbst
+  werden nicht an die Policy übergeben;
   ihre Ereignis- und Sender-IDs können nur als Metadaten in der Observation
   enthalten sein.
 - Die Bridge ruft danach die Policy mit einer `PolicyObservation` auf. Die
@@ -537,7 +538,7 @@ flowchart TD
     A[Simulationskomponente fordert eine Aktion an<br/>oder meldet eine Zustandsänderung]
     A --> B[SimulationBridge erzeugt ein<br/>PolicyTrigger-Objekt]
     B --> C[policy_trigger_store sammelt Trigger<br/>derselben Simulationszeit]
-    C --> D[SimulationBridge erstellt einen Snapshot<br/>aller Simulationsobjekt-Zustände]
+    C --> D[SimulationBridge erstellt einen Snapshot<br/>aus Objekt-Zuständen und Konfigurationsmodell]
     D --> E[GeneratorSelectorPolicy erhält<br/>eine PolicyObservation]
     E --> F[Policy erzeugt, bewertet und wählt<br/>eine Aktion]
     F --> G[PolicyDecision enthält die<br/>ausgewählten Aktions-IDs]

@@ -265,11 +265,12 @@ class SpineActionGenerator(ActionGenerator):
 
         return False
     
-    # A normal job is intact, not downgraded, and neither unconfigured nor defective.
-    # Für diesen Job gibt die Methode alle technisch möglichen Operations- und Maschinenfolgen zurück.
-    # Bei festgelegter Rework wird nur die ausgewählte einzelne Route zurückgegeben; sonst ggf. [].
+    # Liefert mögliche Produktions- oder Nacharbeitsrouten für den Job.
+    # Bei ausgewählter Nacharbeit wird nur die festgelegte einzelne Route geliefert.
+    # Bei normaler Produktion werden alle technisch möglichen Routen zurückgegeben.
     def selectable_routes_for_job(self, job: dict, layout_id: str, model: dict) -> list[dict]:
-        # Check whether a rework strategy has already been selected for the defective job.
+        # Prüft, ob für den defekten Job bereits eine Nacharbeitsstrategie
+        # mit konkreter Operation und Maschine ausgewählt wurde.
         if (
             job.get("defect_recovery_strategy") in {
                 "rework_on_defect_machine",
@@ -278,7 +279,7 @@ class SpineActionGenerator(ActionGenerator):
             and job.get("selected_operation_id") is not None
             and job.get("selected_machine_id") is not None
         ):
-            # Gibt die festgelegte einzelne rework operation und rework machine zurück.
+            # Gibt nur die bereits ausgewählte Nacharbeitsoperation und -maschine zurück.
             return [
                 {
                     "operation_sequence": [job["selected_operation_id"]],
@@ -288,27 +289,34 @@ class SpineActionGenerator(ActionGenerator):
                 }
             ]
 
+        # Defekte, ausgeschusterte, herabgestufte oder noch nicht konfigurierte
+        # Jobs dürfen keine normale Produktionsroute verwenden.
         if self.job_cannot_use_normal_production_route(job):
             return []
 
+        # Liest den aktuellen Produktzustand und den Zielproduktzustand des Jobs.
         current_product_type_id = job["processing_state"]
         target_product_type_id = job["target_product_type_name"]
+        # Wenn das Zielprodukt bereits erreicht ist, ist keine weitere Route nötig.
         if current_product_type_id == target_product_type_id:
             return []
 
         route_options = []
+        # Ermittelt alle möglichen Operationsfolgen bis zum Zielprodukt.
         operation_sequences = self.calculate_operation_sequences_between(
             current_product_type_id,
             target_product_type_id,
             model,
         )
         for operation_sequence in operation_sequences:
+            # Ermittelt für diese Operationsfolge alle möglichen Maschinenfolgen.
             machine_sequences = self.calculate_machine_sequences_from_operation_sequence(
                 list(operation_sequence),
                 layout_id,
                 model,
             )
             for machine_sequence in machine_sequences:
+                # Speichert jede Operations-Maschinen-Kombination als eigene Route.
                 route_options.append({
                     "operation_sequence": list(operation_sequence),
                     "machine_sequence": list(machine_sequence),

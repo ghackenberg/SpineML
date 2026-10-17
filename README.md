@@ -1126,21 +1126,31 @@ Der `ActionGenerator` bestimmt, welche Aktionen technisch möglich sind.
 `HeuristicControl` bewertet, welche dieser Möglichkeiten vorteilhafter ist.
 Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.
 
-### Heuristische Aspekte
+### Bewertungsgrößen und heuristische Regeln
 
-Je nach Aktionsart fließen unterschiedliche Regeln in die Bewertung ein:
+Je nach Aktionsart werden unterschiedliche Bewertungsgrößen verwendet.
+Die zugehörigen heuristischen Regeln bestimmen, wie daraus Teilwerte
+entstehen. In der folgenden Liste steht jeweils zuerst die Bewertungsgröße
+und danach ihre Regel:
 
-- **Termindruck:** Dringende Jobs erhalten eine höhere Priorität.
-- **Verarbeitungs- und Transportzeiten:** Kürzere Zeiten erhalten höhere
-  Teilwerte.
-- **Maschinenwarteschlangen:** Kürzere Warteschlangen werden bevorzugt.
-- **Werkzeugzustand:** Bereits montierte passende Werkzeuge und größere
-  Lebensdauerreserven erhalten höhere Teilwerte.
-- **Pufferkapazität:** Ein größerer Anteil freier Plätze im Zielpuffer wird
-  höher bewertet.
-- **Defektbehandlung:** Nacharbeit, Herabstufung und Warten werden unter
-  anderem anhand von Defektschwere, verbleibender Zeit bis zur Deadline und
-  Zustand der möglichen Nacharbeitsmaschine bewertet.
+- **Restzeit bis zur Deadline:** Je näher die Deadline liegt oder je weiter
+  sie überschritten ist, desto höher ist die EDD-Priorität.
+- **Operationsdauer und Transportzeit:** Kleinere Werte werden auf höhere
+  Teilwerte abgebildet.
+- **Maschinenwarteschlangenlänge:** Weniger wartende Jobs ergeben einen
+  höheren Teilwert.
+- **Werkzeugpassung:** Ist das benötigte Werkzeug bereits montiert, ist der
+  Teilwert `1`, sonst `0`.
+- **Werkzeugreserve:** Eine größere verbleibende Lebensdauer im Verhältnis
+  zum geplanten Verbrauch wird auf einen höheren Teilwert abgebildet.
+- **Anteil freier Pufferplätze:** Ein größerer Anteil freier Plätze im
+  Zielpuffer ergibt einen höheren Teilwert.
+- **Defektschwere:** Bei einer Herabstufungsaktion ergibt ein höherer
+  Schweregrad einen höheren Teilwert.
+
+Die Defektbehandlung ist ein Anwendungsbereich dieser Regeln. Bei erreichter
+oder überschrittener Deadline werden für Nacharbeit und Warten zusätzlich
+Strafwerte vom Gesamtscore abgezogen.
 
 Die Gewichte bestimmen, wie stark die einzelnen Kriterien innerhalb der
 jeweiligen Aktionsbewertung zählen.

@@ -1275,18 +1275,22 @@ die Operation tatsächlich Werkzeuglebensdauer verbraucht.
 
 ##### Warum unterschiedliche Kriterien kombiniert werden können
 
-Die Rohwerte haben unterschiedliche Zielrichtungen: Bei der Transportzeit ist
-ein kleiner Wert vorteilhaft, bei der freien Kapazität ein großer. Durch die
-Abbildung gilt für alle Teilwerte dieselbe Richtung: **Je höher der Teilwert,
-desto vorteilhafter ist das Kriterium für die Aktion.** `inverse_scale()`
-liefert für kürzere Transportzeiten höhere Teilwerte; der Anteil freier Plätze
-steigt dagegen mit der freien Kapazität.
+Kombiniert werden die **Teilwerte**, die vorher in dieselbe Vorteilsrichtung
+abgebildet wurden:
 
-Die Formel kombiniert somit dimensionslose Teilwerte im Bereich `0` bis `1`
-mit derselben Vorteilsrichtung. Dadurch lassen sich beispielsweise kurze
-Transportzeiten und freie Pufferplätze zu einem Gesamtscore verbinden.
-Die Gewichte bestimmen, wie stark diese Vorteile gegeneinander abgewogen
-werden.
+- **Transportzeit:** Kleiner ist besser. `inverse_scale()` bildet deshalb
+  kurze Zeiten auf höhere Teilwerte ab. Zeit `1` ergibt `0.5`; Zeit `4`
+  ergibt `0.2`.
+- **Freie Kapazität:** Größer ist besser. `freie Plätze / Gesamtkapazität`
+  liefert bei mehr freien Plätzen einen höheren Teilwert. Zwei von zehn
+  freien Plätzen ergeben `2 / 10 = 0.2`; acht von zehn ergeben
+  `8 / 10 = 0.8`.
+
+Danach gilt für beide: **Ein höherer Teilwert ist vorteilhafter.**
+
+Deshalb können die dimensionslosen Teilwerte im Bereich `0` bis `1` sinnvoll
+zu einem Gesamtscore kombiniert werden. Die Gewichte bestimmen dabei, wie
+stark kurze Transportzeiten gegenüber freier Kapazität zählen.
 
 ##### Warum durch die Gewichtssumme geteilt wird
 

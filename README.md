@@ -1109,6 +1109,19 @@ Im vollständigen Code kommen je nach Aktion weitere Kriterien hinzu.
    bestimmt. Ist Puffer B inzwischen voll, erzeugt der Generator keine
    Ablageaktion für dieses Ziel.
 
+Die Rechnung im Überblick: Das Transportgewicht ist `0.75`, das
+Kapazitätsgewicht `0.25`. Ihre Summe beträgt `1.0`.
+
+| Aktionskandidat | Transportzeit → Teilwert | Freie Plätze → Teilwert | Gewichtete Summe | Gesamtscore |
+|---|---|---|---|---|
+| Job in Puffer A ablegen | `4 → 0.2` | `4 von 10 → 0.4` | `0.2 × 0.75 + 0.4 × 0.25 = 0.25` | `0.25 / 1.0 = 0.25` |
+| Job in Puffer B ablegen | `1 → 0.5` | `2 von 10 → 0.2` | `0.5 × 0.75 + 0.2 × 0.25 = 0.425` | `0.425 / 1.0 = 0.425` |
+
+Die Teilwerte zeigen jeweils in dieselbe Richtung: höher bedeutet
+vorteilhafter. B hat in diesem Beispiel den höheren Gesamtscore, weil der
+kürzere Transport stärker gewichtet wird als die zusätzliche freie Kapazität
+von A.
+
 Der `ActionGenerator` bestimmt, welche Aktionen technisch möglich sind.
 `HeuristicControl` bewertet, welche dieser Möglichkeiten vorteilhafter ist.
 Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.

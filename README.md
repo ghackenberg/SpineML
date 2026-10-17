@@ -848,40 +848,45 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 # HeuristicControl
 
-### Grundidee
+### Ziel von `HeuristicControl`
+
+`HeuristicControl` soll für den aktuellen Simulationszustand schnell eine
+geeignete nächste Aktion bewerten. Es soll die Produktion dadurch laufend
+steuern und die verfügbaren Ressourcen sinnvoll nutzen.
+
+### Was bedeutet „heuristisch“?
 
 „Heuristisch“ bedeutet, dass eine vereinfachte Entscheidungsregel verwendet
-wird. Aktuelle Kriterien werden schnell bewertet, um eine gute, aber nicht
+wird. Aktuelle Kriterien werden bewertet, um schnell eine gute, aber nicht
 zwingend optimale Entscheidung zu finden.
 
-### Rolle in der Policy
+### Welches Problem wird gelöst?
 
-- `ActionGenerator`: erzeugt die technisch zulässigen Aktionskandidaten.
-- `HeuristicControl`: bewertet jeden Kandidaten anhand des aktuellen
-  Simulationszustands.
-- `ActionSelector`: vergleicht die Scores und wählt eine Aktion aus.
+In jedem Simulationszustand können mehrere Jobs, Maschinen, Routen und
+Aktionen gleichzeitig möglich sein. Außerdem ändern sich die Bedingungen
+laufend, zum Beispiel wenn eine Maschine frei wird, ein Store voll ist oder
+ein Defekt auftritt. Eine vollständige Planung für alle zukünftigen Zustände
+wird deshalb nicht bei jeder Entscheidung neu berechnet.
+
+### Wie wird das Problem heuristisch gelöst?
+
+1. Der `ActionGenerator` erzeugt die technisch zulässigen Aktionskandidaten.
+2. `HeuristicControl` bewertet jeden Kandidaten anhand des aktuellen
+   Simulationszustands.
+3. Aus den Kriterien werden Teilwerte und ein Gesamtscore berechnet.
+4. Der `ActionSelector` vergleicht die Scores und wählt eine Aktion aus.
+5. Nach der Ausführung entsteht ein neuer Zustand, für den der Ablauf erneut
+   beginnt.
 
 `HeuristicControl` erzeugt keine Aktionen und führt keine Aktion selbst in der
 Simulation aus.
 
-### Dynamischer Ablauf
+### Heuristische Aspekte
 
-1. Eine neue Beobachtung beschreibt den aktuellen Simulationszustand.
-2. Der `ActionGenerator` erzeugt die verfügbaren Kandidaten.
-3. `HeuristicControl` berechnet aus den aktuellen Kriterien Teilwerte und
-   einen Gesamtscore.
-4. Der `ActionSelector` wählt die am besten bewertete Aktion.
-5. Nach der Ausführung entsteht ein neuer Zustand, für den der Ablauf erneut
-   beginnt.
-
-### Bewertete Kriterien
-
-Die Heuristiken berücksichtigen unter anderem Termindruck, Bearbeitungs- und
+Die Bewertung berücksichtigt unter anderem Termindruck, Bearbeitungs- und
 Transportzeiten, Maschinenverfügbarkeit, Werkzeugreserve, Pufferkapazität
-sowie Defekt- und Nacharbeitsmöglichkeiten. Ändert sich der Zustand – zum
-Beispiel weil eine Maschine frei wird, ein Transport endet, ein Store voll ist,
-ein Job freigegeben wird oder ein Defekt erkannt wird – können sich die
-Kandidaten und ihre Bewertungen ändern.
+sowie Defekt- und Nacharbeitsmöglichkeiten. Diese Kriterien beschreiben den
+aktuellen Zustand; sie ersetzen keine vollständige Zukunftsplanung.
 
 ## ActionEvaluator
 

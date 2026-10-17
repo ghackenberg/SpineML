@@ -1,85 +1,173 @@
-# Fabrikkonfiguration
+# SpineML
 
-Dieser Abschnitt beschreibt die Konfigurationsklassen und die Eigenschaften,
-mit denen die Fabrik genauer beschrieben werden kann.
+SpineML simuliert eine Fabrik mit Aufträgen, Werkstücken, Maschinen,
+Werkzeugen, Lagern und Robotern. Salabim bildet die zeitlichen Abläufe ab.
+Eine Policy (Steuerung) entscheidet, welche der aktuell möglichen Aktionen
+ausgeführt werden. Die Optimierung sucht anhand vollständiger Simulationsläufe
+nach geeigneten Gewichten für die heuristische Aktionsbewertung.
 
-## `Layout.py`
+Diese README beschreibt den Stand des Zweigs `Foroogh`. Konfiguration und
+Simulationskern sind nach den zugehörigen Klassen gegliedert. Danach folgen
+Bridge, Steuerung, Bewertung und Optimierung.
 
-`Layout` beschreibt das Fabriklayout und seine Korridore. Zusätzlich zu den
-Ein- und Auslagerungszeiten besitzt ein Layout die
-`storage_capacity`. Sie gibt an, wie viele Jobs das Startlager und das
-Endlager jeweils aufnehmen können. Bei `storage_capacity=10` kann jedes dieser
-Lager höchstens zehn Jobs aufnehmen.
+## Inhalt
 
-## `Machine.py`
+- [Installation und Start](#installation-und-start)
+- [Fabrikkonfiguration](#fabrikkonfiguration)
+- [Diskrete Simulation](#diskrete-simulation)
+- [SimulationBridge](#simulationbridge)
+- [GeneralControl](#generalcontrol)
+- [HeuristicControl](#heuristiccontrol)
+- [Optimierungsvorgang](#optimierungsvorgang)
+- [Optimierung starten und Ergebnisse lesen](#optimierung-starten)
 
-`Machine` beschreibt eine konkrete Maschine. Sie gehört zu einem
-`MachineType` und einem Korridor und kann unabhängig konfiguriert werden.
+## Installation und Start
 
-### Getrennte Maschinenpuffer
+### Installation
 
-`input_storage_capacity` und `output_storage_capacity` legen die Kapazität
-des Eingangs- beziehungsweise Ausgangspuffers fest. Beide Werte werden
-getrennt gespeichert und dürfen unterschiedlich sein.
+Voraussetzung ist Python ab Version `3.10`. Das Projekt wird im Ordner
+installiert, in dem `pyproject.toml` liegt. Beispiel für PowerShell:
 
-### Erlaubte Werkzeugtypen
-
-Mit `tool_types` wird das Werkzeugmagazin der konkreten Maschine angegeben.
-Zwei Maschinen desselben `MachineType` können dadurch unterschiedlich
-ausgestattet sein:
-
-```python
-Machine("CNC A", cnc_type, ..., tool_types=[turning_tool, milling_tool])
-Machine("CNC B", cnc_type, ..., tool_types=[milling_tool])
+```powershell
+git clone --branch Foroogh --single-branch https://github.com/ghackenberg/SpineML.git
+cd SpineML
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
 ```
 
-Wird `tool_types` nicht angegeben, werden die Werkzeugtypen weiterhin aus den
-Operationen des `MachineType` abgeleitet. Mit einer expliziten Liste kann eine
-Maschine jedoch nur die Werkzeuge besitzen, die in ihrem eigenen Magazin
-vorhanden sind. Dadurch müssen nicht alle Maschinen desselben Typs dieselben
-Operationen und Werkzeuge haben.
+`pip install -e .` installiert das Projekt und die in
+[pyproject.toml](pyproject.toml) angegebenen Abhängigkeiten. Das
+abschließende `.` bezeichnet den aktuellen Projektordner. Eine zusätzliche
+Installation von [sources/requirements.txt](sources/requirements.txt) ist für
+diesen Weg nicht erforderlich.
 
-### Verarbeitungsgeschwindigkeit
+In VS Code wird die Python-Umgebung `.venv` als Interpreter ausgewählt.
+Die folgenden Befehle werden aus dem Projektordner ausgeführt.
+
+### Normale Simulation
+
+```powershell
+python sources/examples/normal/example-0.py
+```
+
+Die Beispieldatei definiert Fabrik und Aufträge und startet
+`simulate(layout, scenario, ...)`. Bei aktivierter Animation wird die
+Simulation mit Salabim dargestellt; danach werden Statistiken ausgegeben.
+
+### Optimierung mit Webinterface
+
+```powershell
+python -m streamlit run sources/optimization.py
+```
+
+Im Browser startet **Start optimization** den Vergleich verschiedener
+Gewichtssätze. Ohne andere Modellvorgabe wird `example-1.py` verwendet.
+Die Modellwahl und die Ergebnisdiagramme sind unter
+[Optimierung starten](#optimierung-starten) erklärt.
+
+## Fabrikkonfiguration
+
+Die Konfiguration beschreibt, welche Produkttypen, Operationen, Werkzeuge,
+Maschinen und Aufträge zur Fabrik gehören. Die Klassen liegen unter
+[sources/SpineML/Configuration](sources/SpineML/Configuration).
+
+### `Layout.py`
+
+`Layout` beschreibt die Fabrik und enthält ihre Korridore. Die Werte
+`storage_out_time` und `storage_in_time` legen die Aus- und Einlagerungszeiten
+am Start- beziehungsweise Endlager fest. `storage_capacity` bestimmt, wie viele
+Jobs (einzelne Werkstücke) jedes dieser Lager aufnehmen kann. Bei
+`storage_capacity=10` haben Start- und Endlager jeweils zehn Plätze.
+
+### `Machine.py`
+
+`Machine` beschreibt eine konkrete Maschine mit Namen, `MachineType`,
+Korridor und Position auf der linken oder rechten Korridorseite. Der
+`MachineType` fasst die möglichen Operationen einer Maschinenklasse zusammen.
+
+#### Getrennte Maschinenpuffer
+
+`input_storage_capacity` und `output_storage_capacity` legen die Kapazität
+des Eingangs- beziehungsweise Ausgangspuffers fest. Die beiden Puffer können
+unterschiedlich viele Jobs aufnehmen.
+
+#### Erlaubte Werkzeugtypen
+
+`tool_types` legt fest, welche Werkzeugtypen die konkrete Maschine verwenden
+darf. Zwei Maschinen desselben `MachineType` können dadurch unterschiedlich
+ausgestattet sein. Beispiel mit bereits definierten Typen und einem Korridor:
+
+```python
+Machine(
+    "CNC A", cnc_type, corridor, True, 10, 10,
+    tool_types=[turning_tool, milling_tool],
+)
+Machine(
+    "CNC B", cnc_type, corridor, False, 10, 10,
+    tool_types=[milling_tool],
+)
+```
+
+Wird `tool_types` nicht angegeben, ermittelt
+`MachineType.computeToolTypes()` die Werkzeugtypen aus den Operationen des
+Maschinentyps. Eine explizite Liste erlaubt dagegen eine Ausstattung pro
+Maschine. Eine Operation kann nur zugeordnet werden, wenn Maschinentyp und
+benötigter Werkzeugtyp passen. Deshalb muss eine Maschine nicht automatisch
+alle Operationen ihres Maschinentyps ausführen können.
+
+Die Liste beschreibt erlaubte Werkzeugtypen, keine Stückzahlen einzelner
+Werkzeuge oder Anzahl freier Magazinplätze. Jede `OperationType` benötigt
+weiterhin den in ihr festgelegten Werkzeugtyp.
+
+#### Verarbeitungsgeschwindigkeit
 
 `processing_speed_factor` beschreibt die Verarbeitungsgeschwindigkeit der
 Maschine und beeinflusst die Verarbeitungsdauer des Jobs bei der Ausführung
-seiner Operation.
+seiner Operation. In `Machine` wird das Attribut mit `1.0` initialisiert.
 
-## Schutzwerkzeugzeiten
+#### Schutzwerkzeugzeiten
 
-Das Schutzwerkzeug (`dummy_tool`) ist ein Platzhalterwerkzeug der Maschine.
-Es ist kein Produktionswerkzeug. Die Maschine startet damit in einem
-definierten Zustand. Vor der ersten Verarbeitung wird es entfernt und das
-benötigte Produktionswerkzeug montiert. Nach dem Simulationslauf wird das
-Produktionswerkzeug wieder entfernt und das Schutzwerkzeug montiert.
+Das Schutzwerkzeug (`dummy_tool`) beschreibt einen eigenen Werkzeugzustand der
+Maschine. Zu Beginn ist es montiert, während noch kein Produktionswerkzeug
+eingesetzt ist. Für die erste werkzeugpflichtige Verarbeitung wird es entfernt
+und das Produktionswerkzeug montiert.
 
-Für jede Maschine werden beim Erzeugen intern die Standardzeiten
-`dummy_tool_mount_time=1.0` und `dummy_tool_unmount_time=1.0` für das
-Schutzwerkzeug angelegt.
+Jede `Machine` besitzt die Attribute `dummy_tool_mount_time=1.0` und
+`dummy_tool_unmount_time=1.0`. Sie legen die Montage- und Demontagezeit des
+Schutzwerkzeugs fest und sind keine Argumente des Konstruktors.
 
-Diese Werte werden bei der Montage beziehungsweise Demontage des
-Schutzwerkzeugs verwendet. Sie sind derzeit keine zusätzlichen Argumente des
-`Machine`-Konstruktors.
+Der getrennte Abschlussprozess `SimMachineShutdown` kann später wieder das
+Schutzwerkzeug montieren. Wann er tatsächlich ausgeführt wird, ist im
+[Abschnitt zum Simulationskern](#diskrete-simulation) beschrieben.
 
-Das Schutzwerkzeug sorgt dafür, dass jede Maschine zu Beginn und am Ende
-einen eindeutig definierten Werkzeugzustand besitzt. Ohne diesen Platzhalter
-müsste die Maschine mit `tool_type = None` starten und beendet werden. Für die
-Produktionsplanung ist das Schutzwerkzeug nicht zwingend erforderlich; es
-modelliert den vollständigen Werkzeuglebenszyklus einschließlich Montage und
-Demontage.
+### Szenarien und Aufträge
 
-# Diskrete Simulation
+Ein `Scenario` enthält mehrere `Order`-Objekte (Aufträge). Ein Auftrag legt
+einen Zielprodukttyp, die Menge und seine Zeitvorgaben fest:
 
-Jobs, Maschinen und Roboter planen keine Route mehr selbst, sondern melden
-ihren Zustand an die
-`SimulationBridge`, erhalten eine Aktion von der Steuerung und führen genau
-diese Aktion aus.
+- `quantity`: Anzahl der zu erzeugenden Jobs.
+- `product_type`: Zielprodukttyp für alle Jobs dieses Auftrags.
+- `earliest_start_time`: frühester Freigabezeitpunkt.
+- `latest_end_time`: Deadline dieses Auftrags; sie gilt für alle zugehörigen
+  Jobs und nicht für das gesamte Szenario.
 
-## `SimLayout.py`
+Ein Auftrag bestellt einen Produkttyp in einer bestimmten Menge. Mehrere
+Aufträge können denselben Produkttyp bestellen und unterschiedliche Deadlines
+haben.
 
-`SimLayout` ist eine Salabim-Komponente und bildet ein konfiguriertes
-`Layout` als Simulationslayout ab. Dabei werden die Lagerkapazitäten der
-Konfiguration an die Salabim-Stores weitergegeben:
+## Diskrete Simulation
+
+Der Simulationskern unter [sources/SpineML/Simulation](sources/SpineML/Simulation)
+bildet die zeitlichen Abläufe mit Salabim ab. Jobs, Maschinen und Roboter sind
+Simulationskomponenten (Objekte mit einem eigenen zeitlichen Prozess). Sie
+melden Zustände an die `SimulationBridge`, empfangen ausgewählte Aktionen und
+führen sie aus.
+
+### `SimLayout.py`
+
+`SimLayout` bildet ein konfiguriertes `Layout` als Simulationslayout ab. Ein
+Store ist dabei ein Salabim-Puffer, der Jobs aufnimmt. Beim Aufbau gilt:
 
 - Start- und Endlager verwenden `layout.storage_capacity`.
 - Jeder Korridor erhält drei Stores mit `corridor.storage_capacity`.
@@ -91,7 +179,7 @@ Konfiguration an die Salabim-Stores weitergegeben:
   ihre eigene ID. Komponenten registrieren außerdem – soweit vorhanden – die
   Stores, die sie selbst besitzen oder verwalten.
 
-## `SimCorridor.py` und `SimCorridorArm.py`
+### `SimCorridor.py` und `SimCorridorArm.py`
 
 `SimCorridor` erzeugt die drei Korridor-Stores, registriert den Korridor
 zusammen mit diesen Stores bei der `SimulationBridge` und erzeugt den linken
@@ -100,11 +188,10 @@ und rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
 `max_product_weight` und `max_product_volume` werden von `SimLayout` aus dem
 Szenario ermittelt und an jede Maschine weitergegeben.
 
-Die erzeugten Laufzeitkomponenten registrieren sich selbst mit ihren
-IDs und – soweit vorhanden – ihren eigenen Stores. Ein- und Ausgangspuffer der
-Maschinen bleiben getrennte Stores.
+Maschinen und Roboter registrieren sich selbst bei der `SimulationBridge`.
+Jede Maschine registriert dabei auch ihren Eingangs- und Ausgangspuffer.
 
-## `SimOrder.py` und `SimOrderJob.py`
+### `SimOrder.py` und `SimOrderJob.py`
 
 `SimOrder` erzeugt für jedes einzelne bestellte Produktstück eine eigene
 `SimOrderJob`-Komponente. Ein `SimOrderJob` beschreibt deshalb genau ein
@@ -121,72 +208,133 @@ unter anderem die Aktionen `release_job`, `wait_job`,
 `job_rework_on_defect_machine`, `job_rework_on_alternative_machine`,
 `downgrade_product`, `job_scrap` und `complete_job` verwendet.
 
-## Laufzeitstatus eines `SimOrderJob`
+### Laufzeitstatus eines `SimOrderJob`
 
-Jeder `SimOrderJob` besitzt einen beobachtbaren Laufzeitstatus. Nicht alle
-Attribute werden von der Steuerung gesetzt: Einige entstehen direkt durch ein
-Simulationsereignis, andere werden aus einer Aktion übernommen.
+`SimOrderJob` speichert den Zustand eines einzelnen Werkstücks. Die
+Steuerung liefert Entscheidungen im Aktions-Payload (den zusätzlichen Daten
+einer Aktion); Maschinen und Roboter aktualisieren die Ergebnisse ihrer
+Ausführung direkt am Job.
 
+#### Freigabe, Standort und Abschluss
 
-| Attribut                      | Bedeutung                                                                                    | Umsetzung im Simulationskern und Quelle der Eingabe                                                                                                                                            | Warum wird es benötigt?                                                                                |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `released`                    | Gibt an, ob der Job bereits für die Produktion freigegeben wurde.                           | `SimOrderJob` übernimmt `released` aus der `release_job`-Aktion und speichert den Wert. Die Freigabeauswahl kommt aus der Steuerung.                                                          | Ein Job darf erst nach seiner Freigabe weiterlaufen.                                                    |
-| `queue_priority`              | Priorität beim Einfügen des Jobs in einen Salabim-Store.                                   | Die Steuerung liefert die Priorität im Pick-Payload. Simulationsroboter und Maschine übernehmen sie und verwenden sie beim`to_store(...)`.                                                   | Jobs werden in einer Warteschlange nach der vorgegebenen Priorität behandelt.                          |
-| `completed_time`              | Tatsächlicher Zeitpunkt, zu dem der Job abgeschlossen wurde.                                | `SimRobotMain` ruft beim Ablegen im Endlager `mark_finished()` auf; der Simulationskern speichert `env.now()`.                                                                                 | Grundlage für Terminstatus, Tardiness und Makespan.                                                    |
-| `process_finished`            | Gibt an, ob der Jobprozess beendet werden darf.                                              | `SimOrderJob` setzt das Flag, wenn die Aktion `finish_process=True` enthält. `SimCompletionWatcher` liest es.                                                                                 | Der Jobprozess kann beendet und die Simulation automatisch gestoppt werden.                             |
-| `location`                    | Aktueller Aufenthaltsort des Jobs, zum Beispiel Store oder Roboter.                          | Die Laufzeitobjekte aktualisieren den Ort nach Pick und Place. Der Zielort wird von der Steuerungsaktion vorgegeben.                                                                           | Der Aufenthaltsort wird der nächsten Beobachtung bereitgestellt.                                       |
-| `selected_operation`          | Nächste ausgewählte Operation.                                                             | `SimOrderJob` übernimmt die Operation aus dem Aktions-Payload und speichert sie; die Steuerung liefert die Auswahl.                                                                           | Die Maschine weiß, welche Operation ausgeführt werden soll.                                           |
-| `selected_machine`            | Maschine für die ausgewählte nächste Operation.                                           | `SimOrderJob` übernimmt die Maschine aus dem Aktions-Payload und speichert sie; die Steuerung liefert die Auswahl.                                                                            | Transport und Verarbeitung werden zu dieser Maschine geführt.                                           |
-| `processing_state`            | Aktueller Produktzustand, zum Beispiel`unconfigured` oder ein Produkttyp.                    | Der Simulationskern initialisiert`unconfigured`, übernimmt bei Recovery den im Payload angegebenen Ausgangszustand und setzt nach erfolgreicher Verarbeitung den erzeugten Produkttyp.         | Die weitere Produktionsroute hängt vom aktuellen Produktzustand ab.                                    |
-| `general_state`               | Aktueller Qualitäts- und Produktionsstatus:`intact`, `defect` oder `scrap`.                  | Der Simulationskern initialisiert`intact`, setzt bei `mark_defective()` auf `defect`, setzt nach erfolgreicher Verarbeitung wieder `intact` und übernimmt `scrap` aus der Scrap-Aktion. | Der Status bestimmt, welcher nächste Aktionspfad beobachtet werden kann.                               |
-| `due_state`                   | Terminstatus, zum Beispiel`on-time` oder `late`.                                             | `SimOrderJob` übernimmt den von der Steuerung berechneten Wert aus der Abschlussaktion.                                                                                                       | Der einzelne Job erhält seinen Terminstatus.                                                           |
-| `downgraded`                  | Gibt an, ob das Produkt herabgestuft wurde.                                                  | `SimOrderJob` übernimmt das Flag aus der Herabstufungsaktion. Die Entscheidung und der Wert im Payload kommen aus der Steuerung.                                                              | Herabgestufte Jobs dürfen nicht mehr die normale Zielroute verwenden.                                  |
-| `downgrade_product_type`      | Produkttyp, mit dem der herabgestufte Job abgeschlossen wird, zum Beispiel weiterhin `poliert`. | `SimOrderJob` übernimmt den Produkttyp aus der Herabstufungsaktion; der Job wird nicht auf den vorherigen Produkttyp zurückgesetzt.                                                        | `downgraded=True` markiert die geringere Qualität; der Job benötigt keine weitere normale Operation und wird zum Endlager weitergeleitet.                       |
-| `defect_detected_time`        | Zeitpunkt der Defekterkennung.                                                               | `SimOrderJob.mark_defective()` speichert `env.now()` des Simulationskerns.                                                                                                                     | Der Defektzeitpunkt bleibt für Diagnose und Auswertung erhalten.                                       |
-| `defect_operation`            | Operation, die den Defekt verursacht hat.                                                    | `SimMachine` übergibt die gerade ausgeführte Operation an `mark_defective()`, das sie im Job speichert.                                                                                      | Die historische Defektursache bleibt bekannt.                                                           |
-| `defect_machine`              | Maschine, auf der der Defekt entstanden ist.                                                 | `SimMachine` übergibt sich selbst an `mark_defective()`, das die Maschine im Job speichert.                                                                                                   | Die historische Defektmaschine wird für Recovery und Kennzahlen benötigt.                             |
-| `defect_product_state_before` | Produktzustand vor der fehlerhaften Operation.                                               | `SimMachine` speichert den `consumes_product_type` der ausgeführten Operation über `mark_defective()`.                                                                                       | Die Nacharbeit startet wieder bei diesem Zustand, zum Beispiel bei Produkt A.                           |
-| `defect_product_state_target` | Produktzustand, den die fehlerhafte Operation erzeugen sollte.                               | `SimMachine` speichert den `produces_product_type` der ausgeführten Operation über `mark_defective()`.                                                                                       | Nach erfolgreicher Nacharbeit soll dieser Zielzustand wieder erreicht werden, zum Beispiel Produkt B.   |
-| `defect_severity`             | Schweregrad des Defekts im Bereich von`0.0` bis `1.0`.                                       | `SimMachine` erzeugt ihn mit einem aus Simulations-Seed und Jobdaten abgeleiteten `quality_rng` und speichert ihn bei einem Defekt.                                                            | Bei`0.001` bis `<0.6` kann die Steuerung Nacharbeit anbieten; ab `0.6` bleibt nur Scrap.                |
-| `defect_recovery_strategy`    | Ausgewählte Strategie, zum Beispiel Nacharbeit oder Ausschuss.                              | `SimOrderJob` speichert die Strategie aus dem Aktions-Payload; bei einem neuen Defekt löscht `mark_defective()` die alte Strategie. Die Auswahl kommt aus der Steuerung.                      | Die nächste Simulation beobachtet, welche Defektbehandlung aktiv ist.                                  |
-| `recovery_in_progress`        | Gibt an, dass eine ausgewählte Recovery-Strategie noch transportiert oder ausgeführt wird. | `SimOrderJob` setzt es beim Empfang einer Nacharbeitsaktion auf `True`. `SimMachine` setzt es nach der Nacharbeit auf `False`.                                                     | Verhindert eine neue Recovery-Entscheidung, solange die laufende Recovery noch nicht abgeschlossen ist. |
-| `defect_count`                | Anzahl erkannter Defekte dieses Jobs.                                                        | `mark_defective()` erhöht den Zähler im Simulationskern.                                                                                                                                     | Wird für Qualitätskennzahlen und Diagnosen gezählt.                                                  |
-| `rework_count`                | Anzahl ausgelöster Rework-Aktionen.                                                          | `SimOrderJob` erhöht den Zähler, wenn eine Rework-Aktion ausgeführt wird.                                                                                                                   | Wird für Kennzahlen und den nächsten Quality-Key verwendet.                                           |
-| `scrap_count`                 | Anzahl der Scrap-Entscheidungen.                                                             | `SimOrderJob` erhöht den Zähler, wenn eine `job_scrap`-Aktion ausgeführt wird.                                                                                                              | Wird als globale Qualitätskennzahl ausgewertet.                                                        |
+- `released`: Freigabe für die Produktion, anfangs `False`. Die Aktion
+  `release_job` übergibt den Wert und legt den Job im Startlager ab.
+- `queue_priority`: Prioritätswert, den der Evaluator vor einem Pick aus der
+  aktuellen Deadline berechnet. Roboter und Maschine übernehmen ihn aus dem
+  Payload und verwenden ihn beim Ablegen in Stores. Welcher Job gepickt wird,
+  entscheidet die Policy anhand der Kandidatenscores.
+- `location`: Standort des Jobs, zum Beispiel Store oder beladener Roboter.
+  Die ausführende Komponente aktualisiert ihn nach dem Transport.
+- `completed_time`: Zeitpunkt, den `SimRobotMain` mit `mark_finished()` auf
+  dem Weg ins Endlager speichert. Im aktuellen Code erfolgt dies vor der
+  abschließenden Einlagerungszeit und dem eigentlichen Ablegen im Endlager.
+  Dieser Zeitpunkt wird für Terminstatus und Makespan verwendet.
+- `due_state`: Terminstatus `"on-time"` oder `"late"`; anfangs `None`.
+  `create_completion_actions_for_job()` vergleicht `completed_time` mit der
+  `latest_end_time` des Auftrags und übergibt den Status mit `complete_job`.
+- `process_finished`: Wird durch `finish_process=True` auf `True` gesetzt.
+  Der Job beendet seine Prozessschleife; der `SimCompletionWatcher` verwendet
+  dieses Flag zur Erkennung des Simulationsendes.
 
-### UML-Zustandsdiagramm eines Jobs
+#### Produktzustand und nächste Verarbeitung
 
-Das Diagramm zeigt die wichtigsten Zustände des Produktprozesses. Die konkreten
-Produktzustände zwischen den Operationen hängen vom jeweiligen Modell ab.
+- `processing_state`: Aktueller Produktzustand als Name eines Produkttyps.
+  Anfangs steht hier `"unconfigured"`. Bei der Freigabe setzt die Steuerung
+  den Startprodukttyp; nach erfolgreicher Verarbeitung setzt `SimMachine`
+  den von der Operation erzeugten Produkttyp.
+- `selected_operation`: Von der Steuerung ausgewählte nächste Operation.
+- `selected_machine`: Für diese Operation ausgewählte konkrete `Machine`.
+  Diese Auswahl bestimmt auch das Transportziel. Nach der Verarbeitung setzt
+  `SimMachine` beide Auswahlfelder auf `None`.
+
+#### Qualität und Herabstufung
+
+- `general_state`: Qualitätsstatus `"intact"`, `"defect"` oder `"scrap"`.
+  `mark_defective()` setzt ihn auf `"defect"`. Ein intaktes
+  Verarbeitungsergebnis setzt ihn auf `"intact"`; eine Ausschussaktion
+  setzt ihn auf `"scrap"`.
+- `downgraded`: Zusätzliche Qualitätsmarkierung, anfangs `False`. Bei
+  `downgrade_product` wird sie auf `True` gesetzt. Der Job erhält keine
+  weitere normale Produktionsroute und wird zum Endlager transportiert.
+- `downgrade_product_type`: Produkttyp für den herabgestuften Job. Verwendet
+  wird der Produkttyp, den die letzte fehlerhafte Operation erzeugen sollte.
+  Das kann ein Zwischenprodukt sein und muss nicht das Auftragsziel sein.
+
+Beispiel: Eine Polieroperation liefert ein qualitativ unzureichendes Ergebnis.
+Bei Herabstufung wird der Job als „poliert“ gespeichert und zusätzlich mit
+`downgraded=True` markiert. Sein `general_state` lautet danach `"intact"`;
+die geringere Qualität bleibt durch `downgraded` erkennbar.
+
+#### Defektdaten und Nacharbeit
+
+Bei einem relevanten Defekt ruft `SimMachine` die Methode
+`job.mark_defective()` auf. Diese speichert:
+
+- `defect_detected_time`: Simulationszeit der Defekterkennung.
+- `defect_operation` und `defect_machine`: verursachende Operation und Maschine.
+- `defect_product_state_before`: Produkttyp vor der fehlerhaften Operation.
+- `defect_product_state_target`: Produkttyp, den diese Operation erzeugen
+  sollte; nicht automatisch das endgültige Auftragsziel.
+- `defect_severity`: Schweregrad des Defekts. Ab `0.001` wird ein Defekt
+  erfasst; im Bereich `0.001 <= defect_severity < 0.6` kann die Steuerung
+  Nacharbeit oder Herabstufung anbieten. Ab `0.6` erzeugt sie nur Ausschuss.
+
+Im Defektfall bleibt `processing_state` zunächst beim Zustand vor der
+Operation. Eine Nacharbeitsaktion setzt ihn auf
+`defect_product_state_before`; eine Herabstufungsaktion setzt ihn auf
+`defect_product_state_target`.
+
+Weitere Felder steuern die Defektbehandlung:
+
+- `defect_recovery_strategy`: Gewählte Strategie, etwa
+  `"rework_on_defect_machine"`, `"rework_on_alternative_machine"`,
+  `"downgrade"` oder `"scrap"`. Bei einem neuen Defekt wird die alte
+  Strategie gelöscht.
+- `recovery_in_progress`: Während Transport und Ausführung einer gewählten
+  Nacharbeit `True`. `SimMachine` setzt es nach dieser Operation auf
+  `False`, auch wenn erneut ein Defekt entsteht.
+- `defect_count`: Anzahl der bei diesem Job erkannten Defekte.
+- `rework_count`: Anzahl gestarteter Nacharbeiten. Der Wert geht auch in den
+  Schlüssel für reproduzierbare Qualitätsentscheidungen ein.
+- `scrap_count`: Anzahl der Ausschussentscheidungen; im regulären Ablauf
+  höchstens eine pro Job.
+
+#### UML-Zustandsdiagramm eines Jobs
+
+Das Diagramm zeigt den fachlichen Ablauf eines Werkstücks. Bezeichnungen wie
+`processing` und `completed` fassen mehrere Codefelder zusammen und sind
+keine zusätzlichen Werte von `processing_state`. Die Produktnamen hängen vom
+jeweiligen Modell ab.
 
 ```mermaid
 stateDiagram-v2
     [*] --> unconfigured
     unconfigured --> raw_workpiece: release_job
-    raw_workpiece --> processing: Operation ausgewählt
+    raw_workpiece --> processing: Verarbeitung startet
     processing --> next_product_state: Operation erfolgreich
     next_product_state --> processing: Weitere Operation
     processing --> defect: Defekt erkannt
     defect --> processing: Nacharbeit
     defect --> scrap: Ausschuss
     defect --> downgraded: Herabstufung
-    next_product_state --> completed: Zielprodukt erreicht
-    downgraded --> completed: Zum Endlager
+    next_product_state --> completed: Zielprodukt erreicht und Abschluss gemeldet
+    downgraded --> completed: Zum Endlager und Abschluss melden
+    scrap --> completed: Zum Endlager und Abschluss melden
     completed --> [*]
-    scrap --> [*]
 ```
 
-`downgraded` ist im Diagramm als eigener Ablaufzustand dargestellt. Im Code
-wird er nicht als eigener `general_state` gespeichert, sondern durch
-`downgraded=True` und den erreichten Produktzustand gekennzeichnet.
+`downgraded` ist als eigener Ablaufzustand sichtbar. Im Code wird die
+Herabstufung durch `downgraded=True` und den übernommenen Produktzustand
+gespeichert.
 
-## `SimRobot.py`, `SimRobotMain.py` und `SimRobotCorridorArm.py`
+### `SimRobot.py`, `SimRobotMain.py` und `SimRobotCorridorArm.py`
 
-`SimRobot` stellt die gemeinsame Bewegungslogik bereit. Er interpoliert die
-Positionen auf den X-, Y- und Z-Achsen, führt ausgewählte Jobs aus Stores ab
-und meldet Lade- und Bewegungszustände.
+`SimRobot` stellt die gemeinsame Bewegungslogik für X, Y und Z bereit. Die
+Unterklassen `SimRobotMain` und `SimRobotCorridorArm` führen die von der
+Steuerung ausgewählten Pick- und Place-Aktionen aus (Job aufnehmen und
+ablegen) und melden ihre Lade- und Bewegungszustände.
 
-### `SimRobotMain.py` und `SimRobotCorridorArm.py`
+#### Aktionen und Bewegung
 
 - **Aktionen der Steuerung:**
   - Main-Roboter: `pick_main_robot`, `place_main_robot`, `wait_main_robot`.
@@ -201,69 +349,18 @@ und meldet Lade- und Bewegungszustände.
   `1.05`. Die effektive Geschwindigkeit berechnet sich als
   `Grundgeschwindigkeit × Zufallsfaktor`. Dadurch sind die
   Geschwindigkeitsschwankungen und die Bewegungsdauer für X, Y und Z bei
-  gleichem Seed reproduzierbar.
+  gleicher Konfiguration und gleichem Seed im `SpineMLSimulationRunner`
+  reproduzierbar.
 - **Zustandsmeldung:** Nach Pick und Place werden Jobstandort, Beladung und
   Roboterzustand über die Bridge gemeldet. Beim Ablegen im Endlager wird
   außerdem `completed_time` gesetzt.
 
-### `SimMachine` (Maschine)
+### `SimMachine.py`
 
-`SimMachine` ist eine Salabim-Komponente für genau eine konfigurierte
-Maschine. Sie führt keine eigene Produktionsplanung durch. Die Steuerung
-liefert über die `SimulationBridge` die konkrete Aktion;
-`SimMachine` führt diese Aktion im Simulationskern aus und meldet danach den
-neuen Zustand zurück.
-
-- Die Steuerung richtet die Aktion an die ausgewählte Maschine und sendet in
-  der Aktions-Payload den ausgewählten Job, die Operation und das Werkzeug.
-  `SimMachine` nimmt diese Werte entgegen und führt genau diese Auswahl aus.
-  Sie entscheidet nicht selbst über den nächsten Job, die nächste Operation
-  oder das nächste Werkzeug. Ist der ausgewählte Job nicht verfügbar, führt sie
-  keine automatische Ersatzsuche durch; die Steuerung muss eine neue Aktion
-  senden.
-- `SimLayout` ermittelt aus allen Aufträgen das größte Produktgewicht und
-  -volumen. Diese beiden Referenzwerte werden an jede `SimMachine` übergeben;
-  dadurch wird die Größe jedes verarbeiteten Produkts relativ zum Szenario
-  bewertet und die Verarbeitungsdauer angepasst.
-- Jede konkrete Maschine besitzt eine eigene Werkzeugliste. Bei einer
-  `process_machine_job`-Aktion montiert oder demontiert sie entsprechend
-  `tool_setup_action` das benötigte Werkzeug und verbraucht während der
-  Operation `consumed_life_units`. Erst der separate Abschlussprozess
-  `SimMachineShutdown` entfernt nach dem Simulationslauf ein noch montiertes
-  Produktionswerkzeug und montiert wieder das Schutzwerkzeug.
-- Zu Beginn jeder Prozessschleife meldet `SimMachine` ihren Zustand über
-  `bridge.request_action(self)`. Danach empfängt sie mit `bridge.action(self)`
-  eine konkrete Aktion. Nach der Verarbeitung legt sie den aktualisierten Job ab,
-  setzt `current_job` zurück und meldet den Zustand beim nächsten
-  `request_action()` erneut.
-- `SimMachine` aktualisiert am Job die Attribute `job.location`,
-  `job.queue_priority`, `job.processing_state` und `job.general_state`. Bei
-  einem Defekt schreibt `mark_defective()` außerdem
-  `job.defect_count`, `job.defect_detected_time`, `job.defect_severity`,
-  `job.defect_operation`, `job.defect_machine`,
-  `job.defect_product_state_before` und `job.defect_product_state_target`.
-  Nach der Verarbeitung setzt sie `job.selected_operation` und
-  `job.selected_machine` auf `None`, beendet mit
-  `job.recovery_in_progress = False` eine laufende Recovery-Markierung und
-  entfernt bei einem intakten Ergebnis die alte Rework-Strategie aus
-  `job.defect_recovery_strategy`.
-- Der Runner setzt mit `random.seed(seed)` den Startwert für den globalen
-  Python-Zufallszahlengenerator. Dadurch sind
-  `SimMachine.processing_speed_factor`, `SimMachine.processing_variation`,
-  `SimMachine.startup_delay`,
-  `SimRobot.movement_speed_multiplier` und die zufälligen Entscheidungen des
-  `ActionSelector` reproduzierbar. `sim.Environment(random_seed=seed)` setzt
-  zusätzlich den Seed für Salabim.
-- Der Runner legt zu Beginn des Simulationslaufs den Seed fest. Die
-  Qualitätsprüfung verwendet denselben Seed zusammen mit den Daten des
-  Szenarios, Auftrags, Jobs, der Operation und des Rework-Durchlaufs. Dadurch
-  erhält derselbe Job bei gleicher Ausgangslage immer dieselbe Entscheidung,
-  ob ein Defekt entsteht, und denselben `defect_severity`. Wird der Seed oder
-  der Kontext geändert, kann auch das Qualitätsergebnis anders ausfallen.
-- `Machine` verwendet den neutralen Basiswert `1.0`. Beim Aufbau von
-  `SimMachine` wird dieser nach dem gesetzten Seed mit einem Zufallsfaktor
-  zwischen `0.45` und `2.0` multipliziert. Dadurch ist der resultierende
-  `SimMachine.processing_speed_factor` bei gleichem Seed reproduzierbar.
+`SimMachine` simuliert genau eine konfigurierte `Machine`. Die Steuerung
+bestimmt Job, Operation, Maschine und Werkzeug; `SimMachine` führt die
+ausgewählte Aktion aus. Dabei berücksichtigt sie Pufferkapazitäten,
+Werkzeugwechsel, Werkzeuglebensdauer, Verarbeitungsdauer und Qualität.
 
 #### Aufbau und Laufzeitdaten
 
@@ -275,7 +372,7 @@ neuen Zustand zurück.
   Verarbeitungsdauer verwendet.
 - `self.tool_types` ist eine eigene Kopie der Werkzeugliste der konkreten
   `Machine`. Dadurch kann die Simulation ihre Laufzeitliste unabhängig von der
-  unveränderten Fabrikkonfiguration verwalten. Für jeden Werkzeugtyp verwaltet
+  Fabrikkonfiguration verwalten. Für jeden Werkzeugtyp verwaltet
   `SimMachine` vier Werte:
   `remaining_life_units` ist der aktuelle Restwert,
   `remaining_life_units_t` dessen gültiger Simulationszeitpunkt,
@@ -351,6 +448,11 @@ tatsächlichen Restwert gesetzt.
 
 #### Verarbeitungsdauer
 
+Die Größenberechnung verwendet den Zielprodukttyp des Auftrags
+(`job.order.product_type`). `SimLayout` ermittelt die maximalen Gewichte und
+Volumina aus diesen Produkttypen aller Aufträge. Das größte Gewicht und das
+größte Volumen können zu unterschiedlichen Produkttypen gehören.
+
 Zuerst werden relative Größenwerte gebildet:
 
 ```python
@@ -359,7 +461,8 @@ volume_ratio = product_volume / max_product_volume
 size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
 ```
 
-Bei Werten zwischen `0` und `1` liegt `size_factor` zwischen `1.0` und `2.0`.
+Bei positiven Produktgrößen liegen die Verhältnisse zwischen `0` und `1`;
+damit liegt `size_factor` zwischen `1.0` und `2.0`.
 Die endgültige Dauer wird danach so berechnet:
 
 ```python
@@ -388,14 +491,44 @@ Bei gleichem Seed und gleichem Kontext entstehen dadurch dieselbe
 Defektentscheidung und derselbe Schweregrad. Ein relevanter Defekt ab
 `0.001` wird mit `job.mark_defective()` gespeichert. Dabei werden Operation,
 Maschine, Produktzustand vor der Operation, Zielzustand und Schweregrad im Job
-festgehalten. Ohne relevanten Defekt setzt die Maschine den erzeugten
-Produktzustand und den allgemeinen Zustand auf `intact`.
+festgehalten. Der bisherige `processing_state` bleibt im Defektfall erhalten.
+Ohne relevanten Defekt setzt die Maschine `processing_state` auf den von der
+Operation erzeugten Produkttyp und `general_state` auf `"intact"`.
 
 Nach abgeschlossener Nacharbeit wird
 `recovery_in_progress` zurückgesetzt. Die alte Auswahl von Operation und
 Maschine wird gelöscht, damit die Steuerung die nächste Aktion neu bestimmen
 kann. Die Auswahl der Recovery-Strategie selbst kommt aus der Steuerung; die
 Simulation speichert sie nur und entfernt eine erledigte Rework-Strategie.
+
+#### Seed und Reproduzierbarkeit
+
+Ein Seed ist der Startwert eines Zufallszahlengenerators. Der
+`SpineMLSimulationRunner` setzt vor jedem Lauf `random.seed(seed)`,
+`sim.Environment(random_seed=seed)` und `SimMachine.QUALITY_SEED`.
+
+Bei gleicher Konfiguration, gleichem Seed und demselben Entscheidungsablauf
+sind dadurch folgende Zufallswerte reproduzierbar:
+
+- `SimMachine.processing_speed_factor`: Basiswert der `Machine` multipliziert
+  mit einem einmaligen Zufallsfaktor aus `0.45` bis `2.0`.
+- `SimMachine.processing_variation`: Einmaliger Faktor aus `0.90` bis
+  `1.10`, der die Verarbeitungsdauer multipliziert.
+- `SimMachine.startup_delay`: Einmalige Anlaufverzögerung aus `0` bis `4`
+  Zeiteinheiten.
+- `SimRobot.movement_speed_multiplier`: Neuer Faktor für jede Achsenbewegung.
+- Zufallsauswahl und Exploration des `BaselineActionSelector`.
+
+Die Qualitätsprüfung verwendet einen eigenen `quality_rng`, dessen Startwert
+aus `QUALITY_SEED`, Szenario, Auftrag, Jobnummer, Operation und
+`rework_count` abgeleitet wird. Bei gleichem Schlüssel bleiben Defektentscheidung
+und `defect_severity` gleich, auch wenn der Job auf einer anderen Maschine
+verarbeitet wird. Eine andere Operation oder Nacharbeitsrunde ändert den
+Schlüssel.
+
+Der normale Aufruf `simulate(...)` besitzt derzeit kein `seed`-Argument.
+Die hier beschriebene gemeinsame Seed-Vorgabe übernimmt der Runner für die
+Optimierung.
 
 #### Abschluss der Verarbeitung und Zustände
 
@@ -413,14 +546,20 @@ Die wichtigsten Maschinenzustände sind:
 - `working`: Die Operation wird ausgeführt.
 - `returning`: Die Verarbeitung ist beendet und der Job wird abgelegt.
 
-Am Ende eines vollständigen Laufs kann `SimMachineShutdown` als eigene,
-einmalige Salabim-Komponente das noch montierte Produktionswerkzeug entfernen
-und wieder das Schutzwerkzeug montieren. Sie ist eine eigene Komponente, weil
-`SimMachine` die Jobs in einer wiederholten `while`-Schleife verarbeitet,
-während dieser Abschlussprozess genau einmal nach dem Lauf ausgeführt wird.
-Die benötigte Zeit wird als
-Werkzeugwechselzeit erfasst; der Makespan bleibt auf den letzten Jobabschluss
-bezogen.
+`SimMachineShutdown` kann als eigene, einmalige Salabim-Komponente das
+Produktionswerkzeug entfernen und wieder das Schutzwerkzeug montieren. Die
+eigene Komponente trennt diesen einmaligen Ablauf von der wiederholten
+Jobverarbeitung in der `while`-Schleife von `SimMachine`.
+
+Im aktuellen `SpineMLSimulationRunner` wird der Abschlussprozess nicht
+gestartet. Auch `simulate()` überspringt ihn, wenn der
+`SimCompletionWatcher` den Lauf beendet hat. Die Klasse allein bewirkt daher
+keinen automatischen Werkzeugwechsel am Ende jedes Laufs.
+
+Die globale Kennzahl `tool_change_time` addiert tatsächlich ausgeführte
+Montage- und Demontagezeiten. Der Makespan verwendet die gespeicherten
+Jobabschlusszeiten; ein separat ausgeführter Werkzeugabschluss verlängert
+diese nicht.
 
 #### UML-Zustandsdiagramm von `SimMachine`
 
@@ -432,12 +571,12 @@ die `SimulationBridge`.
 stateDiagram-v2
     [*] --> waiting
 
-    waiting --> blocked: output buffer unavailable
-    blocked --> waiting: output buffer available
+    waiting --> blocked: Ausgangspuffer voll
+    blocked --> waiting: Ausgangspuffer hat Platz
 
     waiting --> waiting: wait_machine
-    waiting --> working: process_machine_job with keep_tool
-    waiting --> unmounting: process_machine_job with tool change
+    waiting --> working: process_machine_job mit keep_tool
+    waiting --> unmounting: process_machine_job mit Werkzeugwechsel
 
     note right of waiting
         pick_machine_job lädt den ausgewählten Job
@@ -446,29 +585,29 @@ stateDiagram-v2
         process_machine_job empfangen wird.
     end note
 
-    unmounting --> mounting: old tool removed
-    mounting --> working: new tool mounted
-    working --> returning: processing finished
-    returning --> waiting: job placed in target store
-    returning --> blocked: output buffer unavailable
+    unmounting --> mounting: Werkzeug entfernt
+    mounting --> working: Werkzeug montiert
+    working --> returning: Verarbeitung beendet
+    returning --> waiting: Job im Zielstore abgelegt
+    returning --> blocked: Ausgangspuffer voll
 
     note right of working
-        Quality check and defect handling
-        take place after processing.
+        Nach der Verarbeitung erfolgen Qualitätsprüfung
+        und Speicherung eines erkannten Defekts.
     end note
 ```
 
-## `SimScenario.py` und `SimCompletionWatcher`
+### `SimScenario.py` und `SimCompletionWatcher`
 
-`SimScenario` erzeugt für jeden Auftrag ein `SimOrder`-Objekt. Dieses erzeugt
-für jedes bestellte Produktstück ein `SimOrderJob`-Objekt. Die
-`SimulationBridge` wird an diese Objekte weitergegeben, damit sie Aktionen
-empfangen und Zustände melden können.
+`SimScenario` erzeugt für jeden Auftrag eine `SimOrder`-Komponente.
+`SimOrder` erzeugt die einzelnen `SimOrderJob`-Komponenten und reicht die
+`SimulationBridge` an sie weiter. Die Jobs registrieren sich selbst bei der
+Bridge; `SimOrder` benötigt keine eigenen Steuerungsaktionen.
 
-Zusätzlich erstellt `SimScenario` den `SimCompletionWatcher`. Dieser prüft, ob
-alle Jobs abgeschlossen sind, und beendet dann die Simulation.
+Zusätzlich erzeugt `SimScenario` den unabhängigen `SimCompletionWatcher`,
+der das Ende der Jobprozesse überwacht.
 
-### Automatisches Simulationsende
+#### Automatisches Simulationsende
 
 `SimScenario` erstellt beim Aufbau des Szenarios den
 `SimCompletionWatcher`. Der Watcher ist eine Salabim-`sim.Component`; seine
@@ -479,82 +618,111 @@ Jobs aus den erzeugten Aufträgen und prüft regelmäßig, ob jeder Job das Flag
 Watcher `sim.SimulationStopped` aus. Der Simulationsrunner fängt dieses Signal
 ab und sammelt anschließend die globalen Kennzahlen.
 
-# SimulationBridge
+## SimulationBridge
 
-Jobs, Maschinen, der Main-Roboter und die Korridorarm-Roboter registrieren sich
-bei der `SimulationBridge`, weil sie Aktionen von der Policy anfordern und
-ausführen. Korridore und Stores werden zusätzlich für die ID-Auflösung
-registriert. `SimLayout`, `SimScenario` und `SimCompletionWatcher` benötigen
-keine eigenen Aktionen und werden deshalb nicht als aktionsfähige Objekte
-registriert.
+Die `SimulationBridge` verbindet den Simulationskern mit der Policy. Die
+Simulation verwendet echte Python- und Salabim-Objekte; die Policy erhält
+deren Daten und IDs (eindeutige Bezeichnungen innerhalb des jeweiligen
+Registers).
 
-Der wiederkehrende Ablauf eines aktionsfähigen Simulationsobjekts besteht
-darin, mit `request_action(self)` seinen aktuellen Zustand an die Bridge zu
-melden und eine neue Policy-Entscheidung anzufordern. Anschließend empfängt es
-mit `action(self)` die ausgewählte Aktion.
+### Registrierung und Aktions-Stores
 
-Die Bridge trennt die für die Policy sichtbaren IDs von den echten
-Salabim-Komponenten:
+Jobs, Maschinen, Main-Roboter und Korridorarm-Roboter registrieren sich mit
+`register()`. Die Bridge speichert ihre IDs und erzeugt für jedes dieser
+Objekte einen eigenen Aktions-Store (Warteschlange für ausgewählte Aktionen).
 
-- Die Policy arbeitet mit IDs für Jobs, Maschinen, Operationen, Werkzeuge und
-  Stores. Sie erhält keine direkten Simulationsobjekte.
-- Bei der Registrierung ordnet die Bridge jeder Policy-ID genau eine
-  Simulationskomponente zu und erstellt für diese Komponente einen eigenen
-  Aktions-Store.
-- Beispiel: Die Policy sendet `selected_machine_id: "machine_1"`. Die Bridge
-  löst diese ID intern in das echte `SimMachine`-Objekt der Maschine 1 auf.
-  Dadurch bleibt die Policy vom Simulationskern entkoppelt. IDs und die
-  zugehörigen einfachen Daten können außerdem leicht gespeichert, als JSON
-  übertragen oder später über ein Webinterface verwendet werden.
-- Eine Policy-Aktion enthält ebenfalls nur IDs. Die Bridge löst diese IDs in
-  die echten Simulationsobjekte und Stores auf und legt die ausführbare Aktion
-  nur im Aktions-Store des Zielobjekts ab.
-- Eine Zustandsänderung ruft `notify_state_change(self)` auf. Dabei erzeugt die
-  Bridge ein internes `PolicyTrigger`-Objekt mit Sender-ID, Simulationszeit
-  und Zustandsversion und legt es in den zentralen `policy_trigger_store`.
-- Die Bridge ist selbst eine Salabim-`sim.Component`. Ihre `process()`-Methode
-  wartet auf diesen Store, sammelt weitere Trigger derselben Simulationszeit
-  und löst anschließend die Erstellung eines Snapshots aus. Der Snapshot
-  enthält die aktuellen Zustände aller registrierten Simulationsobjekte sowie
-  das ID-basierte Konfigurationsmodell der Fabrik. Die Triggerobjekte selbst
-  werden nicht an die Policy übergeben;
-  ihre Ereignis- und Sender-IDs können nur als Metadaten in der Observation
-  enthalten sein.
-- Die Bridge ruft danach die Policy mit einer `PolicyObservation` auf. Die
-  Policy liefert eine `PolicyDecision` mit ausgewählten Aktionen und IDs.
-  Vor der Verwendung prüft die Bridge, ob die `state_version` des Snapshots
-  noch dem aktuellen Simulationszustand entspricht. Falls sich der Zustand
-  während der Policy-Entscheidung geändert hat, erstellt sie den Snapshot und
-  die Entscheidung erneut. Dadurch erhält die Policy nur einen aktuellen
-  Snapshot.
-  Die Bridge löst diese IDs in echte Simulationsobjekte auf und legt jede
-  ausführbare `SimulationAction` im persönlichen Aktions-Store des jeweiligen
-  Zielobjekts ab.
+Korridore werden mit `register_corridor()` und ihre Stores mit
+`register_store()` für die ID-Auflösung registriert. Sie erhalten keine
+eigenen Steuerungsaktionen. `SimLayout`, `SimCorridorArm`, `SimOrder`,
+`SimScenario` und `SimCompletionWatcher` benötigen ebenfalls keinen eigenen
+Aktions-Store.
 
-Für jedes aktionsfähige Simulationsobjekt gilt: Es meldet seinen aktuellen
-Zustand, wartet auf die Entscheidung der Steuerung, führt diese Entscheidung
-mit Salabim aus und meldet danach die Zustandsänderung wieder an die Bridge.
-Die Simulation wählt dabei keine Ersatzaktion und keine Produktionsroute selbst.
+### Warum die Policy IDs verwendet
 
-Der Ablauf zwischen Bridge, Steuerung und Simulationskomponenten ist:
+Eine ID beschreibt, auf welches Objekt sich eine Aktion bezieht, ohne das
+Objekt selbst an die Policy zu übergeben. Dadurch bleibt die Policy von den
+Salabim-Komponenten getrennt und ihre Daten lassen sich einfacher speichern
+oder übertragen.
+
+Konfigurations- und Simulationsobjekte werden dabei getrennt aufgelöst:
+
+- `selected_machine_id: "CNC A"` wird im Maschinenregister zur konfigurierten
+  `Machine` mit dem Namen `"CNC A"`.
+- Die Ziel-ID `"SimMachine:CNC A:left"` bezeichnet dagegen die ausführende
+  `SimMachine`-Komponente.
+- `target_store_id: "CNC A in"` bezeichnet den echten Salabim-Eingangspuffer
+  dieser Maschine.
+
+Die Zuordnungen stehen in `policy_payload_id_mappings()` in
+`InterfaceTypes.py`. `create_simulation_actions()` ersetzt die ID-Felder
+des Policy-Payloads durch die zugehörigen Objektfelder, zum Beispiel
+`selected_machine_id` durch `selected_machine`.
+
+### Zustände melden und Aktionen empfangen
+
+Ein aktionsfähiges Objekt durchläuft wiederholt diese Schritte:
+
+1. `yield bridge.request_action(self)` markiert es als wartend und meldet eine
+   Zustandsänderung.
+2. `action = yield bridge.action(self)` entnimmt die ausgewählte Aktion aus
+   seinem Aktions-Store.
+3. Das Objekt führt die Aktion aus und aktualisiert seine Daten.
+4. Für seine nächste Entscheidung fordert es erneut eine Aktion an.
+
+`request_action()` ruft intern `notify_state_change()` auf. Diese Methode
+erhöht die gemeldete Zustandsversion und legt einen `PolicyTrigger` mit
+Sender-ID, Ereignis-ID, Simulationszeit und Versionsnummer in den zentralen
+`policy_trigger_store`. Andere Komponenten können auch nur eine
+Zustandsänderung melden, ohne gleichzeitig eine neue Aktion anzufordern.
+
+Bei `SimMachine` übernimmt nach dem Ablegen des Jobs die nächste
+`request_action()`-Anfrage die Meldung. Roboter und Jobs verwenden zusätzlich
+`notify_state_change()` an den im Code vorgesehenen Übergängen.
+
+### Snapshot und Aktualitätsprüfung
+
+Die Bridge sammelt bereits eingegangene Trigger derselben Simulationszeit,
+damit sie diese gemeinsam in einer Entscheidung berücksichtigen kann.
+`create_policy_observation()` erstellt dafür einen Snapshot (Datenabbild
+des aktuellen Zustands) mit:
+
+- `time` und `state_version`: Simulationszeit und gemeldete Zustandsversion.
+- `simulation_object_states_by_id`: Zustände der registrierten Jobs,
+  Maschinen und Roboter. Dazu gehören auch Daten ihrer Stores und enthaltenen
+  Jobs sowie die Markierung `is_waiting_for_action`.
+- `configuration_model`: ID-basierte Daten zu Layouts, Korridoren, Maschinen,
+  Operationen, Produkt- und Werkzeugtypen. Dieses Modell wird beim ersten
+  Snapshot aufgebaut und danach wiederverwendet.
+- Trigger- und Sender-IDs als Metadaten, wenn eine Triggergruppe vorliegt.
+
+Die Bridge übergibt die `PolicyObservation` an `policy.make_decision()`.
+Die Triggerobjekte selbst werden nicht an die Policy weitergereicht.
+
+Vor der Verwendung der Entscheidung vergleicht die Bridge die
+`state_version` des Snapshots mit ihrer aktuellen Versionsnummer. Wurde
+inzwischen eine weitere Zustandsänderung gemeldet, erstellt sie Snapshot und
+Entscheidung erneut. Eine Entscheidung wird erst bei übereinstimmenden
+Versionsnummern in `SimulationAction`-Objekte übersetzt und verteilt.
+
+### Ablauf zwischen Simulation und Policy
 
 ```mermaid
 flowchart TD
     A[Simulationskomponente fordert eine Aktion an<br/>oder meldet eine Zustandsänderung]
-    A --> B[SimulationBridge erzeugt ein<br/>PolicyTrigger-Objekt]
-    B --> C[policy_trigger_store sammelt Trigger<br/>derselben Simulationszeit]
-    C --> D[SimulationBridge erstellt einen Snapshot<br/>aus Objekt-Zuständen und Konfigurationsmodell]
+    A --> B[SimulationBridge legt einen<br/>PolicyTrigger im zentralen Store ab]
+    B --> C[Eingegangene Trigger<br/>derselben Simulationszeit sammeln]
+    C --> D[Snapshot aus Zustandsdaten<br/>und Konfigurationsmodell erstellen]
     D --> E[GeneratorSelectorPolicy erhält<br/>eine PolicyObservation]
-    E --> F[Policy erzeugt, bewertet und wählt<br/>eine Aktion]
-    F --> G[PolicyDecision enthält die<br/>ausgewählten Aktions-IDs]
-    G --> H[SimulationBridge löst die IDs auf<br/>und erstellt eine SimulationAction]
-    H --> I[Aktion im Aktions-Store<br/>des Zielobjekts ablegen]
-    I --> J[Simulationskomponente empfängt die Aktion<br/>und führt sie mit Salabim aus]
-    J --> K[Zustandsänderung erneut an die<br/>SimulationBridge melden]
-    K -. nächster Simulationszyklus .-> A
+    E --> F[Policy erzeugt, bewertet und wählt<br/>Aktionen für wartende Objekte]
+    F --> G{Zustandsversion noch aktuell?}
+    G -- Nein --> D
+    G -- Ja --> H[IDs auflösen und<br/>SimulationActions erstellen]
+    H --> I[Aktion im Aktions-Store<br/>des jeweiligen Zielobjekts ablegen]
+    I --> J[Simulationskomponente empfängt<br/>und führt die Aktion aus]
+    J --> A
 ```
 
-## UML-Sequenzdiagramm eines Simulationszyklus
+### UML-Sequenzdiagramm eines Simulationszyklus
 
 ```mermaid
 sequenceDiagram
@@ -564,25 +732,27 @@ sequenceDiagram
 
     Sim->>Bridge: request_action() oder notify_state_change()
     Bridge->>Bridge: Trigger sammeln und Snapshot erstellen
-    Bridge->>Policy: PolicyObservation mit IDs
-    Policy->>Policy: Aktionen erzeugen, bewerten und auswählen
+    Bridge->>Policy: PolicyObservation mit Daten und IDs
+    Policy->>Policy: Aktionen für wartende Objekte erzeugen, bewerten und auswählen
     Policy-->>Bridge: PolicyDecision
+    Bridge->>Bridge: Zustandsversion prüfen
     Bridge->>Bridge: IDs in echte Objekte auflösen
     Bridge-->>Sim: SimulationAction im Aktions-Store
-    Sim->>Sim: Aktion ausführen
-    Sim->>Bridge: Zustandsänderung melden
+    Sim->>Sim: Aktion ausführen und Daten aktualisieren
+    Sim->>Bridge: Nächste Anforderung oder Zustandsmeldung
 ```
 
-Als `Simulationskomponente` treten dabei `SimOrderJob`, `SimMachine`,
-`SimRobotMain` und `SimRobotCorridorArm` auf. Jede Komponente durchläuft diesen
-Ablauf unabhängig; die Bridge gibt die Aktion nur an die jeweils anfragende
-Komponente zurück.
+Eine `PolicyDecision` kann Aktionen für mehrere wartende Objekte enthalten.
+Jede Komponente erhält nur die für sie ausgewählte Aktion.
 
-# GeneralControl
+## GeneralControl
 
-`GeneralControl` wird sowohl bei einem normalen Simulationslauf als auch bei der Optimierung verwendet.
+Die Klassen unter [Control/GeneralControl](sources/SpineML/Control/GeneralControl)
+verbinden Aktionsgenerierung, Bewertung und Auswahl. Dieser Ablauf wird bei
+normaler Simulation und Optimierung verwendet; bei der Optimierung ändern
+sich die Gewichte der Bewertung.
 
-## Ablauf der GeneralControl
+### Ablauf der GeneralControl
 
 ```mermaid
 flowchart TD
@@ -597,11 +767,10 @@ flowchart TD
     H --> I[Simulationskern führt die<br/>ausgewählten Aktionen aus]
 ```
 
-## GeneratorSelectorPolicy
+### GeneratorSelectorPolicy
 
 Aus Sicht der Simulation ist `GeneratorSelectorPolicy` die Policy. Sie ist
-hauptsächlich eine Hülle: Die eigentliche Aktionslogik liegt in drei
-austauschbaren Bausteinen, die sie miteinander verbindet:
+für die Koordination zuständig und verbindet drei austauschbare Bausteine:
 
 - `ActionGenerator` erzeugt aus der Beobachtung die technisch möglichen
   Aktionen für das aktuell betrachtete wartende Simulationsobjekt.
@@ -618,11 +787,11 @@ warten. Für jedes wartende Objekt erstellt sie eine objektspezifische
 und sammelt die Ergebnisse in einer `PolicyDecision`. Doppelte Pick-Aktionen
 für denselben Job werden anschließend entfernt.
 
-Bei einem normalen Simulationsstart ohne Optimierung verwendet die Hülle
+Beim normalen Simulationsstart verwendet die Policy
 `SpineActionGenerator`, `BaselineActionSelector` und
 `LocalHeuristicActionEvaluator` mit einem festen `HeuristicWeights`-Satz.
 
-### Ablauf von `make_decision()`
+#### Ablauf von `make_decision()`
 
 1. Die Policy liest aus dem Snapshot alle Simulationskomponenten, die auf eine
    Aktion warten.
@@ -636,14 +805,15 @@ Bei einem normalen Simulationsstart ohne Optimierung verwendet die Hülle
 6. Ein Job darf nicht gleichzeitig von mehreren Pick-Aktionen ausgewählt
    werden; solche doppelten Picks entfernt die Policy vor der Rückgabe.
 
-## ActionGenerator
+### ActionGenerator
 
 `SpineActionGenerator.generate_actions()` erzeugt für ein einzelnes wartendes
-Simulationsobjekt eine Liste technisch möglicher Aktionen. Die Generierung
-erfolgt in zwei Schritten: zuerst einfache Zustandsregeln, danach die
-Erzeugung mehrerer Kandidaten für die zutreffende Situation.
+Simulationsobjekt eine Liste technisch möglicher Aktionen. Zuerst
+bestimmt `_generate_actions()` anhand von Objekttyp und Zustand, welche
+Kandidaten benötigt werden. `generate_actions()` entfernt anschließend
+identische Duplikate.
 
-### Einfache Zustandsregeln
+#### Einfache Zustandsregeln
 
 `_generate_actions()` prüft zuerst den Typ und den aktuellen Zustand des
 Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
@@ -651,45 +821,49 @@ Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
 **Job:**
 
 - `completed_time` vorhanden und `due_state` noch nicht gesetzt
-  - `complete_job` (Beispiel: Der Job liegt im Endlager und erhält
-    `finish_process=True`.)
-- `general_state == "defect"`
-  - `recovery_in_progress == True` → nur `wait_job`.
-  - Rework technisch nicht möglich → nur `job_scrap`.
-  - Nacharbeit technisch möglich → Nacharbeitsaktionen, `downgrade_product`
-    und `wait_job`.
-- `downgraded == True`
-  - Keine normale weitere Produktionsroute; der erreichte Produktzustand bleibt
-    erhalten und der Job wird zum Endlager transportiert.
+  - `complete_job` setzt den Terminstatus und übergibt `finish_process=True`.
+- `general_state == "defect"` → `create_defect_actions_for_job()`:
+  - Laufende Nacharbeit (`recovery_in_progress == True`) → nur `wait_job`.
+  - Schweregrad außerhalb von `0.001 <= defect_severity < 0.6`
+    → nur `job_scrap`.
+  - Schweregrad im Nacharbeitsbereich → mögliche Nacharbeitsaktionen,
+    `downgrade_product` und `wait_job`.
 - `released == False`
   - `release_job` und zusätzlich `wait_job`.
 - Alle anderen Jobzustände
   - `wait_job`.
 
-Für Roboter und Maschinen gelten einfache Zustandsregeln:
+Ein bereits herabgestufter Job erhält selbst zunächst `wait_job`, bis seine
+Abschlussaktion ansteht. Seine Markierung `downgraded=True` wird bei der
+Routen- und Transportgenerierung berücksichtigt: Die Roboter bringen ihn
+zum Endlager, statt ihn einer weiteren normalen Operation zuzuführen.
+
+Für Roboter und Maschinen gelten folgende Zustandsregeln:
 
 **Main-Roboter oder Korridorarm:**
 
-- `current_job_id == None` → Pick-Kandidaten.
-- `current_job_id != None` → Place-Kandidaten.
+- `current_job_id == None` → Pick-Kandidaten und Warteaktion.
+- `current_job_id != None` → Place-Kandidaten und Warteaktion.
 
 **Maschine:**
 
-- `current_job_id == None` → Pick-Kandidaten.
+- `current_job_id == None` → Pick-Kandidaten und Warteaktion.
 - `current_job_id != None` und Ausgangspuffer hat Kapazität →
   `process_machine_job`.
 - `current_job_id != None` und Ausgangspuffer ist voll → `wait_machine`.
 
-Diese Regeln schränken den Lösungsraum ein: Fehlende Kapazität, ungültige
-Routen oder nicht verfügbare Maschinen erzeugen keinen Aktionskandidaten.
+Die Routenberechnung prüft Maschinentyp, Layout und erlaubte Werkzeuge.
+Beim Erzeugen einer konkreten Transportaktion werden unter anderem die
+Zielkapazitäten geprüft. Ob eine Maschine für Nacharbeit momentan frei ist,
+wird zusätzlich anhand ihres Zustands und ihrer Puffer beurteilt.
 
-### Mehrere Kandidaten pro wartendem Objekt
+#### Mehrere Kandidaten pro wartendem Objekt
 
 Wenn die Zustandsregel mehrere Möglichkeiten zulässt, erzeugt der Generator
 alle diese Kandidaten gleichzeitig in einer Liste. „Gleichzeitig“ bedeutet
 hier dieselbe Auswahlrunde, nicht parallele Ausführung in der Simulation. Der
-`ActionSelector` bewertet anschließend die gesamte Liste und wählt genau eine
-Aktion aus.
+`ActionSelector` lässt die Kandidaten vom `ActionEvaluator` bewerten und
+wählt eine Aktion für dieses Objekt aus.
 Die folgenden Payloads zeigen jeweils nur ein Beispiel aus dieser Liste; die
 Kandidaten werden gemeinsam erzeugt, aber nicht gemeinsam ausgeführt.
 
@@ -702,14 +876,22 @@ Kandidaten werden gemeinsam erzeugt, aber nicht gemeinsam ausgeführt.
 3. `downgrade_product`.
 4. `wait_job`.
 
-Wenn Nacharbeit technisch nicht möglich ist, wird stattdessen ausschließlich
-`job_scrap` erzeugt.
+Liegt der Schweregrad außerhalb des technisch nacharbeitbaren Bereichs,
+wird stattdessen ausschließlich `job_scrap` erzeugt.
+
+Liegt er im nacharbeitbaren Bereich, aber ist weder eine alternative Route
+vorhanden noch die Defektmaschine verfügbar, bleiben `downgrade_product` und
+`wait_job` als Kandidaten. Die Herabstufung erfolgt dann nicht automatisch;
+die Policy wählt eine dieser beiden Aktionen.
 
 Eine Herabstufung kann nach jeder fehlerhaften Operation erfolgen. Der dabei
 verwendete Produkttyp ist der vorgesehene Produkttyp dieser Operation und kann
 deshalb auch ein Zwischenprodukt sein; er muss nicht dem endgültigen
-Auftragsziel entsprechen. Der Job bleibt in diesem Produktzustand, wird aber
-zusätzlich mit `downgraded=True` als qualitativ herabgestuft markiert.
+Auftragsziel entsprechen. Dieser Produkttyp wird bei der Herabstufung
+als aktueller `processing_state` übernommen und mit `downgraded=True`
+als qualitativ herabgestuft markiert. Für die Herabstufung setzt der Payload
+außerdem `general_state="intact"`; die Qualitätsabweichung bleibt am
+separaten Flag erkennbar.
 
 Beispiel für eine Herabstufungsaktion:
 
@@ -723,7 +905,7 @@ Beispiel für eine Herabstufungsaktion:
     "general_state": "intact",
     "downgraded": true,
     "downgrade_product_type_id": "produkt_b",
-    "defect_recovery_strategy": "downgrade_product"
+    "defect_recovery_strategy": "downgrade"
   }
 }
 ```
@@ -765,7 +947,7 @@ Beispiel für eine Place-Aktion des Main-Roboters:
     "selected_operation_id": "operation_1",
     "selected_machine_id": "machine_1",
     "sim_corridor_id": "corridor_1",
-    "target_store_id": "corridor_1_left",
+    "target_store_id": "corridor_1 left",
     "storage_in_time": 1.0
   }
 }
@@ -791,7 +973,7 @@ Beispiel für eine Verarbeitungsaktion:
     "consumed_life_units": 5,
     "remaining_life_units_before_operation": 80,
     "tool_setup_action": "keep_tool",
-    "target_store_id": "machine_1_out"
+    "target_store_id": "machine_1 out"
   }
 }
 ```
@@ -800,10 +982,32 @@ Die Hilfsmethoden lesen dafür den aktuellen Snapshot, das ID-basierte
 Konfigurationsmodell, Store-Kapazitäten und mögliche Operations- und
 Maschinenrouten. `generate_actions()` entfernt danach nur exakt doppelte
 Kandidaten. Damit ist gemeint: gleicher `action_type` und gleicher Payload.
-Unterschiedliche Routen oder Zielstores bleiben erhalten. Erst anschließend
-übernimmt der `ActionSelector` die Bewertung und Auswahl.
+Kandidaten mit unterschiedlichen Payloads bleiben erhalten. Verschiedene
+vollständige Routen können dagegen denselben nächsten Schritt haben und
+dadurch eine identische Aktion ergeben. Der Selector lässt die verbleibenden
+Kandidaten bewerten und wählt eine davon aus.
 
-## ActionSelector
+#### Berechnung von Operations- und Maschinenrouten
+
+`calculate_operation_sequences_between()` ermittelt die Operationsfolgen vom
+aktuellen Produkttyp bis zum Auftragsziel. Für jede Operationsfolge berechnet
+`calculate_machine_sequences_from_operation_sequence()` die passenden
+Maschinenfolgen. Jede Kombination bildet eine Route.
+
+`selectable_routes_for_job()` gibt für einen normalen Job diese Routen
+zurück. Wurde bereits Nacharbeit mit einer konkreten Operation und Maschine
+gewählt, liefert die Methode nur diesen festgelegten Nacharbeitsschritt.
+
+Für alternative Nacharbeit liest
+`find_rework_routes_with_alternative_machine()` die benötigten IDs aus der
+Beobachtung. `find_alternative_rework_routes()` berechnet den weiteren Weg
+ab dem Produkttyp, den die fehlerhafte Operation erzeugen sollte. Sie setzt
+die fehlerhafte Operation vor jede Restfolge und berechnet dazu die
+Maschinenfolgen. Routen, deren erste Maschine die Defektmaschine ist, werden
+übersprungen. Die Defektmaschine ist damit nur für die wiederholte Operation
+ausgeschlossen; spätere Operationen können sie wieder verwenden.
+
+### ActionSelector
 
 Der `ActionSelector` erhält die gesamte Kandidatenliste eines wartenden
 Objekts. Er erzeugt keine neuen Aktionen, sondern lässt jeden Kandidaten vom
@@ -846,7 +1050,7 @@ Objekts. Er erzeugt keine neuen Aktionen, sondern lässt jeden Kandidaten vom
 Die ausgewählte Aktion wird anschließend als `PolicyDecision` für das
 Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
-# HeuristicControl
+## HeuristicControl
 
 ### Ziel von `HeuristicControl`
 
@@ -913,366 +1117,401 @@ Je nach Aktionsart fließen unterschiedliche Regeln in die Bewertung ein:
 Die Gewichte bestimmen, wie stark die einzelnen Kriterien innerhalb der
 jeweiligen Aktionsbewertung zählen.
 
-## ActionEvaluator
+### ActionEvaluator
 
-Der `ActionEvaluator` beantwortet die Frage: **Wie gut ist ein bereits
-erzeugter Aktionskandidat für den aktuellen Simulationszustand?** Er erzeugt
-keine Aktionen und führt keine Aktion aus. Er berechnet nur einen Score für
-jeden Kandidaten.
+Der `ActionEvaluator` berechnet, wie vorteilhaft ein erzeugter
+Aktionskandidat im aktuellen Zustand ist. Die konkrete Umsetzung steht in
+[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py).
+Ein höherer Score bedeutet eine höhere Bewertung.
 
-Der Evaluator verwendet dabei vier Begriffe: Eine **Bewertungsgröße** ist der
-Rohwert eines Kriteriums (zum Beispiel Transportzeit oder
-Warteschlangenlänge). Ein **Teilwert** ist die daraus berechnete Bewertung im
-Bereich `0` bis `1` (zum Beispiel `inverse_scale(Transportzeit)`). Ein
-**Gewicht** beschreibt die relative Wichtigkeit dieses Teilwerts (zum Beispiel
-`pick_short_transport_time_weight`). Der **Aktionsscore** ist schließlich der
-gewichtete Gesamtscore der Aktion und wird von `calculate_action_score()`
-berechnet.
+#### Aufgabe und Entscheidungsregeln
 
-### Aufgabe des Evaluators
+Eine Dispatching-Regel (lokale Prioritätsregel) legt fest, was bei einer
+aktuellen Auswahl bevorzugt wird. `EDD` (`Earliest Due Date`) bevorzugt
+beispielsweise Jobs mit einer früheren Deadline. Andere Kriterien sprechen
+für kurze Transporte, kurze Operationen oder ein bereits montiertes Werkzeug.
 
-Eine Dispatching-Regel ist eine lokale Prioritätsregel für bereits verfügbare
-Jobs oder Aktionen. `EDD` (Earliest Due Date) bevorzugt beispielsweise den Job
-mit dem frühesten Fälligkeitstermin. Weitere Regeln können kurze Transporte,
-kurze Operationen, eine hohe Warteschlangenpriorität oder einen günstigen
-Werkzeugzustand bevorzugen.
+Der Evaluator verbindet diese Kriterien zu einem Score. Der
+`BaselineActionSelector` verwendet die Scores zur Auswahl der nächsten
+Aktion. Er wählt die beste Bewertung oder erkundet gelegentlich eine fast
+gleich gute Alternative. Dieses Vorgehen reagiert auf den aktuellen Zustand;
+es garantiert keine global optimale Produktionsreihenfolge.
 
-Der `ActionEvaluator` verbindet mehrere solcher Regeln zu einem Score. Der
-`ActionSelector` arbeitet damit greedy: Er wählt in der aktuellen
-Entscheidungsrunde die am besten bewertete Aktion und wartet nicht auf eine
-vollständige Zukunftsplanung. Nach der ausgeführten Aktion entsteht ein neuer
-Simulationszustand; aus diesem Zustand werden erneut Kandidaten erzeugt und
-bewertet. Dieses Vorgehen ist schnell und anpassungsfähig, garantiert aber
-nicht die global optimale Produktionsreihenfolge.
+#### Ablauf einer Bewertung
 
-### Ablauf einer Bewertung
+1. `prepare_action_candidate()` erstellt eine Kopie des Kandidaten. Bei einer
+   Pick-Aktion berechnet es die aktuelle EDD-Priorität des ausgewählten Jobs
+   und ergänzt `queue_priority` im Payload.
+2. `evaluate_action()` liest den `action_type` und ruft die passende
+   Bewertungsmethode auf, zum Beispiel `evaluate_machine_pick_action()`.
+3. Diese Methode ermittelt die benötigten Bewertungsgrößen (Rohwerte eines
+   Kriteriums, etwa eine Transportzeit von vier Zeiteinheiten) und berechnet
+   daraus Teilwerte (vergleichbare Bewertungen, etwa
+   `inverse_scale(4) = 0.2`).
+4. `calculate_action_score()` verbindet die Teilwerte mit ihren Gewichten
+   (relativer Wichtigkeit, etwa `pick_short_transport_time_weight`) zu einem
+   Gesamtscore.
 
-Der `LocalHeuristicActionEvaluator` arbeitet in zwei Schritten:
+Bei bestimmten Defektaktionen werden anschließend zusätzliche
+Deadline-Strafen vom Score abgezogen. Die konkrete Berechnung ist unten
+nach Aktionsart beschrieben.
 
-1. `prepare_action_candidate()` bereitet eine Kopie des Kandidaten vor. Bei
-   jeder Pick-Aktion berechnet er aus aktueller Zeit und Deadline die aktuelle
-   EDD- beziehungsweise Queue-Priorität und ergänzt sie im Payload.
-2. `evaluate_action()` erkennt den `action_type` und leitet ihn an die
-   passende Bewertungsregel weiter. Das Ergebnis ist ein numerischer Score;
-   ein höherer Score bedeutet eine bevorzugtere Aktion.
+#### Berechnung der Teilwerte
 
-### Bewertungslogik
+Bewertungsgrößen haben unterschiedliche Einheiten: Eine Transportzeit ist
+eine Zeitspanne, eine Warteschlangenlänge eine Anzahl von Jobs. Damit beide
+in einen Score eingehen können, berechnet der Evaluator daraus
+dimensionslose Teilwerte zwischen `0` und `1`.
 
-Die lokale Aktionsbewertung läuft in folgenden Schritten ab:
+Ein höherer Teilwert bedeutet immer eine günstigere Bewertung des jeweiligen
+Kriteriums. Wie der Teilwert berechnet wird, hängt von der Bedeutung des
+Rohwerts ab.
 
-1. **Aktuelle Kandidaten betrachten:** Bewertet werden nur die Aktionen, die
-   für den aktuellen Zustand bereits erzeugt wurden. Der Evaluator plant nicht
-   den gesamten zukünftigen Produktionsablauf.
-2. **Aktion aus passenden Blickwinkeln bewerten:** Je nach Aktionsart fließen
-   zum Beispiel Termindruck, Transportzeit, Maschinenwarteschlange oder
-   Werkzeugzustand ein. Jeder berücksichtigte Aspekt erhält einen Teilwert.
-3. **Bedeutung der Aspekte gewichten:** Jeder Teilwert hat ein eigenes Gewicht.
-   Es beschreibt, wie wichtig dieser Aspekt im Vergleich zu den anderen
-   Aspekten derselben Aktionsbewertung ist.
-4. **Aktionsscore berechnen und vergleichen:** Der Evaluator fasst die
-   gewichteten Teilwerte zu einem Aktionsscore zusammen. Der `ActionSelector`
-   vergleicht die Scores und wählt daraus eine Aktion aus.
-5. **Bezug zu den übergeordneten Zielen:** Die Auswahl soll im aktuellen
-   Zustand Ziele wie Termintreue, kurze Durchlaufzeiten, geringe Wartezeiten und
-   kostengünstige Defektbehandlung unterstützen. Sie plant jedoch nicht den
-   gesamten Ablauf voraus und garantiert keine global optimale Planung.
+##### Termindruck: `calculate_edd_priority()`
 
-### Bewertungsmodell
+Die Deadline `latest_end_time` stammt aus dem Auftrag des Jobs. Mit der
+aktuellen Simulationszeit ergibt sich die Restzeit
+`t = latest_end_time − current_time`.
 
-#### Von der Bewertungsgröße zum Teilwert
+- Bei `t >= 0` gilt:
+  `EDD = 0.5 × inverse_scale(t)`.
+- Bei `t < 0` ist der Job überfällig. Es gilt:
+  `EDD = 0.5 + 0.5 × direct_scale(-t)`.
 
-Die Bewertungsgrößen haben unterschiedliche Einheiten und Skalen. Damit sie
-gemeinsam in einen Aktionsscore eingehen können, bildet der Evaluator sie vor
-der Gewichtung auf dimensionslose Teilwerte zwischen `0` und `1` ab.
-Kontinuierliche Messgrößen skaliert er dafür oder setzt sie ins Verhältnis zu
-einem Konfigurationsmaximum. Kriterien wie die Werkzeugpassung, die bereits
-eine Ja/Nein-Entscheidung darstellen, ordnet er direkt `1` oder `0` zu.
+Vor der Deadline liegt die Priorität unter `0.5`, genau bei der Deadline
+beträgt sie `0.5`, danach liegt sie darüber. Sie nähert sich bei sehr großer
+Restzeit `0` und bei sehr großer Überfälligkeit `1`.
 
-**EDD-Priorität**
+```mermaid
+xychart-beta
+    title "EDD-Priorität nach Zeit bis zur Deadline"
+    x-axis "Zeit bis Deadline (negativ = überfällig)" [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    y-axis "EDD-Teilwert" 0 --> 1
+    line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
+```
 
-1. Setze `t = Deadline − aktuelle Zeit`.
+##### Kleine Rohwerte bevorzugen: `inverse_scale()`
 
-   - Bei `t ≥ 0` ist noch Zeit bis zur Deadline:
-     `EDD = 0.5 × Inverse-Skalierung(t)`.
-   - Bei `t < 0` ist der Job überfällig:
-     `EDD = 0.5 + 0.5 × Direktskalierung(−t)`.
+`Inverse-Skalierung(x) = 1 / (1 + x)`
 
-   Bei `t = 0` liegt die Priorität bei `0.5`. Pünktliche Jobs liegen darunter;
-   überfällige Jobs darüber. Die Priorität nähert sich bei sehr großer Restzeit
-   `0` und bei sehr großer Überfälligkeit `1`.
+Für endliche, nichtnegative Eingaben liegt das Ergebnis im Bereich
+`(0, 1]`. Bei `x = 0` ergibt sich `1`; mit wachsendem `x` sinkt der
+Teilwert gegen `0`. Diese Funktion bewertet beispielsweise kurze Zeiten und
+kurze Warteschlangen höher.
 
-   ```mermaid
-   xychart-beta
-       title "EDD-Priorität nach Zeit bis zur Deadline"
-       x-axis "Zeit bis Deadline (negativ = überfällig)" [-4, -3, -2, -1, 0, 1, 2, 3, 4]
-       y-axis "EDD-Teilwert" 0 --> 1
-       line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
-   ```
+```mermaid
+xychart-beta
+    title "Inverse-Skalierung: je kleiner x, desto höher der Vorteil"
+    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
+    y-axis "Teilwert" 0 --> 1
+    line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
+```
 
-Weitere Kriterien verwenden konkrete Größen wie Entnahmezeit, Transportzeit,
-Operationsdauer oder Warteschlangenlänge. Zeiten und Warteschlangen werden
-bevorzugt, wenn sie kleiner sind; freie Kapazität und Werkzeugreserve sind
-vorteilhafter, wenn sie größer sind. Die folgenden Skalierungen zeigen, wie
-diese Rohwerte in Teilwerte umgerechnet werden.
+##### Große Rohwerte bevorzugen: `direct_scale()`
 
-2. **Je kleiner der Rohwert, desto besser: Inverse-Skalierung**
+`Direktskalierung(x) = x / (1 + x)`
 
-   `Inverse-Skalierung(x) = 1 / (1 + x)`
+Für endliche, nichtnegative Eingaben liegt das Ergebnis im Bereich
+`[0, 1)`. Bei `x = 0` ergibt sich `0`; mit wachsendem `x` steigt der
+Teilwert gegen `1`. Sie ist die Ergänzung der Inverse-Skalierung:
+`direct_scale(x) = 1 − inverse_scale(x)`.
 
-   Im Code heißt die Funktion `inverse_scale()`. Sie liefert bei `x = 0` den
-   Wert `1`; für endliche Rohwerte liegt sie im Bereich `(0, 1]`. Mit wachsendem
-   `x` sinkt der Wert und nähert sich `0`. Kleine Rohwerte erhalten dadurch einen
-   höheren Vorteil. Sie verwendet keine beobachteten Minimal- und
-   Maximalwerte und ist keine klassische Min-Max-Normalisierung.
+Beide Skalierungen benötigen keine beobachteten Minimal- und Maximalwerte.
+Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
+Eine negative Deadline-Restzeit wird bereits in
+`calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
 
-   ```mermaid
-   xychart-beta
-       title "Inverse-Skalierung: je kleiner x, desto höher der Vorteil"
-       x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
-       y-axis "Teilwert" 0 --> 1
-       line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
-   ```
-3. **Je größer der Rohwert, desto besser: Direktskalierung**
+```mermaid
+xychart-beta
+    title "Direktskalierung: je größer x, desto höher der Vorteil"
+    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
+    y-axis "Teilwert" 0 --> 1
+    line [0, 0.5, 0.667, 0.75, 0.8, 0.833]
+```
 
-   `Direktskalierung(x) = x / (1 + x)`
+##### Freie Kapazität, Werkzeugpassung und Werkzeugreserve
 
-   Im Code heißt die Funktion `direct_scale()`. Sie liefert bei `x = 0` den
-   Wert `0`; für endliche Rohwerte liegt sie im Bereich `[0, 1)`. Mit wachsendem
-   `x` steigt der Wert und nähert sich `1`. Sie ist die Ergänzung der
-   Inverse-Skalierung, denn
-   `Direktskalierung(x) = 1 − Inverse-Skalierung(x)`.
+- **Freie Zielkapazität:** `normalize_ratio(freie Plätze, Gesamtkapazität)`
+  berechnet `freie Plätze / Gesamtkapazität`. Bei einem Store mit positiver,
+  endlicher Kapazität und gültiger Belegung liegt dieser Anteil in `[0, 1]`.
+  Die Funktion selbst begrenzt den Wert nicht.
+- **Werkzeugpassung:** Der Teilwert ist `1`, wenn das benötigte Werkzeug
+  bereits montiert ist, sonst `0`.
+- **Werkzeugreserve:** Bei einer Operation mit Lebensdauerverbrauch bildet der
+  Evaluator das Verhältnis `verbleibende Lebensdauer / geplanter Verbrauch`
+  und wendet darauf `direct_scale()` an. Bei vier verbleibenden und zwei
+  benötigten Einheiten ergibt sich `direct_scale(4 / 2) = 2 / 3 ≈ 0.67`.
+  Eine größere Reserve im Verhältnis zum Verbrauch wird höher bewertet.
 
-   ```mermaid
-   xychart-beta
-       title "Direktskalierung: je größer x, desto höher der Vorteil"
-       x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
-       y-axis "Teilwert" 0 --> 1
-       line [0, 0.5, 0.667, 0.75, 0.8, 0.833]
-   ```
+#### Teilwerte gewichten und Aktionsscore berechnen
 
-Weitere Teilwertberechnungen, die nicht bereits bei EDD und den
-Skalierungsformeln beschrieben wurden, sind:
+Ein Teilwert beschreibt, wie günstig ein einzelnes Kriterium bewertet wird.
+Das zugehörige Gewicht aus `HeuristicWeights` legt fest, wie wichtig dieses
+Kriterium gegenüber den anderen Kriterien derselben Aktion ist.
 
-- **Freie Zielkapazität:** freie Plätze geteilt durch die Gesamtkapazität des
-  Stores. Das Verhältnis wird auf `[0, 1]` begrenzt.
-- **Werkzeugpassung:** `1`, wenn das benötigte Werkzeug montiert ist, sonst `0`.
-- **Werkzeugreserve:** Wenn die geplante Operation Werkzeuglebensdauer
-  verbraucht, vergleicht der Evaluator den vorhandenen Vorrat mit dem Verbrauch
-  dieser Operation. Beispiel: Bei `4` verbleibenden und `2` benötigten
-  Lebensdauereinheiten ergibt der Vergleich `4 / 2 = 2`. Die Direktskalierung
-  dieses Verhältnisses ergibt den Teilwert `2 / (1 + 2) ≈ 0.67`. Eine größere
-  Reserve im Verhältnis zum Bedarf ergibt einen höheren Teilwert.
+`calculate_action_score()` berechnet den gewichteten Durchschnitt:
 
-4. **Teilwert und Gewicht sind verschieden**
+`Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
 
-   Eine Dispatching-Regel oder Skalierung liefert einen Teilwert. Der Teilwert wird mit dem passenden Eintrag aus
-   `HeuristicWeights` multipliziert. Das Gewicht beschreibt, wie wichtig dieser
-   Bewertungsaspekt im Verhältnis zu den anderen Aspekten derselben Aktion ist.
-5. **Aktionsscore aus den gewichteten Teilwerten**
+„Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
+berücksichtigt wird. Beispielsweise geht Werkzeugreserve nur dann ein, wenn
+die Operation tatsächlich Werkzeuglebensdauer verbraucht.
 
-   `Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
+##### Warum durch die Gewichtssumme geteilt wird
 
-   Diese Berechnung erfolgt in `calculate_action_score()` in
-   `LocalHeuristicActionEvaluator.py`.
+Durch die Division entsteht aus jedem Gewicht ein relativer Anteil
+`αᵢ = wᵢ / Summe(w)`. Die Summe dieser Anteile ist `1`; der Score lautet
+damit auch `Summe(xᵢ × αᵢ)`. Ein Gewicht von `0.6` zählt doppelt so stark
+wie ein Gewicht von `0.3`.
 
-   **Warum wird durch die Gewichtssumme geteilt?** Die Division setzt die
-   aktiven Gewichte zueinander ins Verhältnis. Ein Gewicht beschreibt damit
-   die relative Wichtigkeit eines Bewertungsfaktors gegenüber den anderen
-   Faktoren derselben Aktion. Aus jedem Gewicht wird ein relativer Anteil am
-   Gesamtgewicht. Die Summe dieser Anteile ist `1`; deshalb werden die
-   Teilwerte zu einem gewichteten Durchschnitt verbunden. Ein Kriterium mit
-   Gewicht `0.6` zählt dabei doppelt so stark wie eines mit Gewicht `0.3`.
-   Werden alle Gewichte beispielsweise verdoppelt, bleiben ihre relativen
-   Wichtigkeiten unverändert. Durch die Division bleibt dann auch der
-   Aktionsscore unverändert. Ohne Division würde sich der Aktionsscore allein
-   wegen der größeren Gewichtssumme ändern, obwohl die relative Bewertung
-   unverändert geblieben ist.
+Werden alle berücksichtigten Gewichte mit demselben positiven Faktor
+multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
+Wichtigkeiten ändern sich dadurch nicht. Ohne die Division würde allein die
+größere Gewichtssumme den Score erhöhen.
 
-   ```mermaid
-   flowchart LR
-       A["Teilwerte xᵢ zwischen 0 und 1"] --> C["Teilwert × Gewicht"]
-       B["Aktive Gewichte wᵢ > 0"] --> C
-       C --> D["Gewichtete Teilwerte addieren"]
-       B --> E["Aktive Gewichte addieren"]
-       D --> F["Zähler ÷ Nenner"]
-       E --> F
-       F --> G["Aktionsscore zwischen 0 und 1"]
-   ```
+```mermaid
+flowchart LR
+    A["Teilwerte xᵢ zwischen 0 und 1"] --> C["Teilwert × Gewicht"]
+    B["Aktive Gewichte wᵢ > 0"] --> C
+    C --> D["Gewichtete Teilwerte addieren"]
+    B --> E["Aktive Gewichte addieren"]
+    D --> F["Zähler ÷ Nenner"]
+    E --> F
+    F --> G["Aktionsscore zwischen 0 und 1"]
+```
 
-    Die folgende Kurve zeigt beispielhaft den Aktionsscore, wenn ein Teilwert
-    variiert wird. Der zweite Teilwert `0.2` sowie die Gewichte `1.0` und `0.5`
-    bleiben dabei fest.
+##### Beispiel und mathematischer Verlauf
 
-    ```mermaid
-    xychart-beta
-        title "Aktionsscore bei variablem Teilwert"
-        x-axis "Teilwert x₁" [0, 0.25, 0.5, 0.75, 1]
-        y-axis "Aktionsscore" 0 --> 1
-        line [0.067, 0.233, 0.4, 0.567, 0.733]
-    ```
+Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
 
-   Mathematisch kann man jedes Gewicht durch die Summe aller aktiven Gewichte
-   teilen. So entstehen relative Anteile `αᵢ = wᵢ / Summe(w)`, deren Summe `1`
-   ist. Der Aktionsscore ist damit `Summe(xᵢ × αᵢ)`. Er liegt zwischen dem
-   kleinsten und dem größten Teilwert. Da die Teilwerte im Evaluator zwischen
-   `0` und `1` liegen, liegt auch dieser gewichtete Durchschnitt zwischen `0`
-   und `1`.
+`(0.8 × 1.0 + 0.2 × 0.5) / (1.0 + 0.5) = 0.6`
 
-   Beispiel mit Gewichten aus dem erlaubten Bereich: Teilwerte `0.8` und `0.2`
-   mit Gewichten `1.0` und `0.5` ergeben
-   `(0.8 × 1.0 + 0.2 × 0.5) / (1.0 + 0.5) = 0.6`. Die relativen Anteile sind
-   `2/3` und `1/3`; daher liegt der Score näher bei `0.8`. Ohne Division wäre
-   das Ergebnis von der bloßen Größe der Gewichte abhängig. Bei mehreren
-   Teilwerten könnte die gewichtete Summe außerdem über `1` steigen.
+Die relativen Anteile sind `2/3` und `1/3`. Deshalb liegt der Score näher
+am stärker gewichteten Teilwert `0.8`.
 
-   Der Evaluator berechnet den Score für jede einzelne Aktion. Anschließend
-   vergleicht der `ActionSelector` die Scores der möglichen Aktionen. Da die
-    Gewichtskonfiguration positive Gewichte vorsieht, ist die Summe der aktiven
-    Gewichte im normalen Ablauf größer als `0`.
+Die folgende Kurve variiert nur den ersten Teilwert `x₁`. Der zweite
+Teilwert bleibt `0.2`, die Gewichte bleiben `1.0` und `0.5`:
 
-### Bewertungsregeln nach Aktionsart
+`Score(x₁) = (x₁ × 1.0 + 0.2 × 0.5) / 1.5`
 
-- `complete_job` (`evaluate_action()`):
+```mermaid
+xychart-beta
+    title "Aktionsscore bei variablem Teilwert"
+    x-axis "Teilwert x₁" [0, 0.25, 0.5, 0.75, 1]
+    y-axis "Aktionsscore" 0 --> 1
+    line [0.067, 0.233, 0.4, 0.567, 0.733]
+```
 
-  1. **Abschluss-Teilwert:** `1 × complete_job_weight`.
-- `release_job` bewertet zwei Teilwerte:
+Bei Teilwerten in `[0, 1]` und positiven Gewichten liegt der gewichtete
+Durchschnitt zwischen dem kleinsten und dem größten Teilwert und damit
+ebenfalls in `[0, 1]`. `calculate_action_score()` führt selbst keine
+Begrenzung oder Gewichtsprüfung durch. Die gültigen Gewichte werden von
+`HeuristicWeights` geprüft.
 
-  1. **Termindruck:** `EDD × release_edd_weight`.
-     `EDD` beschreibt, wie dringend die Freigabe des Jobs im aktuellen
-     Simulationszeitpunkt ist. `release_edd_weight` beschreibt die relative
-     Wichtigkeit dieses Termindrucks innerhalb der Freigabebewertung.
-  2. **Durchschnittliche Routenverarbeitungszeit:**
-     `Inverse-Skalierung(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
-     Die erwartete Verarbeitungszeit ist der Durchschnitt der Gesamtzeiten aller
-     möglichen Operationsrouten, weil beim Freigeben noch keine Route feststeht.
-     Kürzere durchschnittliche Routen erhalten durch die Inverse-Skalierung
-     einen höheren Teilwert. `release_average_route_duration_weight` beschreibt
-     die relative Wichtigkeit dieses Kriteriums.
-- Normale Warteaktionen (`wait_*`, in `evaluate_action()`):
+Bei genau einem Teilwert kürzt sich dessen Gewicht heraus:
+`(Teilwert × Gewicht) / Gewicht = Teilwert`. Das betrifft beispielsweise
+`complete_job` und normale Warteaktionen. Eine Änderung ihres einzigen
+Gewichts verändert den Score daher nicht.
 
-  1. **Warte-Teilwert:** Für einen wartenden Job oder ein beladenes Objekt
-     wird `0.01 + 0.98 × (1 − EDD)` berechnet. Bei hohem Termindruck wird
-     Warten dadurch unvorteilhafter. Der Teilwert liegt dadurch zwischen
-     `0.01` und `0.99`.
-  2. **Gewichtung:** Der Teilwert wird mit `wait_action_weight` bewertet. Das
-     Standardgewicht ist `0.1`, sodass dieser Bewertungsfaktor aktiv bleibt.
-- Roboter-Pick (`pick_main_robot`, `pick_corridor_arm_robot`, in
-  `evaluate_robot_pick_action()`):
+#### Bewertungsregeln nach Aktionsart
 
-  1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Eine höhere
-     Priorität macht den Job für den Pick dringlicher.
-  2. **Entnahmezeit (`storage_out_time`):** Das ist die Zeit, die der
-     Quell-Store benötigt, um den Job für den Pick bereitzustellen bzw.
-     herauszunehmen. Bewertet wird
-     `Inverse-Skalierung(Entnahmezeit) × pick_source_storage_time_weight`.
-     Kürzere Entnahmezeiten erhalten einen höheren Teilwert. Dieser Teilwert
-     wird nur erzeugt, wenn `storage_out_time` im Aktions-Payload vorhanden ist.
-  3. **Transportzeit:** `Inverse-Skalierung(Transportzeit) × pick_short_transport_time_weight`. Kürzere Wege zum Pick-Ziel erhalten
-     einen höheren Teilwert.
-- Maschinen-Pick (`pick_machine_job`, in `evaluate_machine_pick_action()`):
+Die folgenden Ausdrücke zeigen die Beiträge `Teilwert × Gewicht`.
+`calculate_action_score()` addiert diese Beiträge und teilt sie durch die
+Summe der jeweils berücksichtigten Gewichte.
 
-  1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Eine höhere
-     Priorität macht den Job für die Verarbeitung auf der Maschine dringlicher.
-  2. **Operationsdauer:** `Inverse-Skalierung(Operationsdauer) × machine_pick_operation_duration_weight`. Kürzere Operationen erhalten
-     einen höheren Teilwert.
-  3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`. Der Teilwert ist `1`, wenn das benötigte
-     Werkzeug bereits montiert ist, sonst `0`. Dieser Teilwert wird nur bei
-     werkzeugpflichtigen Operationen erzeugt.
-  4. **Werkzeuglebensdauer:** Dieser Teilwert wird nur erzeugt, wenn die
-     Operation ein Werkzeug benötigt und Werkzeuglebensdauer verbraucht. Der
-     Evaluator bildet zuerst das Verhältnis
-     `verbleibende Lebensdauer / geplanter Verbrauch` und berechnet daraus
-     `Direktskalierung(Verhältnis) × machine_pick_tool_reserve_weight`.
-     Beispiel: Bei `4` verbleibenden Einheiten und einem Verbrauch von `2`
-     beträgt das Verhältnis `4 / 2 = 2`; die Direktskalierung ergibt
-     `2 / (1 + 2) ≈ 0.67`. Je größer die verbleibende Reserve im Verhältnis
-     zum geplanten Verbrauch ist, desto höher ist dieser Teilwert.
-- Place (`place_main_robot`, `place_corridor_arm_robot`, in
-  `evaluate_place_action()`):
+Beim Kriterium **Werkzeugreserve** besteht derzeit ein Feldnamenunterschied:
+`ConfigurationObjectObserver` schreibt den Verbrauch als
+`consumed_life_units` in die Operationsdaten, der Evaluator liest an den
+beiden Reservestellen aber `consumes_life_units`. Deshalb erhält er dort
+aktuell den Ersatzwert `0.0` und fügt den Reserveteilwert nicht hinzu. Die
+folgende Beschreibung erklärt die vorgesehene Reservelogik; der tatsächliche
+Lebensdauerverbrauch bei der Verarbeitung in `SimMachine` ist davon getrennt.
 
-  1. **Freie Zielkapazität:** `Anteil der freien Zielkapazität × target_store_free_capacity_weight`. Ein größerer Anteil freier Plätze
-     erhält einen höheren Teilwert.
-  2. **Transportzeit:** `Inverse-Skalierung(Transportzeit) × place_short_transport_time_weight`. Kürzere Transporte erhalten einen
-     höheren Teilwert.
-  3. **Einlagerungszeit:** `Inverse-Skalierung(Einlagerungszeit) × place_target_storage_time_weight`. Dieser Teilwert wird nur erzeugt,
-     wenn die Einlagerungszeit im Payload vorhanden ist.
-  4. **Maschinenwarteschlangenlänge:**
-     `Inverse-Skalierung(Maschinenwarteschlangenlänge) × place_machine_queue_length_weight`. Kürzere Warteschlangen erhalten
-     einen höheren Teilwert. Dieser Teilwert wird nur bei einer ausgewählten
-     Zielmaschine erzeugt.
-  5. **Operationsdauer der nächsten Job-Operation:**
-     `Inverse-Skalierung(Operationsdauer) × place_operation_duration_weight`.
-     Bewertet wird die im Place-Payload ausgewählte nächste Operation des Jobs.
-     Je kürzer diese Operation dauert, desto höher ist ihr Teilwert.
-- Defektaktionen (in `evaluate_defect_action()`): Die Bewertung hängt von der
-  konkreten Aktion ab:
+##### Abschluss: `complete_job`
 
-  - `job_rework_on_defect_machine`:
-    1. **Warteschlange der Nacharbeitsmaschine:**
-       `Inverse-Skalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-    2. **Werkzeugpassung:** `Werkzeugpassung × defect_recovery_tool_match_weight`, wenn die Operation ein Werkzeug
-       benötigt.
-    3. **Werkzeugreserve:** `Direktskalierung(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`, wenn die
-       Operation Werkzeuglebensdauer verbraucht.
-    4. Wenn keine Restzeit bis zur Deadline bleibt (`remaining_time <= 0`),
-       wird zusätzlich `rework_defect_machine_deadline_penalty_weight`
-       abgezogen.
-  - `job_rework_on_alternative_machine`:
-    1. **Warteschlange der Nacharbeitsmaschine:**
-       `Inverse-Skalierung(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-    2. **Transportzeit zur Nacharbeitsmaschine:**
-       `Inverse-Skalierung(Transportzeit) × defect_recovery_transport_time_weight`.
-    3. **Werkzeugpassung:** `Werkzeugpassung × defect_recovery_tool_match_weight`, wenn die Operation ein Werkzeug
-       benötigt.
-    4. **Werkzeugreserve:** `Direktskalierung(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`, wenn die
-       Operation Werkzeuglebensdauer verbraucht.
-    5. Wenn keine Restzeit bis zur Deadline bleibt, wird zusätzlich
-       `rework_alternative_machine_deadline_penalty_weight` abgezogen.
-  - `downgrade_product`:
-    1. **Defektschweregrad:** `defect_severity × product_downgrade_defect_severity_weight`. Ein höherer Schweregrad
-       macht die Herabstufung gegenüber einer Nacharbeit attraktiver.
-    2. **Ersatz für nicht mögliche Nacharbeit:** Wenn Nacharbeit nicht mehr
-       zulässig ist, zusätzlich `1 × rework_not_allowed_downgrade_bonus_weight`.
-  - `wait_job`:
-    1. **Warten bei Defekt:** Der Teilwert ist `1 − EDD`. Bei geringem
-       Termindruck ist Warten damit attraktiver; bei hohem Termindruck wird der
-       Teilwert kleiner. Dieser Teilwert wird mit
-       `wait_defect_job_weight` gewichtet.
-    2. **Deadline-Strafe:** Ist die Deadline erreicht oder überschritten,
-       wird nach der Berechnung des Aktionsscores
-       `deadline_missed_wait_penalty_weight` abgezogen. Der fertige Score wird
-       nicht kleiner als `0`.
-  - `job_scrap`:
-    Diese Aktion wird nur erzeugt, wenn Nacharbeit technisch nicht möglich ist.
-    Sie steht dann allein und wird nicht zusammen mit Nacharbeits-,
-    Herabstufungs- oder Warteaktionen angeboten.
-    1. **Scrap-Grundwert:** `1 × job_scrap_weight`. Das
-       `job_scrap_weight` ist `0.1`, damit auch der Grundwert aktiv bleibt.
-    2. **Termindruck:** `EDD × deadline_pressure_scrap_bonus_weight`.
-- `process_machine_job` (in `evaluate_process_action()`):
+`evaluate_action()` verwendet den festen Teilwert `1` mit
+`complete_job_weight`. Weil nur dieser eine Teilwert eingeht, ist der
+resultierende Score `1`.
 
-  1. **Neutraler Teilwert:** Der Evaluator gibt fest `0` zurück. Die Aktion
-     wird also nicht zusätzlich heuristisch bevorzugt.
-- Nicht erkannter `action_type`: Der Evaluator gibt ebenfalls `0` zurück.
+##### Freigabe: `release_job`
 
-## HeuristicWeights
+`evaluate_release_action()` berücksichtigt zwei Kriterien:
 
-`HeuristicWeights` enthält für jede Teilbewertung ein Gewicht im Bereich
-`(0, 1]`. Es beschreibt die relative Wichtigkeit dieses Kriteriums gegenüber
-den anderen Teilbewertungen derselben Aktionsart. Je höher das Gewicht, desto
-stärker beeinflusst der Teilwert den Aktionsscore. Gewichte `0` oder größer als
-`1` werden abgelehnt.
+1. **Termindruck:** `EDD × release_edd_weight`. Ein Job mit näherer oder
+   bereits überschrittener Deadline erhält einen höheren Teilwert.
+2. **Durchschnittliche Routenverarbeitungszeit:**
+   `inverse_scale(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
+   `estimate_release_processing_time()` addiert die konfigurierten
+   `operation.duration`-Werte jeder möglichen Operationsfolge und bildet den
+   Mittelwert über diese Routen.
 
-# Optimierungsvorgang
+Diese Routenzeit ist eine Schätzung aus den Operationsdauern. Sie enthält
+weder Transport- und Wartezeiten noch die Größen-, Geschwindigkeits- und
+Zufallsfaktoren der späteren Maschinenverarbeitung.
 
-## Optimierungsvorgang – Übersicht
+##### Normales Warten: `wait_*`
+
+`evaluate_wait_action()` betrachtet den wartenden Job oder den aktuell
+geladenen Job einer Maschine beziehungsweise eines Roboters.
+
+- Mit zugehörigem Job und Deadline:
+  `Teilwert = 0.01 + 0.98 × (1 − EDD)`.
+- Ohne solchen Job oder ohne Deadline: `Teilwert = 0.01`.
+
+Bei hohem Termindruck wird Warten niedriger bewertet. Der Wartewert liegt
+zwischen `0.01` und `0.99` und wird als einzelner Teilwert mit
+`wait_action_weight` übergeben. Für einen defekten Job gilt die gesonderte
+Wartebewertung weiter unten.
+
+##### Roboter-Pick: `pick_main_robot` und `pick_corridor_arm_robot`
+
+`evaluate_robot_pick_action()` bewertet den ausgewählten Job anhand von:
+
+1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Dringende Jobs
+   erhalten einen höheren Teilwert.
+2. **Entnahmezeit:** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
+   Kürzere Entnahmezeiten werden höher bewertet. Das Kriterium geht nur ein,
+   wenn `storage_out_time` im Payload vorhanden ist.
+3. **Transportzeit:** `inverse_scale(Transportzeit) × pick_short_transport_time_weight`.
+   Kürzere Wege zum Pick-Ziel werden höher bewertet.
+
+`transport_time_value()` schätzt die Transportzeit aus den
+Achsenabständen und der Grundgeschwindigkeit des Roboters. Die später pro
+Bewegung erzeugte Zufallsschwankung wird dabei nicht vorausgesagt.
+
+##### Maschinen-Pick: `pick_machine_job`
+
+`evaluate_machine_pick_action()` berücksichtigt:
+
+1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`.
+2. **Operationsdauer:** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
+   Hier zählt die konfigurierte Operationsdauer.
+3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`.
+   Der Teilwert ist `1`, wenn das benötigte Werkzeug bereits montiert ist,
+   sonst `0`. Er wird nur für eine Operation mit Werkzeug erzeugt.
+4. **Werkzeugreserve:**
+   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
+   Dieses Kriterium geht nur bei einem Werkzeug mit Lebensdauerverbrauch ein.
+
+Beispiel für die Reserve: Bei vier verbleibenden und zwei benötigten Einheiten
+ist das Verhältnis `2`; daraus wird der Teilwert `2 / 3 ≈ 0.67`.
+
+##### Ablegen: `place_main_robot` und `place_corridor_arm_robot`
+
+`evaluate_place_action()` bewertet die möglichen Transportziele anhand von:
+
+1. **Freier Zielkapazität:**
+   `Anteil freier Plätze × target_store_free_capacity_weight`.
+2. **Transportzeit:**
+   `inverse_scale(Transportzeit) × place_short_transport_time_weight`.
+3. **Einlagerungszeit:**
+   `inverse_scale(storage_in_time) × place_target_storage_time_weight`,
+   falls `storage_in_time` im Payload vorhanden ist.
+4. **Maschinenwarteschlange:**
+   `inverse_scale(Warteschlangenlänge) × place_machine_queue_length_weight`,
+   falls eine Zielmaschine angegeben ist.
+5. **Dauer der nächsten Operation:**
+   `inverse_scale(operation.duration) × place_operation_duration_weight`,
+   falls der Payload eine nächste Operation enthält.
+
+Ein Ziel mit mehr freier Kapazität, kürzerem Transport, kurzer Warteschlange
+oder kurzer nächster Operation erhält bei den jeweiligen Kriterien höhere
+Teilwerte.
+
+##### Defektbehandlung: `evaluate_defect_action()`
+
+Der Generator bestimmt anhand des Defektschweregrads die verfügbaren
+Aktionen. Der Evaluator bewertet diese Kandidaten zusätzlich anhand der
+Restzeit `remaining_time = latest_end_time − aktuelle Zeit`.
+
+`is_rework_allowed()` prüft im Evaluator nur, ob diese Restzeit positiv ist.
+Es prüft nicht, ob eine komplette Nacharbeit noch vor der Deadline fertig
+werden kann. Auch nach der Deadline können technisch erzeugte
+Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
+
+**Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`**
+
+`evaluate_defect_recovery_action()` berücksichtigt:
+
+1. `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
+2. `Werkzeugpassung × defect_recovery_tool_match_weight`, falls ein Werkzeug
+   benötigt wird.
+3. `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
+   falls Werkzeuglebensdauer verbraucht wird.
+
+Bei `remaining_time <= 0` wird nach der Mittelwertbildung
+`rework_defect_machine_deadline_penalty_weight` abgezogen.
+
+**Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`**
+
+Es gelten dieselben drei Kriterien. Zusätzlich geht
+`inverse_scale(Transportzeit zur Nacharbeitsmaschine) × defect_recovery_transport_time_weight`
+ein, wenn diese Zeit geschätzt werden kann. Bei `remaining_time <= 0`
+wird `rework_alternative_machine_deadline_penalty_weight` abgezogen.
+
+Bei beiden Nacharbeitsaktionen wird ein nach dem Abzug negativer Score
+auf `0` gesetzt.
+
+**Herabstufung: `downgrade_product`**
+
+1. `defect_severity × product_downgrade_defect_severity_weight`.
+   Ein höherer Schweregrad ergibt einen höheren Teilwert.
+2. Ist die Deadline bereits erreicht oder überschritten, kommt der
+   Bonus-Teilwert `1 × rework_not_allowed_downgrade_bonus_weight` hinzu.
+
+Diese Beiträge werden zu einem gewichteten Durchschnitt verbunden. Der Bonus
+ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
+
+**Warten bei einem Defekt: `wait_job`**
+
+Der Teilwert lautet `1 − EDD` und wird mit `wait_defect_job_weight`
+übergeben. Bei `remaining_time <= 0` wird anschließend
+`deadline_missed_wait_penalty_weight` abgezogen. Ein negatives Ergebnis
+wird auf `0` gesetzt.
+
+**Ausschuss: `job_scrap`**
+
+Diese Aktion wird ausschließlich erzeugt, wenn der Defektschweregrad außerhalb
+des technisch nacharbeitbaren Bereichs liegt. Dann ist sie der einzige
+Kandidat. Ihre Bewertung verwendet:
+
+1. `1 × job_scrap_weight`.
+2. `EDD × deadline_pressure_scrap_bonus_weight`.
+
+##### Verarbeitung: `process_machine_job`
+
+`evaluate_process_action()` liefert den Score `0`. Für eine geladene
+Maschine mit freiem Ausgangspuffer erzeugt der Generator ohnehin nur diese
+Verarbeitungsaktion. Ein Score von `0` verhindert ihre Ausführung daher nicht.
+Bei einem vollen Ausgangspuffer wird stattdessen nur `wait_machine` erzeugt.
+
+Ein unbekannter `action_type` erhält in `evaluate_action()` ebenfalls
+den Score `0`.
+
+### HeuristicWeights
+
+[HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
+definiert die lokalen Gewichte für Teilwerte und Deadline-Strafen. Alle Werte
+müssen in `(0, 1]` liegen; diese Prüfung erfolgt beim Erzeugen eines
+`HeuristicWeights`-Objekts.
+
+Innerhalb eines gewichteten Durchschnitts bestimmt ein Gewicht die relative
+Wichtigkeit gegenüber den anderen berücksichtigten Kriterien. Die
+Strafgewichte werden dagegen direkt nach der Mittelwertbildung abgezogen.
+Bei der Optimierung werden diese lokalen Gewichte verändert. Sie sind von
+den globalen Gewichten zur Bewertung eines gesamten Simulationslaufs getrennt.
+
+## Optimierungsvorgang
+
+### Ziel und Überblick
 
 Die Optimierung bildet einen äußeren Rückkopplungszyklus. Der
 `LocalHeuristicWeightOptimizer` testet verschiedene lokale
 `HeuristicWeights`-Sätze und prüft die Auswirkungen jeweils in einem
 vollständigen Simulationslauf. Die lokalen Gewichte bestimmen, wie stark die
-einzelnen Teilwerte in den Aktionsscores zählen. Der `ActionSelector` vergleicht
-mit diesen Scores die technisch möglichen Aktionen. Ein geänderter
+einzelnen Teilwerte in den Aktionsscores zählen und wie hoch die
+Deadline-Strafen ausfallen. Der `ActionSelector` vergleicht mit diesen
+Scores die technisch möglichen Aktionen. Ein geänderter
 Gewichtssatz kann dadurch über viele Entscheidungen hinweg andere
 Place-Routen oder Defektstrategien bevorzugen.
 
@@ -1283,9 +1522,9 @@ dazu mit denselben Seeds simuliert; die Ergebnisse dieser Läufe werden
 zusammengefasst. Ein Seed ist kein einzelner Simulationszustand, sondern ein
 fester Startwert für die Zufallszahlen. Er legt damit den Zufallsverlauf des
 Laufs fest und macht die daraus entstehenden Zustandsverläufe reproduzierbar.
-Je mehr Seeds verwendet werden, desto mehr unterschiedliche Zufallsverläufe
-und damit unterschiedliche Simulationszustände werden bewertet. Dadurch hängt
-die globale Bewertungszahl weniger stark von einem einzelnen Zufallsverlauf ab.
+Mehrere Seeds beziehen unterschiedliche Zufallsverläufe in den Vergleich ein.
+Die Bewertung beruht damit auf mehreren Läufen statt auf einem einzigen.
+Ein Gewichtssatz wird nach dem Mittelwert über diese Läufe beurteilt.
 
 ```mermaid
 flowchart TD
@@ -1298,11 +1537,11 @@ flowchart TD
     G -- Ja --> H[Lokalen Gewichtssatz<br/>verändern]
     H --> A
     G -- Nein --> I[Besten lokalen<br/>Gewichtssatz auswählen]
-    I --> J[Gewichtssatz wiederverwenden:<br/>bessere langfristige Aktionsauswahl]
+    I --> J[Besten getesteten<br/>Gewichtssatz wiederverwenden]
     J --> K[Finale Läufe und Vergleich<br/>Baseline/Optimiert anzeigen]
 ```
 
-### UML-Sequenzdiagramm des Optimierungsablaufs
+#### UML-Sequenzdiagramm des Optimierungsablaufs
 
 ```mermaid
 sequenceDiagram
@@ -1323,7 +1562,7 @@ sequenceDiagram
     Optimizer->>Optimizer: besten Gewichtssatz auswählen
 ```
 
-## Optimierungsvorgang – detailliert
+### Detaillierter Ablauf
 
 Das folgende Diagramm zeigt, was optimiert wird: Der
 `LocalHeuristicWeightOptimizer` verändert lokale `HeuristicWeights`. Für jeden
@@ -1339,7 +1578,7 @@ flowchart TD
     C --> D[Layout und Szenario aus simulate auswählen]
     D --> E[Baseline mit lokalen HeuristicWeights für alle Seeds]
     E --> F[Baseline-Referenzwerte berechnen]
-    F --> G["Optimierungsiteration (Runde)<br/>im Worker-Thread starten"]
+    F --> G["Nächste Optimierungsrunde<br/>im laufenden Worker-Thread"]
     G -. parallel: progress-Callback .-> V[Streamlit-Interface zeigt live<br/>Status, Fortschrittsbalken und Zwischen-Diagramme]
     G --> H[Lokale Gewichtssätze als<br/>Kandidaten dieser Runde erzeugen]
     H --> I["Lokalen Gewichtssatz auswählen<br/>(Kandidat x von y)"]
@@ -1364,7 +1603,7 @@ flowchart TD
     W --> X[Interface zeigt den abschließenden<br/>Baseline/Optimiert-Vergleich]
 ```
 
-### Ablauf und beteiligte Dateien
+#### Ablauf und beteiligte Dateien
 
 Der Optimierungsvorgang ist auf mehrere Python-Dateien verteilt. Zuerst werden
 die beteiligten Dateien genannt; anschließend folgt die ausführliche Erklärung
@@ -1383,7 +1622,7 @@ zu jeder Datei.
 5. `HeuristicWeights` definiert und prüft die lokalen
    Teilwertgewichte.
 
-### optimization.py – Streamlit-Webserver
+#### optimization.py – Streamlit-Webserver
 
 1. Die Datei startet den Streamlit-Webserver und lädt über
    `SPINEML_MODEL_FILE` das ausgewählte Beispielmodell.
@@ -1420,7 +1659,7 @@ zu jeder Datei.
    Baseline. Danach werden die finalen globalen Kennzahlen als `Baseline` und
    `Optimiert` im Streamlit-Interface angezeigt.
 
-### SpineMLSimulationRunner
+#### SpineMLSimulationRunner
 
 1. Der Runner erhält genau einen vollständigen `HeuristicWeights`-Satz und
    einen Seed.
@@ -1430,15 +1669,47 @@ zu jeder Datei.
    Anschließend werden Evaluator, `GeneratorSelectorPolicy`, `SimulationBridge`, Layout,
    Maschinen, Roboter, Stores und Jobs aufgebaut.
 4. `env.run(...)` führt die diskrete Simulation aus. Die Bridge verbindet die
-   Simulationszustände mit der Policy; die Policy bewertet und verteilt die
-   Aktionen mit dem getesteten lokalen Gewichtssatz.
+   Simulationszustände mit der Policy. Der Evaluator bewertet die Kandidaten
+   mit dem getesteten lokalen Gewichtssatz; die Bridge verteilt die
+   ausgewählten Aktionen an die Simulationskomponenten.
 5. Erkennt `SimCompletionWatcher`, dass alle vorhandenen Jobs beendet sind,
    kann der Lauf kontrolliert vor der maximalen Endzeit beendet werden.
-6. `collect_global_metrics()` sammelt danach unter anderem Makespan,
-   Verspätung, Transportzeit, Werkzeugwechsel, Blockierzeit, Nacharbeit,
-   Ausschuss, Defekte, Herabstufungen und unfertige Jobs.
+6. `collect_global_metrics()` sammelt danach die globalen Kennzahlen.
+   Enthält der Lauf noch unfertige Jobs, bricht der Runner mit einer
+   Fehlermeldung ab und liefert kein gültiges Optimierungsergebnis.
 
-### LocalHeuristicWeightOptimizer
+Die wichtigsten Kennzahlen sind:
+
+- `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
+  `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
+  nicht der spätere Zeitpunkt, zu dem der Watcher die Simulation stoppt.
+- `total_tardiness`: Summe der positiven Verspätungen vollständig
+  abgeschlossener Aufträge. Jeder Auftrag zählt einmal mit seinem letzten
+  Jobabschluss relativ zu seiner eigenen `latest_end_time`.
+- `total_transport_time`: Summe der Bewegungszeiten für X, Y und Z aller
+  Roboter. Ein- und Auslagerungswartezeiten werden hier nicht als Bewegung
+  gezählt.
+- `tool_change_time`: Summe der Maschinenzustände `mounting` und
+  `unmounting` im tatsächlich ausgeführten Lauf.
+- `blocking_time`: Summe der Maschinenzeiten im Zustand `blocked`.
+- `total_jobs`, `completed_jobs` und `unfinished_jobs`: Gesamtzahl,
+  abgeschlossene und noch nicht abgeschlossene Jobs.
+- `rework_job_count`: Zahl abgeschlossener Jobs mit mindestens einer
+  Nacharbeit; mehrere Nacharbeiten desselben Jobs erhöhen diesen Wert nicht
+  mehrfach.
+- `scrap_job_count`: Summe der Ausschussentscheidungen abgeschlossener Jobs.
+- `defect_jobs`: Zahl der Jobs, bei denen mindestens ein Defekt erkannt
+  wurde, auch wenn sie später erfolgreich nachgearbeitet wurden.
+- `intact_jobs`: Zahl abgeschlossener Jobs mit `general_state="intact"`.
+  Dazu können auch herabgestufte Jobs gehören, weil deren geringere Qualität
+  getrennt durch `downgraded=True` markiert wird.
+- `downgraded_job_count`: Zahl herabgestufter Jobs.
+
+Die zugehörigen Raten entstehen jeweils durch Division durch
+`total_jobs`. Ein Job kann beispielsweise sowohl zur historischen
+Defektquote als auch zur abschließenden Intaktquote zählen.
+
+#### LocalHeuristicWeightOptimizer
 
 `LocalHeuristicWeightOptimizer` führt mit seiner Methode
 `optimize_iteratively()` die Suche nach einem guten lokalen Gewichtssatz
@@ -1451,11 +1722,13 @@ durch. Der Ablauf ist:
    Ausgangspunkt. Das ist normalerweise der beste Gewichtssatz der vorherigen
    Runde; ohne Verbesserung bleibt der zuletzt verbesserte Satz erhalten.
 2. **Lokale Gewichtssätze für eine Optimierungsrunde erzeugen:**
-   `neighboring_weights()` nimmt den aktuellen lokalen Gewichtssatz und erzeugt
-   den unveränderten Satz sowie für jedes Teilwertgewicht eine kleinere und eine
-   größere Variante. `random_local_weight_candidates()` ergänzt zusätzliche
-   reproduzierbare Zufallssätze. Diese zufälligen Gewichtssätze sind die
-   Exploration des `LocalHeuristicWeightOptimizer` und sind von der
+   `neighboring_weights()` erzeugt den unveränderten Satz sowie für jedes
+   Gewicht eine Variante mit `Gewicht − Schrittweite` und eine mit
+   `Gewicht + Schrittweite`. Die Werte bleiben dabei im erlaubten Bereich.
+   `random_local_weight_candidates()` ergänzt reproduzierbare Zufallssätze
+   über den Gewichtsbereich; das Wartegewicht wird dabei höchstens `0.1`.
+   Diese zufälligen Gewichtssätze sind die Exploration des
+   `LocalHeuristicWeightOptimizer` und sind von der
    Aktions-Exploration des `ActionSelector` getrennt.
    Dadurch wird keine einzelne Aktion direkt verbessert. Es werden lokale
    Teilwertgewichte getestet, die für bestimmte Aktionsarten gelten. Führt ein
@@ -1464,8 +1737,8 @@ durch. Der Ablauf ist:
    globalen Ergebnissen führt, kann dieser Gewichtssatz ausgewählt werden.
 3. **Jeden lokalen Gewichtssatz über alle Seeds ausführen:**
    `select_best_local_weight_set_across_seeds()` ruft für jeden lokalen
-   `evaluate_local_weights_across_seeds()` auf. Diese Methode übergibt denselben
-   lokalen Gewichtssatz nacheinander mit jedem Seed an den
+   Gewichtssatz `evaluate_local_weights_across_seeds()` auf. Diese Methode
+   übergibt denselben lokalen Gewichtssatz nacheinander mit jedem Seed an den
    `SpineMLSimulationRunner`. Nach jedem Lauf gibt der Runner die globalen
    Simulationskennzahlen dieses Laufs zurück. Diese Kennzahlen werden als ein
    `GlobalSimulationMetrics`-Objekt pro Seed in `metrics_by_seed` gespeichert.
@@ -1477,11 +1750,13 @@ durch. Der Ablauf ist:
    `evaluate_local_weights_across_seeds()` diese Werte an die
    `GlobalSimulationEvaluation`.
 4. **Globale Bewertung mit `GlobalSimulationEvaluation`:** Diese Klasse nimmt
-   die globalen Kennzahlen eines Laufs mit dem lokalen Gewichtssatz und berechnet daraus eine
-   Bewertungszahl für genau diesen Seed:
+   die Kennzahlen eines Laufs und berechnet daraus eine Bewertungszahl für
+   genau diesen Seed:
 
-   1. Die Zeitkennzahlen des Laufs mit dem lokalen Gewichtssatz werden durch
-      die entsprechenden Baseline-Referenzwerte geteilt. Dadurch entstehen
+   1. Die Zeitkennzahlen des Laufs werden durch die festen
+      Baseline-Referenzwerte geteilt. Diese stammen aus den Mittelwerten der
+      Baseline-Läufe; der Sonderfall eines Referenzwerts von null ist bei
+      `GlobalSimulationEvaluation` weiter unten beschrieben. Dadurch entstehen
       dimensionslose Verhältniswerte, die unabhängig von der ursprünglichen
       Zeiteinheit verglichen werden können. Bei diesen zu minimierenden
       Zeitkennzahlen bedeutet `1` gleich der Baseline, ein Wert kleiner als `1`
@@ -1516,78 +1791,142 @@ durch. Der Ablauf ist:
    `select_best_local_weight_set_across_seeds()` vergleicht die Vergleichszahlen
    beziehungsweise `mean_global_cost` aller lokalen Gewichtssätze und gibt den
    lokalen Gewichtssatz mit dem niedrigsten Mittelwert zurück.
-6. **Nächste Runde festlegen:** Ist dieser lokale Gewichtssatz besser als das bisher beste
-   Ergebnis, wird er zum neuen Ausgangspunkt und die Änderungsschrittweite wird
-   halbiert. Ohne Verbesserung zählt die Methode die erfolglosen Runden.
-7. **Neustart oder Ende:** Nach mehreren erfolglosen Runden wird die lokale
-   Suche am letzten verbesserten Gewichtssatz neu gestartet. Wird die maximale
-   Zahl erfolgloser Runden erreicht, endet die Optimierung und gibt den besten
-   gefundenen lokalen Gewichtssatz zurück.
+6. **Nächste Runde festlegen:** Verbessert der beste Satz dieser Runde das
+   bisherige Ergebnis, wird er zum neuen Ausgangspunkt und die Schrittweite
+   wird halbiert. Die erste Runde legt erstmals ein bestes Ergebnis fest.
+   Ohne Verbesserung werden die erfolglosen Runden gezählt.
+7. **Neustart oder Ende:** Nach der konfigurierten Zahl erfolgloser Runden
+   startet die Suche am letzten verbesserten Gewichtssatz erneut und setzt
+   die Schrittweite auf den Anfangswert zurück. Die Suche endet spätestens
+   nach `iterations` Runden oder nach `stop_after_no_improvement`
+   erfolglosen Runden seit der letzten Verbesserung.
 
-### GlobalSimulationEvaluation
+Das Ergebnis enthält `best_weights`, `best_mean_global_cost` und
+`best_evaluation`. In `evaluations` speichert
+`optimize_iteratively()` die jeweils verbesserten Lösungen. Die
+Streamlit-Kostenkurve verwendet dagegen die Fortschrittsmeldungen zu allen
+geprüften Kandidaten.
 
-Die Datei berechnet zuerst aus der Baseline Referenzwerte für die globalen
-Zeitkennzahlen. Dazu gehören Makespan (Gesamtdauer bis zum letzten Abschluss),
-Gesamtverspätung, Transportzeit, Werkzeugwechselzeit und Blockierzeit. Für
-jeden lokalen Gewichtssatz werden diese Werte sowie Qualitäts- und
-Fertigstellungsquoten relativ dazu bewertet und mit den globalen Gewichten
-zusammengeführt. Eine kleinere globale Bewertungszahl ist besser. Ein höheres
-globales Gewicht macht das zugehörige Kriterium in dieser Bewertungszahl
-wichtiger; diese Gewichte sind unabhängig von den lokalen Teilwertgewichten der
-Aktionsbewertung.
+#### GlobalSimulationEvaluation
 
-Die aktuell in `optimization.py` eingestellten globalen Gewichte zeigen die
-Prioritäten der globalen Bewertung:
+[GlobalSimulationEvaluation.py](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py)
+berechnet aus den Kennzahlen eines Simulationslaufs eine globale
+Bewertungszahl. Eine kleinere Zahl ist besser. Der Ablauf unterscheidet sich
+von der lokalen Aktionsbewertung: Hier werden ganze Läufe verglichen.
 
-- **Unfertige Jobs:** `20.0`. Das ist die stärkste Strafe, falls ein Lauf nicht
-  alle Jobs fertigstellt; bei einem gültigen vollständigen Lauf ist dieser Wert
-  `0`.
-- **Makespan:** `5.0`. Eine kürzere Gesamtdauer wird stark bevorzugt.
-- **Gesamtverspätung und Ausschussquote:** jeweils `4.0`. Weniger Verspätung
-  und weniger Ausschuss verbessern die globale Bewertungszahl deutlich.
-- **Nacharbeit, Defektquote, nicht intakte Jobs und Herabstufungen:** jeweils
-  `3.0`. Diese Qualitäts- und Recovery-Folgen werden ebenfalls deutlich
-  bestraft.
-- **Transportzeit, Werkzeugwechselzeit und Blockierzeit:** jeweils `1.0`.
-  Diese Betriebskosten fließen ein, haben aber im aktuellen Satz eine geringere
-  relative Bedeutung.
+##### Baseline als Referenz
 
-Die Gewichtung bedeutet keine feste Reihenfolge einzelner Aktionen. Sie legt
-fest, welche globalen Folgen bei der Auswahl des lokalen Gewichtssatzes stärker
-berücksichtigt werden.
+Die Baseline besteht aus Läufen mit den ursprünglichen `HeuristicWeights`
+und denselben Seeds wie die späteren Kandidaten.
+`calculate_baseline_reference_values()` berechnet daraus Referenzwerte
+für Makespan, Gesamtverspätung, Transport-, Werkzeugwechsel- und Blockierzeit.
 
-# Optimierung starten
+Für jede Zeitkennzahl wird der Mittelwert über die Baseline-Seeds verwendet.
+Der Makespan-Referenzwert ist mindestens `1.0`. Hat eine andere Zeitkennzahl
+den Baseline-Mittelwert `0`, verwendet der Code dafür den
+Makespan-Referenzwert. So bleibt die spätere Division definiert.
+
+`metrics_relative_to_baseline()` teilt die Zeitkennzahlen eines
+Kandidatenlaufs durch diese festen Referenzwerte. Bei einer positiven
+Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert eine
+kürzere Zeit und ein größerer Wert eine längere Zeit.
+
+Beispiel: Bei einem Referenz-Makespan von zehn Stunden ergibt ein Lauf mit
+acht Stunden den Verhältniswert `0.8`; zwölf Stunden ergeben `1.2`.
+
+Qualitäts- und Fertigstellungsraten gehen direkt ein:
+`rework_rate`, `scrap_rate`, `defect_rate`, `unfinished_rate`,
+`downgrade_rate` und `1 − intact_rate` als `non_intact_rate`.
+Sie werden nicht noch einmal durch eine Baseline-Rate geteilt.
+
+##### Globale Bewertungszahl
+
+`calculate_weighted_sum_of_metrics_relative_to_baseline()` multipliziert
+die relativen Zeitwerte und die Raten mit ihren festen globalen Gewichten
+und addiert die Beiträge:
+
+`Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
+
+Hier wird nicht durch die Gewichtssumme geteilt. Die Optimierung verwendet
+für alle Kandidaten dieselben globalen Gewichte und Referenzwerte.
+`evaluate_local_weights_across_seeds()` bildet anschließend aus den
+Bewertungszahlen aller Seeds den Mittelwert `mean_global_cost`.
+
+##### Globale Gewichte in `optimization.py`
+
+- **Unfertige Jobs:** `unfinished_jobs=20.0`. Der Runner weist einen
+  unvollständigen Lauf bereits als Fehler zurück; in regulär
+  zurückgegebenen Optimierungsläufen ist die Unfertigquote daher `0`.
+- **Makespan:** `makespan=5.0`.
+- **Gesamtverspätung und Ausschussquote:**
+  `total_tardiness=4.0` und `scrap_job_penalty=4.0`.
+- **Nacharbeit, historische Defekte, nicht intakte Jobs und Herabstufungen:**
+  `rework_job_penalty`, `defect_job_penalty`, `non_intact_penalty`
+  und `downgrade_job_penalty` jeweils `3.0`.
+- **Transport-, Werkzeugwechsel- und Blockierzeit:**
+  `total_transport_time`, `tool_change_time` und `blocking_time`
+  jeweils `1.0`.
+
+Ein höheres globales Gewicht erhöht den Einfluss des zugehörigen Beitrags
+auf die globale Bewertungszahl. Die tatsächliche Wirkung hängt auch von der
+Größe des relativen Zeitwerts oder der Rate ab. Die Gewichte bilden keine
+feste Rangfolge und keine Garantie, dass ein Ziel immer Vorrang hat.
+
+Die Optimierung verändert die lokalen `HeuristicWeights`, während diese
+globalen Gewichte festlegen, woran ein guter Simulationslauf gemessen wird.
+
+## Optimierung starten
 
 Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
 1. Den Webserver aus dem Projektordner starten:
 
-   ```bash
-   streamlit run sources/optimization.py
+   ```powershell
+   python -m streamlit run sources/optimization.py
    ```
 
-2. Die Anwendung verwendet standardmäßig das Beispielmodell
-   `example-3.py`. Oben im Interface wird deshalb `Beispiel: example-3.py`
-   angezeigt. Soll ein anderes Beispielmodell verwendet werden, muss es vor
-   dem Start über `SPINEML_MODEL_FILE` festgelegt werden.
-3. Auf **Optimierung starten** klicken. Zuerst wird die Baseline mit den
+2. Ohne gesetzte Umgebungsvariable `SPINEML_MODEL_FILE` verwendet die
+   Anwendung `example-1.py`. Oben im Interface steht der tatsächlich geladene
+   Dateiname, zum Beispiel `Example: example-1.py`.
+3. Auf **Start optimization** klicken. Zuerst wird die Baseline mit den
    unveränderten lokalen `HeuristicWeights` für alle Seeds berechnet.
 4. Danach werden die lokalen Gewichtssätze iterativ geprüft. Währenddessen
    zeigt das Interface live die aktuelle Runde, den getesteten Gewichtssatz
    (`Kandidat x/y`), den Fortschrittsbalken und die Diagramme an.
 5. Nach dem Ende der Suche wird der beste lokale Gewichtssatz nochmals mit
    allen Seeds ausgeführt. Anschließend zeigt das Interface den abschließenden
-   Vergleich zwischen `Baseline` und `Optimiert`.
+   Vergleich zwischen `Baseline` und `Optimized`.
 
-## Bedeutung der Kostenkurve
+Ein anderes Beispiel kann vor dem Start in PowerShell gewählt werden:
 
-Die Kurve **Mittlere globale Kosten** zeigt die Bewertung der bisher geprüften
-lokalen Gewichtssätze:
+```powershell
+$env:SPINEML_MODEL_FILE = "example-0.py"
+python -m streamlit run sources/optimization.py
+```
 
-- Die **X-Achse** (`Kandidat`) gibt die Reihenfolge der geprüften lokalen
+Alternativ startet ein vorbereiteter Einstieg ein bestimmtes Beispiel:
+
+```powershell
+python sources/examples/optimization/example-0-optimize.py
+```
+
+Die Suchparameter stehen oben in `sources/optimization.py`:
+`SEEDS`, `ITERATIONS`, `INITIAL_WEIGHT_STEP`,
+`EXPLORATION_CANDIDATES`, `RESTART_AFTER_NO_IMPROVEMENT` und
+`STOP_AFTER_NO_IMPROVEMENT`. Sie steuern die simulierten Seeds, die maximale
+Rundenzahl, die Änderungsschrittweite, zusätzliche Zufallskandidaten sowie
+Neustart und Abbruch bei ausbleibender Verbesserung.
+
+### Bedeutung der Kostenkurve
+
+Die Kurve **Mean global cost** (mittlere globale Bewertungszahl) zeigt die
+Bewertung der bisher geprüften lokalen Gewichtssätze. „Kosten“ bezeichnet
+hier die berechnete Vergleichszahl, keinen Geldbetrag.
+
+- Die **X-Achse** (`Candidate`) gibt die Reihenfolge der geprüften lokalen
   Gewichtssätze an. Die Nummerierung läuft über die bisher bewerteten Sätze und
   wird nicht bei jeder Runde zurückgesetzt.
-- Die **Y-Achse** (`Mittlere globale Kosten`) zeigt den jeweiligen
+- Die **Y-Achse** (`Mean global cost`) zeigt den jeweiligen
   `mean_global_cost`. Dieser Wert ist der Mittelwert der globalen
   Bewertungszahlen über alle Seeds für genau diesen lokalen Gewichtssatz.
 - Jeder Punkt entsteht erst, nachdem dieser lokale Gewichtssatz mit allen
@@ -1599,4 +1938,5 @@ lokalen Gewichtssätze:
   keine zusätzliche Berechnung zwischen den Gewichtssätzen dar.
 
 Die aktuelle Runde und der Fortschritt innerhalb dieser Runde stehen zusätzlich
-oberhalb der Diagramme, zum Beispiel `Optimierung: Runde 1, Kandidat 9/58`.
+oberhalb der Diagramme, zum Beispiel
+`Optimization: round 1, candidate 9/58`.

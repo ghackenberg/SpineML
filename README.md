@@ -1020,6 +1020,9 @@ Skalierungsformeln beschrieben wurden, sind:
 
    `Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
 
+   Diese Berechnung erfolgt in `calculate_action_score()` in
+   `LocalHeuristicActionEvaluator.py`.
+
    **Warum wird durch die Gewichtssumme geteilt?** Die Division setzt die
    aktiven Gewichte zueinander ins Verhältnis. Ein Gewicht beschreibt damit
    die relative Wichtigkeit eines Bewertungsfaktors gegenüber den anderen
@@ -1044,6 +1047,18 @@ Skalierungsformeln beschrieben wurden, sind:
        F --> G["Aktionsscore zwischen 0 und 1"]
    ```
 
+    Die folgende Kurve zeigt beispielhaft den Aktionsscore, wenn ein Teilwert
+    variiert wird. Der zweite Teilwert `0.2` sowie die Gewichte `1.0` und `0.5`
+    bleiben dabei fest.
+
+    ```mermaid
+    xychart-beta
+        title "Aktionsscore bei variablem Teilwert"
+        x-axis "Teilwert x₁" [0, 0.25, 0.5, 0.75, 1]
+        y-axis "Aktionsscore" 0 --> 1
+        line [0.067, 0.233, 0.4, 0.567, 0.733]
+    ```
+
    Mathematisch kann man jedes Gewicht durch die Summe aller aktiven Gewichte
    teilen. So entstehen relative Anteile `αᵢ = wᵢ / Summe(w)`, deren Summe `1`
    ist. Der Aktionsscore ist damit `Summe(xᵢ × αᵢ)`. Er liegt zwischen dem
@@ -1060,9 +1075,8 @@ Skalierungsformeln beschrieben wurden, sind:
 
    Der Evaluator berechnet den Score für jede einzelne Aktion. Anschließend
    vergleicht der `ActionSelector` die Scores der möglichen Aktionen. Da die
-   Gewichtskonfiguration nur positive Gewichte zulässt, ist die Summe der
-   aktiven Gewichte im normalen Ablauf immer größer als `0`. Ein nichtpositives
-   Gewicht wird bei der Score-Berechnung als ungültige Konfiguration abgelehnt.
+    Gewichtskonfiguration positive Gewichte vorsieht, ist die Summe der aktiven
+    Gewichte im normalen Ablauf größer als `0`.
 
 #### Zuordnung der Teilwerte zu den Aktionsarten
 

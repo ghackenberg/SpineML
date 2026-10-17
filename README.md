@@ -1069,15 +1069,9 @@ eine insgesamt optimale Produktionsplanung ist dadurch nicht garantiert.
 
 ### Welches Problem wird gelöst?
 
-Bei der **dynamischen Produktionsplanung** muss die Steuerung wiederholt
-entscheiden, welcher Job als Nächstes transportiert oder verarbeitet wird,
-welche Maschine dafür verwendet wird und wie mit einem Defekt umzugehen ist.
-Dabei stehen häufig mehrere technisch mögliche Aktionen zur Auswahl.
-
-Diese Entscheidungen müssen an wechselnde Bedingungen angepasst werden:
-Eine Maschine wird frei, ein Store wird voll, ein Transport endet oder ein
-Defekt tritt auf. Das Problem besteht darin, aus den aktuell möglichen
-Aktionen eine geeignete nächste Aktion auszuwählen.
+Bei der **dynamischen Produktionsplanung** ändert sich der Simulationszustand
+laufend. Deshalb wird die Bewertung der erzeugten Aktionskandidaten bei jeder
+neuen Beobachtung aktualisiert und an den aktuellen Zustand angepasst.
 
 ### Wie wird das Problem heuristisch gelöst?
 

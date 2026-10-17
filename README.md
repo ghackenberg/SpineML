@@ -1057,9 +1057,7 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 `HeuristicControl` berechnet für alle vom `ActionGenerator` erzeugten
 Aktionskandidaten der aktuellen Entscheidungsrunde einen Score (numerischen
 Bewertungswert). Dadurch kann der `ActionSelector` die Kandidaten vergleichen
-und eine Aktion auswählen. Die Bewertung soll unter anderem Termintreue,
-kurze Verarbeitungs- und Transportzeiten sowie eine sinnvolle Werkzeugnutzung
-unterstützen.
+und eine Aktion auswählen.
 
 ### Was bedeutet „heuristisch“?
 

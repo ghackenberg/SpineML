@@ -849,31 +849,21 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 # HeuristicControl
 
 „Heuristisch“ bedeutet, dass eine praktische Näherungsregel verwendet wird,
-um schnell eine gute Entscheidung zu finden. `HeuristicControl` bewertet die
-vom `ActionGenerator` erzeugten Aktionskandidaten. Es erzeugt keine neuen
-Aktionen und führt keine Aktion in der Simulation aus. Es berechnet nur für
-jeden Kandidaten einen Score, damit der `ActionSelector` die Kandidaten
-vergleichen kann.
+um schnell eine gute Entscheidung zu finden. `HeuristicControl` ist der
+Bewertungsteil der Policy: Der `ActionGenerator` erzeugt die zulässigen
+Aktionskandidaten, `HeuristicControl` bewertet jeden Kandidaten anhand des
+aktuellen Simulationszustands und der `ActionSelector` wählt anschließend eine
+Aktion aus. `HeuristicControl` erzeugt keine Aktionen und führt keine Aktion
+selbst in der Simulation aus.
 
-Der Name beschreibt damit seine Rolle: Es ist ein Kontrollteil der Policy,
-der die aktuelle Auswahl mit Heuristiken steuert. Er ersetzt weder den
-`ActionGenerator` (der den zulässigen Lösungsraum erzeugt) noch den
-`ActionSelector` (der eine bewertete Aktion auswählt).
-
-Die Steuerung arbeitet mit einer dynamischen Produktionsplanung. Die nächste
-Entscheidung wird nicht einmal für die gesamte Produktion festgelegt, sondern
-bei jeder neuen Beobachtung an den aktuellen Zustand angepasst. Wird zum
-Beispiel eine Maschine frei, ein Transport beendet, ein Store voll, ein Job
-freigegeben oder ein Defekt erkannt, können sich die verfügbaren Kandidaten
-und ihre Bewertungen ändern.
-
-Die Heuristiken verwenden den aktuellen Zustand der Simulation. Sie
-berücksichtigen beispielsweise Termindruck, Bearbeitungs- und Transportzeiten,
-Maschinenverfügbarkeit, Werkzeugreserve, Pufferkapazität sowie Defekt- und
-Nacharbeitsmöglichkeiten. Aus diesen Informationen werden für jeden
-Aktionskandidaten Teilwerte und anschließend ein Gesamtscore berechnet. So
-kann der `ActionSelector` die verfügbaren Kandidaten vergleichen und eine
-geeignete nächste Aktion auswählen.
+Die Bewertung erfolgt dynamisch bei jeder neuen Beobachtung. Dadurch kann sich
+die nächste Entscheidung ändern, wenn zum Beispiel eine Maschine frei wird,
+ein Transport endet, ein Store voll ist, ein Job freigegeben wird oder ein
+Defekt erkannt wird. Die Heuristiken berücksichtigen unter anderem Termindruck,
+Bearbeitungs- und Transportzeiten, Maschinenverfügbarkeit, Werkzeugreserve,
+Pufferkapazität sowie Defekt- und Nacharbeitsmöglichkeiten. Aus diesen
+Kriterien entstehen Teilwerte und ein Gesamtscore, mit dem die verfügbaren
+Kandidaten verglichen werden.
 
 ## ActionEvaluator
 

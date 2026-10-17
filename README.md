@@ -1090,7 +1090,7 @@ Im vollständigen Code kommen je nach Aktion weitere Kriterien hinzu.
    ablegen“.
 2. **Bewertungsgrößen** (Rohwerte der einzelnen Kriterien): `HeuristicControl`
    ermittelt die benötigten Werte aus dem aktuellen Simulationszustand, der
-   Konfiguration und den Aktionsdaten. Im Beispiel benötigt der Transport zu A
+   Konfiguration und den Aktionsdaten. Zum Beispiel benötigt der Transport zu A
    vier Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er
    eine Zeiteinheit; dort sind zwei von zehn Plätzen frei.
 3. **Teilwerte** (auf den Bereich `0` bis `1` abgebildete Werte der einzelnen

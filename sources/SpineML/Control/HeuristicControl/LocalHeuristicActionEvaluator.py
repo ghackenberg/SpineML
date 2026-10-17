@@ -40,9 +40,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     def normalize_ratio(value: float, maximum: float) -> float:
         return float(value) / float(maximum)
 
-    # Führt Teilbewertungen und ihre weights zum Gesamtscore einer Aktion zusammen.
-    # Wenn alle Teilwerte in [0, 1] liegen und die weights positiv sind,
-    # liegt auch der Aktionsscore in [0, 1].
+    # Berechnet den gewichteten Gesamtscore aus allen Teilwerten einer Aktion.
+    # Bei Teilwerten in [0, 1] und positiven Gewichten liegt der Gesamtscore ebenfalls in [0, 1].
     @staticmethod
     def calculate_action_score(
         weighted_parts: list[tuple[float, float]],

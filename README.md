@@ -1052,79 +1052,56 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 ## HeuristicControl
 
-### Ziel von `HeuristicControl`
+### Ziel und Grundidee
 
-`HeuristicControl` berechnet für alle vom `ActionGenerator` erzeugten
-Aktionskandidaten der aktuellen Entscheidungsrunde einen Score (numerischen
-Bewertungswert). Dadurch kann der `ActionSelector` die Kandidaten vergleichen
-und eine Aktion auswählen.
+**Ziel:** `HeuristicControl` berechnet für alle vom `ActionGenerator`
+erzeugten **Aktionskandidaten** (technisch mögliche Aktionen) der aktuellen
+Entscheidungsrunde einen **Score** (numerischen Bewertungswert). Der
+`ActionSelector` vergleicht diese Scores und wählt eine Aktion aus.
+`HeuristicControl` erzeugt keine Aktionen und führt sie nicht selbst in der
+Simulation aus.
 
-### Was bedeutet „heuristisch“?
+**„Heuristisch“** bedeutet, dass vereinfachte Entscheidungsregeln verwendet
+werden, zum Beispiel „Bevorzuge einen dringenden Job“ oder „Bevorzuge einen
+kurzen Transport“. Mehrere solcher Regeln werden gewichtet miteinander
+verbunden. Das ermöglicht eine schnelle Auswahl, garantiert aber keine
+insgesamt optimale Produktionsplanung.
 
-„Heuristisch“ bedeutet, dass eine vereinfachte Entscheidungsregel verwendet
-wird, zum Beispiel: „Bevorzuge einen dringenden Job“ oder „Bevorzuge einen
-kurzen Transportweg“. Mehrere solcher Regeln werden gewichtet miteinander
-verbunden. Damit lässt sich schnell eine geeignete nächste Aktion finden;
-eine insgesamt optimale Produktionsplanung ist dadurch nicht garantiert.
+Eine solche lokale Prioritätsregel wird auch **Dispatching-Regel** genannt:
+Sie legt fest, was bei der aktuellen Auswahl bevorzugt wird, ohne einen
+vollständigen Plan für alle zukünftigen Zustände zu berechnen.
 
-### Welches Problem wird gelöst?
+**Dynamische Produktionsplanung:** Der Simulationszustand ändert sich laufend,
+zum Beispiel wenn eine Maschine frei wird oder ein Defekt auftritt. Deshalb
+werden die erzeugten Kandidaten bei jeder neuen Beobachtung anhand des dann
+aktuellen Zustands erneut bewertet.
 
-Bei der **dynamischen Produktionsplanung** ändert sich der Simulationszustand
-laufend. Deshalb wird die Bewertung der erzeugten Aktionskandidaten bei jeder
-neuen Beobachtung aktualisiert und an den aktuellen Zustand angepasst.
+### Ablauf der Bewertung
 
-### Wie wird das Problem heuristisch gelöst?
+Die konkrete Umsetzung des `ActionEvaluator` (Bewertungsteil der Policy)
+steht in
+[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py).
 
-Das folgende vereinfachte Rechenbeispiel zeigt zwei mögliche Ablageziele für
-einen Job. Betrachtet werden nur Transportzeit und freie Pufferkapazität.
-Im vollständigen Code kommen je nach Aktion weitere Kriterien hinzu.
+1. **Kandidaten vorbereiten:** `prepare_action_candidate()` kopiert den
+   Kandidaten. Bei Pick-Aktionen ergänzt es die aktuelle Termindruckpriorität
+   des ausgewählten Jobs als `queue_priority` im Payload.
+2. **Rohwerte ermitteln:** `evaluate_action()` ruft je nach `action_type`
+   die passende Bewertungsmethode auf, etwa `evaluate_machine_pick_action()`.
+   Diese liest die **Bewertungsgrößen** (Rohwerte der Kriterien, zum Beispiel
+   eine Transportzeit von vier Zeiteinheiten) aus dem Simulationszustand,
+   der Konfiguration und den Aktionsdaten.
+3. **Rohwerte abbilden:** Die heuristischen Regeln bestimmen, wie daraus
+   **Teilwerte** (auf den Bereich `0` bis `1` abgebildete Werte) entstehen.
+   Zum Beispiel liefert `inverse_scale(4)` den Teilwert `0.2`.
+4. **Score berechnen:** `calculate_action_score()` verbindet die Teilwerte
+   mit ihren Gewichten (relativer Wichtigkeit) zu einem Gesamtscore.
+   Bei bestimmten Defektaktionen wird anschließend eine Deadline-Strafe
+   abgezogen.
 
-1. **Aktionskandidaten** (technisch mögliche Aktionen): Der `ActionGenerator`
-   erzeugt beispielsweise „Job in Puffer A ablegen“ und „Job in Puffer B
-   ablegen“.
-2. **Bewertungsgrößen** (Rohwerte der einzelnen Kriterien): `HeuristicControl`
-   ermittelt die benötigten Werte aus dem aktuellen Simulationszustand, der
-   Konfiguration und den Aktionsdaten. Zum Beispiel benötigt der Transport zu A
-   vier Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er
-   eine Zeiteinheit; dort sind zwei von zehn Plätzen frei.
-3. **Teilwerte** (auf den Bereich `0` bis `1` abgebildete Werte der einzelnen
-   Bewertungsgrößen): Für die Transportzeit wird `inverse_scale()` verwendet,
-   für die freie Kapazität das Verhältnis `freie Plätze / Gesamtkapazität`.
-   Für A entstehen die Teilwerte
-   `1 / (1 + 4) = 0.2` und `4 / 10 = 0.4`. Für B ergeben sich
-   `1 / (1 + 1) = 0.5` und `2 / 10 = 0.2`.
-4. **Gewichte** (relative Wichtigkeit der Teilwerte): Für dieses Rechenbeispiel
-   erhält die Transportzeit das Gewicht `0.75` und die freie Kapazität `0.25`.
-   Die Transportzeit zählt damit dreimal so stark wie die freie Kapazität.
-5. **Gesamtscore** (gewichtete Gesamtbewertung einer Aktion):
-   `calculate_action_score()` verbindet die Teilwerte und Gewichte.
-   Für A ergibt sich `(0.2 × 0.75 + 0.4 × 0.25) / (0.75 + 0.25) = 0.25`.
-   Für B ergibt sich `(0.5 × 0.75 + 0.2 × 0.25) / (0.75 + 0.25) = 0.425`.
-6. **Aktionsauswahl:** B ist unter diesen beiden Kandidaten besser bewertet.
-   Der `ActionSelector` vergleicht alle erzeugten Kandidaten anhand ihrer
-   Scores. Der `BaselineActionSelector` wählt die beste Bewertung oder
-   erkundet gelegentlich eine fast gleich gute Alternative.
-7. **Neue Beobachtung** (neues Datenabbild des Simulationszustands): Bei der
-   nächsten Entscheidungsrunde werden Kandidaten und Bewertungen erneut
-   bestimmt. Ist Puffer B inzwischen voll, erzeugt der Generator keine
-   Ablageaktion für dieses Ziel.
-
-Die Rechnung im Überblick: Das Transportgewicht ist `0.75`, das
-Kapazitätsgewicht `0.25`. Ihre Summe beträgt `1.0`.
-
-| Aktionskandidat | Transportzeit → Teilwert | Freie Plätze → Teilwert | Gewichtete Summe | Gesamtscore |
-|---|---|---|---|---|
-| Job in Puffer A ablegen | `4 → 0.2` | `4 von 10 → 0.4` | `0.2 × 0.75 + 0.4 × 0.25 = 0.25` | `0.25 / 1.0 = 0.25` |
-| Job in Puffer B ablegen | `1 → 0.5` | `2 von 10 → 0.2` | `0.5 × 0.75 + 0.2 × 0.25 = 0.425` | `0.425 / 1.0 = 0.425` |
-
-Die Teilwerte zeigen jeweils in dieselbe Richtung: höher bedeutet
-vorteilhafter. B hat in diesem Beispiel den höheren Gesamtscore, weil der
-kürzere Transport stärker gewichtet wird als die zusätzliche freie Kapazität
-von A.
-
-Der `ActionGenerator` bestimmt, welche Aktionen technisch möglich sind.
-`HeuristicControl` bewertet, welche dieser Möglichkeiten vorteilhafter ist.
-Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.
+Der `BaselineActionSelector` verwendet die fertigen Scores zur Auswahl.
+Er wählt eine bestbewertete Aktion oder erkundet gelegentlich eine fast
+gleich gute Alternative. Erst der Simulationskern führt die ausgewählte
+Aktion aus.
 
 ### Bewertungsgrößen und heuristische Regeln
 
@@ -1134,17 +1111,18 @@ flowchart LR
     A -->|"Heuristische Regeln"| B["Teilwerte<br/>zwischen 0 und 1"]
 ```
 
-Eine **Bewertungsgröße** ist ein Rohwert, beispielsweise eine Transportzeit
-von vier Zeiteinheiten. Die **heuristische Regel** legt fest, was bevorzugt
-wird, etwa ein kurzer Transport. Die **Abbildung** setzt diese Regel
-rechnerisch um: `inverse_scale(4) = 0.2`. Das Ergebnis ist der **Teilwert**.
-Für alle Teilwerte gilt: **Ein höherer Wert bedeutet einen größeren Vorteil
-für die betrachtete Aktion.**
+Die **heuristische Regel** legt fest, was bevorzugt wird, etwa ein kurzer
+Transport. Die zugehörige Formel bildet den Rohwert auf einen Teilwert ab.
+So setzt `inverse_scale(4) = 0.2` die Regel „Kürzere Transportzeiten
+bevorzugen“ rechnerisch um.
 
-Je nach Aktionsart verwendet
-[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py)
-die folgenden Regeln und Abbildungen. Nicht jede Regel geht in jede Aktion
-ein; die Zuordnung steht unter [Bewertungsregeln nach Aktionsart](#bewertungsregeln-nach-aktionsart).
+Die Teilwerte sind dimensionslos, obwohl ihre Rohwerte unterschiedliche
+Einheiten haben. Für alle gilt: **Ein höherer Teilwert bedeutet einen
+größeren Vorteil für die betrachtete Aktion.**
+
+Die folgenden Regeln erklären jeweils Rohwert, Abbildung und Beispiel.
+Welche davon gemeinsam in eine Aktion eingehen, steht anschließend unter
+[Bewertungsregeln nach Aktionsart](#bewertungsregeln-nach-aktionsart).
 
 #### 1. Termindruck: dringendere Jobs bevorzugen
 
@@ -1159,6 +1137,18 @@ ein; die Zuordnung steht unter [Bewertungsregeln nach Aktionsart](#bewertungsreg
   `0.167`, genau bei der Deadline `0.5` und zwei Zeiteinheiten danach etwa
   `0.833`. Negative Restzeit wird also als Überfälligkeit behandelt.
 
+Vor der Deadline liegt die Priorität unter `0.5`, genau bei der Deadline
+beträgt sie `0.5`, danach liegt sie darüber. Sie nähert sich bei sehr großer
+Restzeit `0` und bei sehr großer Überfälligkeit `1`.
+
+```mermaid
+xychart-beta
+    title "EDD-Priorität nach Zeit bis zur Deadline"
+    x-axis "Zeit bis Deadline (negativ = überfällig)" [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    y-axis "EDD-Teilwert" 0 --> 1
+    line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
+```
+
 Der EDD-Teilwert geht unter anderem in Freigabe- und Pick-Aktionen ein.
 `prepare_action_candidate()` ergänzt ihn bei jedem Pick-Kandidaten als
 `queue_priority` im Payload. Für Warteaktionen wird daraus dagegen ein
@@ -1170,6 +1160,18 @@ Wartewert berechnet, siehe Regel 8.
 - **Regel:** Eine kürzere Zeit soll einen höheren Teilwert ergeben.
 - **Abbildung:** `inverse_scale(x) = 1 / (1 + x)`.
 - **Beispiel:** Zeit `1 → 0.5`; Zeit `4 → 0.2`.
+
+Für endliche, nichtnegative Eingaben liegt `inverse_scale(x)` in `(0, 1]`.
+Bei `x = 0` ergibt sich `1`; mit wachsendem `x` sinkt der Teilwert
+gegen `0`.
+
+```mermaid
+xychart-beta
+    title "Inverse-Skalierung: je kleiner x, desto höher der Vorteil"
+    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
+    y-axis "Teilwert" 0 --> 1
+    line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
+```
 
 Die Zeit stammt je nach Kandidat aus unterschiedlichen Daten:
 
@@ -1228,8 +1230,26 @@ wird kein Werkzeugpassungs-Teilwert hinzugefügt.
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
+Für endliche, nichtnegative Eingaben liegt `direct_scale(x)` in `[0, 1)`.
+Bei `x = 0` ergibt sich `0`; mit wachsendem `x` steigt der Teilwert
+gegen `1`. Dabei gilt: `direct_scale(x) = 1 − inverse_scale(x)`.
+
+```mermaid
+xychart-beta
+    title "Direktskalierung: je größer x, desto höher der Vorteil"
+    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
+    y-axis "Teilwert" 0 --> 1
+    line [0, 0.5, 0.667, 0.75, 0.8, 0.833]
+```
+
+Beide Skalierungen benötigen keine beobachteten Minimal- und Maximalwerte.
+Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
+Eine negative Deadline-Restzeit wird bereits in
+`calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
+
 **Aktueller Codezustand:** Dieser Teilwert wird bei den regulären Snapshots
-derzeit nicht hinzugefügt. Die Konfiguration liefert `consumed_life_units`,
+derzeit nicht hinzugefügt. `ConfigurationObjectObserver` liefert den Verbrauch
+im Konfigurationsmodell unter `consumed_life_units`,
 die Reservelogik in `evaluate_machine_pick_action()` und
 `evaluate_defect_recovery_action()` liest aber `consumes_life_units` und
 erhält dadurch `0`. Die vorgesehene Berechnung setzt einen positiven
@@ -1275,183 +1295,26 @@ der `ActionGenerator`. Diese Regel erzeugt keine Herabstufungsaktion.
 - **Beispiel:** Bei `EDD = 0.75` ergibt normales Warten `0.255` und Warten
   bei einem Defekt zunächst `0.25`, noch vor einem möglichen Strafabzug.
 
-#### Feste Werte sowie zusätzliche Deadline-Regeln
+Der normale Wartewert liegt zwischen `0.01` und `0.99`. Für defekte Jobs
+kann zusätzlich eine Deadline-Strafe anfallen; diese wird erst nach der
+Scoreberechnung abgezogen, siehe [Defektbehandlung](#defektbehandlung).
 
-Nicht jeder Wert entsteht durch die Skalierung eines Rohwerts:
+### Gewichte und Gesamtscore
 
-- **Abschluss:** `complete_job` erhält den festen Teilwert und Score `1`.
-- **Verarbeitung:** `process_machine_job` erhält den festen Score `0`.
-  Das verhindert die Verarbeitung nicht: Bei einer geladenen Maschine mit
-  freiem Ausgangspuffer ist dies der einzige erzeugte Kandidat.
-- **Ausschuss:** `job_scrap` verwendet den festen Grundteilwert `1` und
-  zusätzlich den EDD-Teilwert. Beide gehen gewichtet in den Score ein.
-
-Bei **erreichter oder überschrittener Deadline** gelten für Defektaktionen
-zusätzlich folgende Regeln:
-
-- **Herabstufung:** Ein Bonus-Teilwert `1` kommt mit
-  `rework_not_allowed_downgrade_bonus_weight` in den gewichteten Durchschnitt.
-- **Warten bei einem Defekt:** Nach der Scoreberechnung wird
-  `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
-- **Nacharbeit:** Nach der Scoreberechnung wird je nach Maschine
-  `rework_defect_machine_deadline_penalty_weight` oder
-  `rework_alternative_machine_deadline_penalty_weight` abgezogen,
-  standardmäßig jeweils `0.5`.
-
-Nach diesen Strafabzügen wird ein negativer Score auf `0` gesetzt. Das sind
-Anpassungen des Gesamtscores, keine zusätzlichen Rohwert-Abbildungen.
-Die Prüfung `is_rework_allowed()` betrachtet dabei nur, ob noch Zeit bis zur
-Deadline verbleibt; sie berechnet nicht, ob die Nacharbeit rechtzeitig
-abgeschlossen werden kann, und entfernt auch keinen Kandidaten.
-
-Erst **nach der Abbildung** verbindet `calculate_action_score()` die
-verwendeten Teilwerte mit ihren Gewichten zu einem Gesamtscore. Die Gewichte
-bestimmen ihre relative Wichtigkeit; sie ändern nicht die Richtung der
-Abbildung. Die mathematischen Verläufe und die genaue Zusammensetzung je
-Aktionsart sind im folgenden Abschnitt erläutert.
-
-### ActionEvaluator
-
-Der `ActionEvaluator` berechnet, wie vorteilhaft ein erzeugter
-Aktionskandidat im aktuellen Zustand ist. Die konkrete Umsetzung steht in
-[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py).
-Ein höherer Score bedeutet eine höhere Bewertung.
-
-#### Aufgabe und Entscheidungsregeln
-
-Eine Dispatching-Regel (lokale Prioritätsregel) legt fest, was bei einer
-aktuellen Auswahl bevorzugt wird. `EDD` (`Earliest Due Date`) bevorzugt
-beispielsweise Jobs mit einer früheren Deadline. Andere Kriterien sprechen
-für kurze Transporte, kurze Operationen oder ein bereits montiertes Werkzeug.
-
-Der Evaluator verbindet diese Kriterien zu einem Score. Der
-`BaselineActionSelector` verwendet die Scores zur Auswahl der nächsten
-Aktion. Er wählt die beste Bewertung oder erkundet gelegentlich eine fast
-gleich gute Alternative. Dieses Vorgehen reagiert auf den aktuellen Zustand;
-es garantiert keine global optimale Produktionsreihenfolge.
-
-#### Ablauf einer Bewertung
-
-1. `prepare_action_candidate()` erstellt eine Kopie des Kandidaten. Bei einer
-   Pick-Aktion berechnet es die aktuelle EDD-Priorität des ausgewählten Jobs
-   und ergänzt `queue_priority` im Payload.
-2. `evaluate_action()` liest den `action_type` und ruft die passende
-   Bewertungsmethode auf, zum Beispiel `evaluate_machine_pick_action()`.
-3. Diese Methode ermittelt die benötigten Bewertungsgrößen (Rohwerte eines
-   Kriteriums, etwa eine Transportzeit von vier Zeiteinheiten) und berechnet
-   daraus Teilwerte (auf den Bereich `0` bis `1` abgebildete Werte, etwa
-   `inverse_scale(4) = 0.2`).
-4. `calculate_action_score()` verbindet die Teilwerte mit ihren Gewichten
-   (relativer Wichtigkeit, etwa `pick_short_transport_time_weight`) zu einem
-   Gesamtscore.
-
-Bei bestimmten Defektaktionen werden anschließend zusätzliche
-Deadline-Strafen vom Score abgezogen. Die konkrete Berechnung ist unten
-nach Aktionsart beschrieben.
-
-#### Berechnung der Teilwerte
-
-Bewertungsgrößen haben unterschiedliche Einheiten: Eine Transportzeit ist
-eine Zeitspanne, eine Warteschlangenlänge eine Anzahl von Jobs. Damit beide
-in einen Score eingehen können, berechnet der Evaluator daraus
-dimensionslose Teilwerte zwischen `0` und `1`.
-
-Ein höherer Teilwert bedeutet immer eine günstigere Bewertung des jeweiligen
-Kriteriums. Wie der Teilwert berechnet wird, hängt von der Bedeutung des
-Rohwerts ab.
-
-##### Termindruck: `calculate_edd_priority()`
-
-Die Deadline `latest_end_time` stammt aus dem Auftrag des Jobs. Mit der
-aktuellen Simulationszeit ergibt sich die Restzeit
-`t = latest_end_time − current_time`.
-
-- Bei `t >= 0` gilt:
-  `EDD = 0.5 × inverse_scale(t)`.
-- Bei `t < 0` ist der Job überfällig. Es gilt:
-  `EDD = 0.5 + 0.5 × direct_scale(-t)`.
-
-Vor der Deadline liegt die Priorität unter `0.5`, genau bei der Deadline
-beträgt sie `0.5`, danach liegt sie darüber. Sie nähert sich bei sehr großer
-Restzeit `0` und bei sehr großer Überfälligkeit `1`.
-
-```mermaid
-xychart-beta
-    title "EDD-Priorität nach Zeit bis zur Deadline"
-    x-axis "Zeit bis Deadline (negativ = überfällig)" [-4, -3, -2, -1, 0, 1, 2, 3, 4]
-    y-axis "EDD-Teilwert" 0 --> 1
-    line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
-```
-
-##### Kleine Rohwerte bevorzugen: `inverse_scale()`
-
-`Inverse-Skalierung(x) = 1 / (1 + x)`
-
-Für endliche, nichtnegative Eingaben liegt das Ergebnis im Bereich
-`(0, 1]`. Bei `x = 0` ergibt sich `1`; mit wachsendem `x` sinkt der
-Teilwert gegen `0`. Diese Funktion bewertet beispielsweise kurze Zeiten und
-kurze Warteschlangen höher.
-
-```mermaid
-xychart-beta
-    title "Inverse-Skalierung: je kleiner x, desto höher der Vorteil"
-    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
-    y-axis "Teilwert" 0 --> 1
-    line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
-```
-
-##### Große Rohwerte bevorzugen: `direct_scale()`
-
-`Direktskalierung(x) = x / (1 + x)`
-
-Für endliche, nichtnegative Eingaben liegt das Ergebnis im Bereich
-`[0, 1)`. Bei `x = 0` ergibt sich `0`; mit wachsendem `x` steigt der
-Teilwert gegen `1`. Sie ist die Ergänzung der Inverse-Skalierung:
-`direct_scale(x) = 1 − inverse_scale(x)`.
-
-Beide Skalierungen benötigen keine beobachteten Minimal- und Maximalwerte.
-Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
-Eine negative Deadline-Restzeit wird bereits in
-`calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
-
-```mermaid
-xychart-beta
-    title "Direktskalierung: je größer x, desto höher der Vorteil"
-    x-axis "Rohwert x" [0, 1, 2, 3, 4, 5]
-    y-axis "Teilwert" 0 --> 1
-    line [0, 0.5, 0.667, 0.75, 0.8, 0.833]
-```
-
-##### Freie Kapazität, Werkzeugpassung und Werkzeugreserve
-
-- **Freie Zielkapazität:** `normalize_ratio(freie Plätze, Gesamtkapazität)`
-  berechnet `freie Plätze / Gesamtkapazität`. Bei einem Store mit positiver,
-  endlicher Kapazität und gültiger Belegung liegt dieser Anteil in `[0, 1]`.
-  Die Funktion selbst begrenzt den Wert nicht.
-- **Werkzeugpassung:** Der Teilwert ist `1`, wenn das benötigte Werkzeug
-  bereits montiert ist, sonst `0`.
-- **Werkzeugreserve:** Bei einer Operation mit Lebensdauerverbrauch bildet der
-  Evaluator das Verhältnis `verbleibende Lebensdauer / geplanter Verbrauch`
-  und wendet darauf `direct_scale()` an. Bei vier verbleibenden und zwei
-  benötigten Einheiten ergibt sich `direct_scale(4 / 2) = 2 / 3 ≈ 0.67`.
-  Eine größere Reserve im Verhältnis zum Verbrauch wird höher bewertet.
-
-#### Teilwerte gewichten und Aktionsscore berechnen
-
-Ein Teilwert entsteht durch die Abbildung einer Bewertungsgröße auf den
-Bereich `0` bis `1`.
-Das zugehörige Gewicht aus `HeuristicWeights` legt fest, wie wichtig dieses
-Kriterium gegenüber den anderen Kriterien derselben Aktion ist.
+Ein **Gewicht** legt fest, wie wichtig ein Teilwert gegenüber den anderen
+Teilwerten derselben Aktion ist. Der **Gesamtscore** verbindet die
+verwendeten Teilwerte zu einer numerischen Gesamtbewertung der Aktion.
 
 `calculate_action_score()` berechnet den gewichteten Durchschnitt:
 
 `Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
 
 „Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
-berücksichtigt wird. Beispielsweise geht Werkzeugreserve nur dann ein, wenn
-die Operation tatsächlich Werkzeuglebensdauer verbraucht.
+berücksichtigt wird. Beispielsweise geht Werkzeugpassung nur ein, wenn die
+Operation ein Werkzeug benötigt. Nur die Gewichte dieser berücksichtigten
+Teilwerte stehen im Nenner.
 
-##### Warum unterschiedliche Kriterien kombiniert werden können
+#### Warum unterschiedliche Kriterien kombiniert werden können
 
 Kombiniert werden die **Teilwerte**, die vorher in dieselbe Vorteilsrichtung
 abgebildet wurden:
@@ -1470,7 +1333,7 @@ Deshalb können die dimensionslosen Teilwerte im Bereich `0` bis `1` sinnvoll
 zu einem Gesamtscore kombiniert werden. Die Gewichte bestimmen dabei, wie
 stark kurze Transportzeiten gegenüber freier Kapazität zählen.
 
-##### Warum durch die Gewichtssumme geteilt wird
+#### Warum durch die Gewichtssumme geteilt wird
 
 Durch die Division entsteht aus jedem Gewicht ein relativer Anteil
 `αᵢ = wᵢ / Summe(w)`. Die Summe dieser Anteile ist `1`; der Score lautet
@@ -1493,7 +1356,7 @@ flowchart LR
     F --> G["Aktionsscore zwischen 0 und 1"]
 ```
 
-##### Beispiel und mathematischer Verlauf
+#### Mathematischer Verlauf des Gesamtscores
 
 Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
 
@@ -1526,90 +1389,106 @@ Bei genau einem Teilwert kürzt sich dessen Gewicht heraus:
 `complete_job` und normale Warteaktionen. Eine Änderung ihres einzigen
 Gewichts verändert den Score daher nicht.
 
-#### Bewertungsregeln nach Aktionsart
+#### HeuristicWeights
 
-Die folgenden Ausdrücke zeigen die Beiträge `Teilwert × Gewicht`.
-`calculate_action_score()` addiert diese Beiträge und teilt sie durch die
-Summe der jeweils berücksichtigten Gewichte.
+[HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
+definiert die lokalen Gewichte für Teilwerte und Deadline-Strafen. Alle Werte
+müssen in `(0, 1]` liegen; diese Prüfung erfolgt beim Erzeugen eines
+`HeuristicWeights`-Objekts.
 
-Beim Kriterium **Werkzeugreserve** besteht derzeit ein Feldnamenunterschied:
-`ConfigurationObjectObserver` schreibt den Verbrauch als
-`consumed_life_units` in die Operationsdaten, der Evaluator liest an den
-beiden Reservestellen aber `consumes_life_units`. Deshalb erhält er dort
-aktuell den Ersatzwert `0.0` und fügt den Reserveteilwert nicht hinzu. Die
-folgende Beschreibung erklärt die vorgesehene Reservelogik; der tatsächliche
-Lebensdauerverbrauch bei der Verarbeitung in `SimMachine` ist davon getrennt.
+Innerhalb eines gewichteten Durchschnitts bestimmt ein Gewicht die relative
+Wichtigkeit gegenüber den anderen berücksichtigten Kriterien. Die
+Strafgewichte werden dagegen direkt nach der Mittelwertbildung abgezogen.
+Bei der Optimierung werden diese lokalen Gewichte verändert. Sie sind von
+den globalen Gewichten zur Bewertung eines gesamten Simulationslaufs getrennt.
 
-##### Abschluss: `complete_job`
+### Rechenbeispiel: zwei Ablageziele
 
-`evaluate_action()` verwendet den festen Teilwert `1` mit
-`complete_job_weight`. Weil nur dieser eine Teilwert eingeht, ist der
-resultierende Score `1`.
+Der `ActionGenerator` erzeugt beispielsweise zwei Kandidaten: „Job in
+Puffer A ablegen“ und „Job in Puffer B ablegen“. Das vereinfachte Beispiel
+verwendet nur Transportzeit und freie Pufferkapazität. Im vollständigen Code
+kommen je nach Aktion weitere Kriterien hinzu.
 
-##### Freigabe: `release_job`
+1. **Bewertungsgrößen:** Zum Beispiel benötigt der Transport zu A vier
+   Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er eine
+   Zeiteinheit; dort sind zwei von zehn Plätzen frei.
+2. **Abbildung auf Teilwerte:** Die Transportzeit wird mit
+   `inverse_scale()` abgebildet, die freie Kapazität als
+   `freie Plätze / Gesamtkapazität`. Beide Teilwerte zeigen damit in
+   dieselbe Vorteilsrichtung.
+3. **Gewichtung:** Nur für dieses Rechenbeispiel erhält die Transportzeit
+   das Gewicht `0.75` und die freie Kapazität `0.25`. Die Transportzeit
+   zählt damit dreimal so stark. Dies sind keine Standardgewichte aus
+   `HeuristicWeights`.
+4. **Gesamtscore:** `calculate_action_score()` addiert die gewichteten
+   Teilwerte und teilt durch die Gewichtssumme `0.75 + 0.25 = 1.0`:
+
+| Aktionskandidat | Transportzeit → Teilwert | Freie Plätze → Teilwert | Gewichtete Summe | Gesamtscore |
+|---|---|---|---|---|
+| Job in Puffer A ablegen | `4 → 0.2` | `4 von 10 → 0.4` | `0.2 × 0.75 + 0.4 × 0.25 = 0.25` | `0.25 / 1.0 = 0.25` |
+| Job in Puffer B ablegen | `1 → 0.5` | `2 von 10 → 0.2` | `0.5 × 0.75 + 0.2 × 0.25 = 0.425` | `0.425 / 1.0 = 0.425` |
+
+B hat unter diesen beiden Kandidaten den höheren Gesamtscore: Der Vorteil
+des kürzeren Transports zählt bei diesen Gewichten stärker als die
+zusätzliche freie Kapazität von A. Der Selector verwendet die berechneten
+Scores für seine Auswahl.
+
+Bei der nächsten Beobachtung werden Kandidaten und Scores erneut bestimmt.
+Ist Puffer B inzwischen voll, erzeugt der Generator keine Ablageaktion für
+dieses Ziel. Die Bewertung entscheidet also nicht über die technische
+Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
+
+### Bewertungsregeln nach Aktionsart
+
+Die folgenden Abschnitte zeigen, **welche der oben erklärten Teilwerte für
+welche Aktion kombiniert werden und welche Gewichte dazugehören**.
+
+Die Ausdrücke zeigen jeweils `Teilwert × Gewicht`.
+`calculate_action_score()` addiert diese Beiträge und teilt durch die
+Summe ihrer Gewichte. Optionale Kriterien werden nur berücksichtigt, wenn
+die dafür benötigten Daten beziehungsweise Bedingungen vorhanden sind.
+
+#### Freigabe: `release_job`
 
 `evaluate_release_action()` berücksichtigt zwei Kriterien:
 
-1. **Termindruck:** `EDD × release_edd_weight`. Ein Job mit näherer oder
-   bereits überschrittener Deadline erhält einen höheren Teilwert.
+1. **Termindruck:** `EDD × release_edd_weight`.
 2. **Durchschnittliche Routenverarbeitungszeit:**
    `inverse_scale(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
-   `estimate_release_processing_time()` addiert die konfigurierten
-   `operation.duration`-Werte jeder möglichen Operationsfolge und bildet den
-   Mittelwert über diese Routen.
+   Die Ermittlung der Routenzeit ist bei Regel 2 beschrieben. Sie enthält
+   insbesondere keine Transport- oder Wartezeiten.
 
-Diese Routenzeit ist eine Schätzung aus den Operationsdauern. Sie enthält
-weder Transport- und Wartezeiten noch die Größen-, Geschwindigkeits- und
-Zufallsfaktoren der späteren Maschinenverarbeitung.
-
-##### Normales Warten: `wait_*`
-
-`evaluate_wait_action()` betrachtet den wartenden Job oder den aktuell
-geladenen Job einer Maschine beziehungsweise eines Roboters.
-
-- Mit zugehörigem Job und Deadline:
-  `Teilwert = 0.01 + 0.98 × (1 − EDD)`.
-- Ohne solchen Job oder ohne Deadline: `Teilwert = 0.01`.
-
-Bei hohem Termindruck wird Warten niedriger bewertet. Der Wartewert liegt
-zwischen `0.01` und `0.99` und wird als einzelner Teilwert mit
-`wait_action_weight` übergeben. Für einen defekten Job gilt die gesonderte
-Wartebewertung weiter unten.
-
-##### Roboter-Pick: `pick_main_robot` und `pick_corridor_arm_robot`
+#### Roboter-Pick: `pick_main_robot` und `pick_corridor_arm_robot`
 
 `evaluate_robot_pick_action()` bewertet den ausgewählten Job anhand von:
 
-1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`. Dringende Jobs
-   erhalten einen höheren Teilwert.
+1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`.
 2. **Entnahmezeit:** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
-   Kürzere Entnahmezeiten werden höher bewertet. Das Kriterium geht nur ein,
-   wenn `storage_out_time` im Payload vorhanden ist.
+   Das Kriterium geht nur ein, wenn `storage_out_time` im Payload vorhanden ist.
 3. **Transportzeit:** `inverse_scale(Transportzeit) × pick_short_transport_time_weight`.
-   Kürzere Wege zum Pick-Ziel werden höher bewertet.
 
-`transport_time_value()` schätzt die Transportzeit aus den
-Achsenabständen und der Grundgeschwindigkeit des Roboters. Die später pro
-Bewegung erzeugte Zufallsschwankung wird dabei nicht vorausgesagt.
-
-##### Maschinen-Pick: `pick_machine_job`
+#### Maschinen-Pick: `pick_machine_job`
 
 `evaluate_machine_pick_action()` berücksichtigt:
 
 1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`.
 2. **Operationsdauer:** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
    Hier zählt die konfigurierte Operationsdauer.
-3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`.
-   Der Teilwert ist `1`, wenn das benötigte Werkzeug bereits montiert ist,
-   sonst `0`. Er wird nur für eine Operation mit Werkzeug erzeugt.
+3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`,
+   nur wenn die Operation ein Werkzeug benötigt.
 4. **Werkzeugreserve:**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
-   Dieses Kriterium geht nur bei einem Werkzeug mit Lebensdauerverbrauch ein.
+   Vorgesehen bei positivem Lebensdauerverbrauch; wegen des bei Regel 5
+   beschriebenen Feldnamenunterschieds derzeit nicht aktiv.
 
-Beispiel für die Reserve: Bei vier verbleibenden und zwei benötigten Einheiten
-ist das Verhältnis `2`; daraus wird der Teilwert `2 / 3 ≈ 0.67`.
+#### Verarbeitung: `process_machine_job`
 
-##### Ablegen: `place_main_robot` und `place_corridor_arm_robot`
+`evaluate_process_action()` liefert den Score `0`. Für eine geladene
+Maschine mit freiem Ausgangspuffer erzeugt der Generator ohnehin nur diese
+Verarbeitungsaktion. Ein Score von `0` verhindert ihre Ausführung daher nicht.
+Bei einem vollen Ausgangspuffer wird stattdessen nur `wait_machine` erzeugt.
+
+#### Ablegen: `place_main_robot` und `place_corridor_arm_robot`
 
 `evaluate_place_action()` bewertet die möglichen Transportziele anhand von:
 
@@ -1627,22 +1506,34 @@ ist das Verhältnis `2`; daraus wird der Teilwert `2 / 3 ≈ 0.67`.
    `inverse_scale(operation.duration) × place_operation_duration_weight`,
    falls der Payload eine nächste Operation enthält.
 
-Ein Ziel mit mehr freier Kapazität, kürzerem Transport, kurzer Warteschlange
-oder kurzer nächster Operation erhält bei den jeweiligen Kriterien höhere
-Teilwerte.
+#### Normales Warten: `wait_*`
 
-##### Defektbehandlung: `evaluate_defect_action()`
+`evaluate_wait_action()` betrachtet den wartenden Job oder den aktuell
+geladenen Job einer Maschine beziehungsweise eines Roboters.
 
-Der Generator bestimmt anhand des Defektschweregrads die verfügbaren
-Aktionen. Der Evaluator bewertet diese Kandidaten zusätzlich anhand der
-Restzeit `remaining_time = latest_end_time − aktuelle Zeit`.
+Es verwendet den normalen Wartewert aus Regel 8 als einzigen Teilwert mit
+`wait_action_weight`. Das Gewicht kürzt sich bei der Mittelwertbildung
+heraus. Für defekte Jobs gilt stattdessen die gesonderte Bewertung unter
+[Defektbehandlung](#defektbehandlung).
+
+#### Defektbehandlung
+
+Der Generator bestimmt die technisch verfügbaren Defektaktionen.
+`evaluate_defect_action()` bewertet diese Kandidaten anhand ihrer
+jeweiligen Kriterien und der Restzeit
+`remaining_time = latest_end_time − aktuelle Zeit`.
+
+Bei `remaining_time <= 0` ist die Deadline erreicht oder überschritten.
+Dann kann ein Bonus-Teilwert hinzukommen oder eine Strafe **nach** der
+Mittelwertbildung abgezogen werden. Diese beiden Mechanismen sind
+unterschiedlich und werden unten getrennt angegeben.
 
 `is_rework_allowed()` prüft im Evaluator nur, ob diese Restzeit positiv ist.
 Es prüft nicht, ob eine komplette Nacharbeit noch vor der Deadline fertig
 werden kann. Auch nach der Deadline können technisch erzeugte
 Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
 
-**Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`**
+##### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 
 `evaluate_defect_recovery_action()` berücksichtigt:
 
@@ -1650,39 +1541,41 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
 2. `Werkzeugpassung × defect_recovery_tool_match_weight`, falls ein Werkzeug
    benötigt wird.
 3. `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   falls Werkzeuglebensdauer verbraucht wird.
+   vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv
+   (siehe Regel 5).
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
-`rework_defect_machine_deadline_penalty_weight` abgezogen.
+`rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
 
-**Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`**
+##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
 Es gelten dieselben drei Kriterien. Zusätzlich geht
 `inverse_scale(Transportzeit zur Nacharbeitsmaschine) × defect_recovery_transport_time_weight`
 ein, wenn diese Zeit geschätzt werden kann. Bei `remaining_time <= 0`
-wird `rework_alternative_machine_deadline_penalty_weight` abgezogen.
+wird `rework_alternative_machine_deadline_penalty_weight` abgezogen,
+standardmäßig `0.5`.
 
 Bei beiden Nacharbeitsaktionen wird ein nach dem Abzug negativer Score
 auf `0` gesetzt.
 
-**Herabstufung: `downgrade_product`**
+##### Herabstufung: `downgrade_product`
 
 1. `defect_severity × product_downgrade_defect_severity_weight`.
-   Ein höherer Schweregrad ergibt einen höheren Teilwert.
 2. Ist die Deadline bereits erreicht oder überschritten, kommt der
    Bonus-Teilwert `1 × rework_not_allowed_downgrade_bonus_weight` hinzu.
 
 Diese Beiträge werden zu einem gewichteten Durchschnitt verbunden. Der Bonus
 ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
 
-**Warten bei einem Defekt: `wait_job`**
+##### Warten bei einem Defekt: `wait_job`
 
-Der Teilwert lautet `1 − EDD` und wird mit `wait_defect_job_weight`
-übergeben. Bei `remaining_time <= 0` wird anschließend
-`deadline_missed_wait_penalty_weight` abgezogen. Ein negatives Ergebnis
-wird auf `0` gesetzt.
+Der Defekt-Wartewert aus Regel 8 (`1 − EDD`) wird mit
+`wait_defect_job_weight` als einzigem Teilwert übergeben. Bei
+`remaining_time <= 0` wird anschließend
+`deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
+Ein negatives Ergebnis wird auf `0` gesetzt.
 
-**Ausschuss: `job_scrap`**
+##### Ausschuss: `job_scrap`
 
 Diese Aktion wird ausschließlich erzeugt, wenn der Defektschweregrad außerhalb
 des technisch nacharbeitbaren Bereichs liegt. Dann ist sie der einzige
@@ -1691,28 +1584,13 @@ Kandidat. Ihre Bewertung verwendet:
 1. `1 × job_scrap_weight`.
 2. `EDD × deadline_pressure_scrap_bonus_weight`.
 
-##### Verarbeitung: `process_machine_job`
+#### Abschluss: `complete_job`
 
-`evaluate_process_action()` liefert den Score `0`. Für eine geladene
-Maschine mit freiem Ausgangspuffer erzeugt der Generator ohnehin nur diese
-Verarbeitungsaktion. Ein Score von `0` verhindert ihre Ausführung daher nicht.
-Bei einem vollen Ausgangspuffer wird stattdessen nur `wait_machine` erzeugt.
+`evaluate_action()` verwendet den festen Teilwert `1` mit
+`complete_job_weight`. Weil nur dieser eine Teilwert eingeht, ist der
+resultierende Score `1`.
 
-Ein unbekannter `action_type` erhält in `evaluate_action()` ebenfalls
-den Score `0`.
-
-### HeuristicWeights
-
-[HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
-definiert die lokalen Gewichte für Teilwerte und Deadline-Strafen. Alle Werte
-müssen in `(0, 1]` liegen; diese Prüfung erfolgt beim Erzeugen eines
-`HeuristicWeights`-Objekts.
-
-Innerhalb eines gewichteten Durchschnitts bestimmt ein Gewicht die relative
-Wichtigkeit gegenüber den anderen berücksichtigten Kriterien. Die
-Strafgewichte werden dagegen direkt nach der Mittelwertbildung abgezogen.
-Bei der Optimierung werden diese lokalen Gewichte verändert. Sie sind von
-den globalen Gewichten zur Bewertung eines gesamten Simulationslaufs getrennt.
+Ein unbekannter `action_type` erhält in `evaluate_action()` den Score `0`.
 
 ## Optimierungsvorgang
 

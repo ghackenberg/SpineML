@@ -875,9 +875,10 @@ zukünftigen Zustände vollständig vorauszuplanen.
 ### Wie wird das Problem heuristisch gelöst?
 
 1. Der `ActionGenerator` erzeugt die technisch zulässigen Aktionskandidaten.
-2. `HeuristicControl` bewertet jeden Kandidaten anhand des aktuellen
-   Simulationszustands.
-3. Aus den Kriterien werden Teilwerte und ein Gesamtscore berechnet.
+2. `HeuristicControl` liest die relevanten Bewertungsgrößen aus dem aktuellen
+   Simulationszustand und bewertet damit jeden Kandidaten.
+3. Die Bewertungsgrößen werden in Teilwerte umgerechnet und mit ihren Gewichten
+   zu einem Gesamtscore verbunden.
 4. Der `ActionSelector` vergleicht die Scores und wählt eine Aktion aus.
 5. Nach der Ausführung entsteht ein neuer Zustand, für den der Ablauf erneut
    beginnt.

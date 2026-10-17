@@ -1018,51 +1018,14 @@ Skalierungsformeln beschrieben wurden, sind:
    Bewertungsaspekt im Verhältnis zu den anderen Aspekten derselben Aktion ist.
 5. **Aktionsscore aus den gewichteten Teilwerten**
 
+   Die Funktion `calculate_action_score()` berechnet den gewichteten
+   Durchschnitt:
+
    `Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
 
-   **Warum wird durch die Gewichtssumme geteilt?** Die Division setzt die
-   aktiven Gewichte zueinander ins Verhältnis. Ein Gewicht beschreibt damit
-   die relative Wichtigkeit eines Bewertungsfaktors gegenüber den anderen
-   Faktoren derselben Aktion. Aus jedem Gewicht wird ein relativer Anteil am
-   Gesamtgewicht. Die Summe dieser Anteile ist `1`; deshalb werden die
-   Teilwerte zu einem gewichteten Durchschnitt verbunden. Ein Kriterium mit
-   Gewicht `0.6` zählt dabei doppelt so stark wie eines mit Gewicht `0.3`.
-   Werden alle Gewichte beispielsweise verdoppelt, bleiben ihre relativen
-   Wichtigkeiten unverändert. Durch die Division bleibt dann auch der
-   Aktionsscore unverändert. Ohne Division würde sich der Aktionsscore allein
-   wegen der größeren Gewichtssumme ändern, obwohl die relative Bewertung
-   unverändert geblieben ist.
-
-   ```mermaid
-   flowchart LR
-       A["Teilwerte xᵢ zwischen 0 und 1"] --> C["Teilwert × Gewicht"]
-       B["Aktive Gewichte wᵢ > 0"] --> C
-       C --> D["Gewichtete Teilwerte addieren"]
-       B --> E["Aktive Gewichte addieren"]
-       D --> F["Zähler ÷ Nenner"]
-       E --> F
-       F --> G["Aktionsscore zwischen 0 und 1"]
-   ```
-
-   Mathematisch kann man jedes Gewicht durch die Summe aller aktiven Gewichte
-   teilen. So entstehen relative Anteile `αᵢ = wᵢ / Summe(w)`, deren Summe `1`
-   ist. Der Aktionsscore ist damit `Summe(xᵢ × αᵢ)`. Er liegt zwischen dem
-   kleinsten und dem größten Teilwert. Da die Teilwerte im Evaluator zwischen
-   `0` und `1` liegen, liegt auch dieser gewichtete Durchschnitt zwischen `0`
-   und `1`.
-
-   Beispiel mit Gewichten aus dem erlaubten Bereich: Teilwerte `0.8` und `0.2`
-   mit Gewichten `1.0` und `0.5` ergeben
-   `(0.8 × 1.0 + 0.2 × 0.5) / (1.0 + 0.5) = 0.6`. Die relativen Anteile sind
-   `2/3` und `1/3`; daher liegt der Score näher bei `0.8`. Ohne Division wäre
-   das Ergebnis von der bloßen Größe der Gewichte abhängig. Bei mehreren
-   Teilwerten könnte die gewichtete Summe außerdem über `1` steigen.
-
-   Der Evaluator berechnet den Score für jede einzelne Aktion. Anschließend
-   vergleicht der `ActionSelector` die Scores der möglichen Aktionen. Da die
-   Gewichtskonfiguration nur positive Gewichte zulässt, ist die Summe der
-   aktiven Gewichte im normalen Ablauf immer größer als `0`. Ein nichtpositives
-   Gewicht wird bei der Score-Berechnung als ungültige Konfiguration abgelehnt.
+   Die Division macht die Gewichte relativ zueinander. Dadurch bestimmt nur
+   ihre relative Wichtigkeit den Score, nicht ihre absolute Größe. Der
+   `ActionSelector` vergleicht anschließend die Scores der möglichen Aktionen.
 
 #### Zuordnung der Teilwerte zu den Aktionsarten
 

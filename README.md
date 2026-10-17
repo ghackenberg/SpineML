@@ -877,7 +877,19 @@ geeignete nächste Aktion auswählen.
 
 ## ActionEvaluator
 
-### Dispatching-Regeln und Greedy-Heuristik
+Der `ActionEvaluator` beantwortet die Frage: **Wie gut ist ein bereits
+erzeugter Aktionskandidat für den aktuellen Simulationszustand?** Er erzeugt
+keine Aktionen und führt keine Aktion aus. Er berechnet nur einen Score für
+jeden Kandidaten.
+
+| Begriff | Bedeutung | Beispiel |
+|---|---|---|
+| Bewertungsgröße | Rohwert eines Kriteriums | Transportzeit oder Warteschlangenlänge |
+| Teilwert | Bewertung dieses Rohwerts im Bereich `0` bis `1` | `inverse_scale(Transportzeit)` |
+| Gewicht | Relative Wichtigkeit des Teilwerts | `pick_short_transport_time_weight` |
+| Aktionsscore | Gewichteter Gesamtscore der Aktion | `calculate_action_score()` |
+
+### Aufgabe des Evaluators
 
 Eine Dispatching-Regel ist eine lokale Prioritätsregel für bereits verfügbare
 Jobs oder Aktionen. `EDD` (Earliest Due Date) bevorzugt beispielsweise den Job
@@ -893,7 +905,7 @@ Simulationszustand; aus diesem Zustand werden erneut Kandidaten erzeugt und
 bewertet. Dieses Vorgehen ist schnell und anpassungsfähig, garantiert aber
 nicht die global optimale Produktionsreihenfolge.
 
-### Vorbereitung und Bewertung
+### Ablauf einer Bewertung
 
 Der `LocalHeuristicActionEvaluator` arbeitet in zwei Schritten:
 
@@ -904,7 +916,7 @@ Der `LocalHeuristicActionEvaluator` arbeitet in zwei Schritten:
    passende Bewertungsregel weiter. Das Ergebnis ist ein numerischer Score;
    ein höherer Score bedeutet eine bevorzugtere Aktion.
 
-### Lokale Bewertungsziele nach Aktionsart
+### Bewertungslogik
 
 Die lokale Aktionsbewertung läuft in folgenden Schritten ab:
 
@@ -925,9 +937,9 @@ Die lokale Aktionsbewertung läuft in folgenden Schritten ab:
    kostengünstige Defektbehandlung unterstützen. Sie plant jedoch nicht den
    gesamten Ablauf voraus und garantiert keine global optimale Planung.
 
-### Bewertungskriterien
+### Bewertungsmodell
 
-#### Berechnung der Teilwerte
+#### Von der Bewertungsgröße zum Teilwert
 
 Die Bewertungsgrößen haben unterschiedliche Einheiten und Skalen. Damit sie
 gemeinsam in einen Aktionsscore eingehen können, bildet der Evaluator sie vor
@@ -1078,7 +1090,7 @@ Skalierungsformeln beschrieben wurden, sind:
     Gewichtskonfiguration positive Gewichte vorsieht, ist die Summe der aktiven
     Gewichte im normalen Ablauf größer als `0`.
 
-#### Zuordnung der Teilwerte zu den Aktionsarten
+### Bewertungsregeln nach Aktionsart
 
 - `complete_job` (`evaluate_action()`):
 

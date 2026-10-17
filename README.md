@@ -1081,16 +1081,38 @@ Aktionen eine geeignete nächste Aktion auszuwählen.
 
 ### Wie wird das Problem heuristisch gelöst?
 
-1. Der `ActionGenerator` erzeugt die technisch zulässigen Aktionskandidaten.
-2. `HeuristicControl` ermittelt für jeden Kandidaten die relevanten
-   Bewertungsgrößen (zum Beispiel Restzeit bis zur Deadline oder Transportzeit)
-   aus dem aktuellen Simulationszustand, der Konfiguration und den Aktionsdaten.
-3. Daraus berechnet es Teilwerte (einzelne Bewertungen der Kriterien) und
-   verbindet sie mit ihren Gewichten (relativer Wichtigkeit) zu einem
-   Gesamtscore.
-4. Der `ActionSelector` vergleicht die Scores und wählt eine Aktion aus.
-5. Bei der nächsten Beobachtung werden die Kandidaten und ihre Scores anhand
-   des dann aktuellen Zustands erneut bestimmt.
+Das folgende vereinfachte Rechenbeispiel zeigt zwei mögliche Ablageziele für
+einen Job. Betrachtet werden nur Transportzeit und freie Pufferkapazität.
+Im vollständigen Code kommen je nach Aktion weitere Kriterien hinzu.
+
+1. **Aktionskandidaten** (technisch mögliche Aktionen): Der `ActionGenerator`
+   erzeugt beispielsweise „Job in Puffer A ablegen“ und „Job in Puffer B
+   ablegen“.
+2. **Bewertungsgrößen** (Rohwerte der einzelnen Kriterien): `HeuristicControl`
+   ermittelt die benötigten Werte aus dem aktuellen Simulationszustand, der
+   Konfiguration und den Aktionsdaten. Im Beispiel benötigt der Transport zu A
+   vier Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er
+   eine Zeiteinheit; dort sind zwei von zehn Plätzen frei.
+3. **Teilwerte** (Bewertungen der einzelnen Bewertungsgrößen zwischen `0` und
+   `1`): Die Transportzeit wird mit `inverse_scale()` bewertet, die freie
+   Kapazität als Anteil berechnet. Für A entstehen die Teilwerte
+   `1 / (1 + 4) = 0.2` und `4 / 10 = 0.4`. Für B ergeben sich
+   `1 / (1 + 1) = 0.5` und `2 / 10 = 0.2`.
+4. **Gewichte** (relative Wichtigkeit der Teilwerte): Für dieses Rechenbeispiel
+   erhält die Transportzeit das Gewicht `0.75` und die freie Kapazität `0.25`.
+   Die Transportzeit zählt damit dreimal so stark wie die freie Kapazität.
+5. **Gesamtscore** (gewichtete Gesamtbewertung einer Aktion):
+   `calculate_action_score()` verbindet die Teilwerte und Gewichte.
+   Für A ergibt sich `(0.2 × 0.75 + 0.4 × 0.25) / (0.75 + 0.25) = 0.25`.
+   Für B ergibt sich `(0.5 × 0.75 + 0.2 × 0.25) / (0.75 + 0.25) = 0.425`.
+6. **Aktionsauswahl:** B ist unter diesen beiden Kandidaten besser bewertet.
+   Der `ActionSelector` vergleicht alle erzeugten Kandidaten anhand ihrer
+   Scores. Der `BaselineActionSelector` wählt die beste Bewertung oder
+   erkundet gelegentlich eine fast gleich gute Alternative.
+7. **Neue Beobachtung** (neues Datenabbild des Simulationszustands): Bei der
+   nächsten Entscheidungsrunde werden Kandidaten und Bewertungen erneut
+   bestimmt. Ist Puffer B inzwischen voll, erzeugt der Generator keine
+   Ablageaktion für dieses Ziel.
 
 Der `ActionGenerator` bestimmt, welche Aktionen technisch möglich sind.
 `HeuristicControl` bewertet, welche dieser Möglichkeiten vorteilhafter ist.

@@ -850,9 +850,9 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 ### Grundidee
 
-„Heuristisch“ bedeutet, dass eine praktische Näherungsregel verwendet wird.
-Aktuelle Kriterien werden schnell bewertet, um eine gute, aber nicht zwingend
-optimale Entscheidung zu finden.
+„Heuristisch“ bedeutet, dass eine vereinfachte Entscheidungsregel verwendet
+wird. Aktuelle Kriterien werden schnell bewertet, um eine gute, aber nicht
+zwingend optimale Entscheidung zu finden.
 
 ### Rolle in der Policy
 

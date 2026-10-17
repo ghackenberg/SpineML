@@ -1273,6 +1273,21 @@ Kriterium gegenüber den anderen Kriterien derselben Aktion ist.
 berücksichtigt wird. Beispielsweise geht Werkzeugreserve nur dann ein, wenn
 die Operation tatsächlich Werkzeuglebensdauer verbraucht.
 
+##### Warum unterschiedliche Kriterien kombiniert werden können
+
+Die Rohwerte haben unterschiedliche Zielrichtungen: Bei der Transportzeit ist
+ein kleiner Wert vorteilhaft, bei der freien Kapazität ein großer. Durch die
+Abbildung gilt für alle Teilwerte dieselbe Richtung: **Je höher der Teilwert,
+desto vorteilhafter ist das Kriterium für die Aktion.** `inverse_scale()`
+liefert für kürzere Transportzeiten höhere Teilwerte; der Anteil freier Plätze
+steigt dagegen mit der freien Kapazität.
+
+Die Formel kombiniert somit dimensionslose Teilwerte im Bereich `0` bis `1`
+mit derselben Vorteilsrichtung. Dadurch lassen sich beispielsweise kurze
+Transportzeiten und freie Pufferplätze zu einem Gesamtscore verbinden.
+Die Gewichte bestimmen, wie stark diese Vorteile gegeneinander abgewogen
+werden.
+
 ##### Warum durch die Gewichtssumme geteilt wird
 
 Durch die Division entsteht aus jedem Gewicht ein relativer Anteil

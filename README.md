@@ -1128,32 +1128,187 @@ Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.
 
 ### Bewertungsgrößen und heuristische Regeln
 
-Je nach Aktionsart werden unterschiedliche Bewertungsgrößen verwendet.
-Die zugehörigen heuristischen Regeln bestimmen, wie daraus Teilwerte
-entstehen. In der folgenden Liste steht jeweils zuerst die Bewertungsgröße
-und danach ihre Regel:
+```mermaid
+flowchart LR
+    A["Bewertungsgrößen<br/>z. B. Restzeit, Transportzeit"]
+    A -->|"Heuristische Regeln und Abbildungen<br/>z. B. EDD oder inverse_scale()"| B["Teilwerte<br/>zwischen 0 und 1"]
+```
 
-- **Restzeit bis zur Deadline:** Je näher die Deadline liegt oder je weiter
-  sie überschritten ist, desto höher ist die EDD-Priorität.
-- **Operationsdauer und Transportzeit:** Kleinere Werte werden auf höhere
-  Teilwerte abgebildet.
-- **Maschinenwarteschlangenlänge:** Weniger wartende Jobs ergeben einen
-  höheren Teilwert.
-- **Werkzeugpassung:** Ist das benötigte Werkzeug bereits montiert, ist der
-  Teilwert `1`, sonst `0`.
-- **Werkzeugreserve:** Eine größere verbleibende Lebensdauer im Verhältnis
-  zum geplanten Verbrauch wird auf einen höheren Teilwert abgebildet.
-- **Anteil freier Pufferplätze:** Ein größerer Anteil freier Plätze im
-  Zielpuffer ergibt einen höheren Teilwert.
-- **Defektschwere:** Bei einer Herabstufungsaktion ergibt ein höherer
-  Schweregrad einen höheren Teilwert.
+Eine **Bewertungsgröße** ist ein Rohwert, beispielsweise eine Transportzeit
+von vier Zeiteinheiten. Die **heuristische Regel** legt fest, was bevorzugt
+wird, etwa ein kurzer Transport. Die **Abbildung** setzt diese Regel
+rechnerisch um: `inverse_scale(4) = 0.2`. Das Ergebnis ist der **Teilwert**.
+Für alle Teilwerte gilt: **Ein höherer Wert bedeutet einen größeren Vorteil
+für die betrachtete Aktion.**
 
-Die Defektbehandlung ist ein Anwendungsbereich dieser Regeln. Bei erreichter
-oder überschrittener Deadline werden für Nacharbeit und Warten zusätzlich
-Strafwerte vom Gesamtscore abgezogen.
+Je nach Aktionsart verwendet
+[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py)
+die folgenden Regeln und Abbildungen. Nicht jede Regel geht in jede Aktion
+ein; die Zuordnung steht unter [Bewertungsregeln nach Aktionsart](#bewertungsregeln-nach-aktionsart).
 
-Die Gewichte bestimmen, wie stark die einzelnen Kriterien innerhalb der
-jeweiligen Aktionsbewertung zählen.
+#### 1. Termindruck: dringendere Jobs bevorzugen
+
+- **Bewertungsgröße:** Restzeit `t = latest_end_time − aktuelle Zeit`.
+  `latest_end_time` ist die Deadline des Auftrags, zu dem der Job gehört.
+- **Regel:** Je näher die Deadline liegt oder je weiter sie überschritten
+  ist, desto höher ist die EDD-Priorität (`Earliest Due Date`).
+- **Abbildung in `calculate_edd_priority()`:**
+  - Bei `t >= 0`: `Teilwert = 0.5 × inverse_scale(t)`.
+  - Bei `t < 0`: `Teilwert = 0.5 + 0.5 × direct_scale(-t)`.
+- **Beispiel:** Zwei Zeiteinheiten vor der Deadline ergibt sich etwa
+  `0.167`, genau bei der Deadline `0.5` und zwei Zeiteinheiten danach etwa
+  `0.833`. Negative Restzeit wird also als Überfälligkeit behandelt.
+
+Der EDD-Teilwert geht unter anderem in Freigabe- und Pick-Aktionen ein.
+`prepare_action_candidate()` ergänzt ihn bei jedem Pick-Kandidaten als
+`queue_priority` im Payload. Für Warteaktionen wird daraus dagegen ein
+Wartewert berechnet, siehe Regel 8.
+
+#### 2. Verarbeitungs-, Transport- und Lagerzeiten: kürzere Zeiten bevorzugen
+
+- **Bewertungsgröße:** Eine nichtnegative Zeit `x`.
+- **Regel:** Eine kürzere Zeit soll einen höheren Teilwert ergeben.
+- **Abbildung:** `inverse_scale(x) = 1 / (1 + x)`.
+- **Beispiel:** Zeit `1 → 0.5`; Zeit `4 → 0.2`.
+
+Die Zeit stammt je nach Kandidat aus unterschiedlichen Daten:
+
+- **Verarbeitung:** Beim Maschinen-Pick und beim Ablegen an eine Maschine
+  zählt die konfigurierte Dauer `operation.duration` der nächsten Operation.
+  Bei der Freigabe berechnet `estimate_release_processing_time()` stattdessen
+  die Summe der Operationsdauern jeder möglichen Route und anschließend den
+  Mittelwert dieser Routenzeiten. Zum Beispiel ergeben Routen mit den
+  Gesamtzeiten `8` und `12` den Rohwert `10` und damit `1 / 11 ≈ 0.091`.
+- **Transport:** `transport_time_value()` schätzt die Zeit als
+  `(|Δx| + |Δy| + |Δz|) / movement_speed`. Die Abstände werden addiert,
+  weil die Bewegung achsenweise erfolgt. Bei Nacharbeit auf einer anderen
+  Maschine schätzt `defect_recovery_transport_time_value()` entsprechend
+  die Zeit vom Jobstandort zum Eingangspuffer der Nacharbeitsmaschine.
+- **Ein- und Auslagern:** `pick_source_storage_time_value()` verwendet
+  `storage_out_time`, `place_target_storage_time_value()` verwendet
+  `storage_in_time`, sofern das jeweilige Feld im Payload vorhanden ist.
+
+Die Verarbeitungszeitschätzung enthält keine späteren Größen-,
+Geschwindigkeits- oder Zufallsfaktoren der Maschine. Auch die
+Transportzeitschätzung sagt die zufällige Geschwindigkeitsschwankung der
+einzelnen Bewegung nicht voraus; sie verwendet eine konfigurierte
+Grundgeschwindigkeit.
+
+#### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
+
+- **Bewertungsgröße:** Anzahl `n` der Jobs im Eingangspuffer der Maschine.
+- **Regel:** Eine kürzere Warteschlange soll einen höheren Teilwert ergeben.
+- **Abbildung:** `inverse_scale(n) = 1 / (1 + n)`.
+- **Beispiel:** Kein wartender Job ergibt `1`; drei wartende Jobs ergeben
+  `0.25`.
+
+Das gilt beim Ablegen an eine Maschine in `place_machine_queue_value()` und
+bei Nacharbeitsaktionen in `evaluate_defect_recovery_action()`.
+
+#### 4. Werkzeugpassung: ein bereits montiertes passendes Werkzeug bevorzugen
+
+- **Bewertungsgröße:** Übereinstimmung zwischen benötigtem und montiertem
+  Werkzeugtyp.
+- **Regel und Abbildung:** Gleicher Werkzeugtyp ergibt den Teilwert `1`,
+  ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
+- **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
+  ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
+
+Die Regel steht in `evaluate_machine_pick_action()` und
+`evaluate_defect_recovery_action()`. Benötigt die Operation kein Werkzeug,
+wird kein Werkzeugpassungs-Teilwert hinzugefügt.
+
+#### 5. Werkzeugreserve: mehr Lebensdauer im Verhältnis zum Verbrauch bevorzugen
+
+- **Bewertungsgröße:** Verhältnis
+  `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
+- **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
+  höheren Teilwert ergeben.
+- **Vorgesehene Abbildung:** `direct_scale(r) = r / (1 + r)`.
+- **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
+  `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
+
+**Aktueller Codezustand:** Dieser Teilwert wird bei den regulären Snapshots
+derzeit nicht hinzugefügt. Die Konfiguration liefert `consumed_life_units`,
+die Reservelogik in `evaluate_machine_pick_action()` und
+`evaluate_defect_recovery_action()` liest aber `consumes_life_units` und
+erhält dadurch `0`. Die vorgesehene Berechnung setzt einen positiven
+Verbrauch voraus. Der tatsächliche Werkzeugverbrauch in `SimMachine` ist
+davon unabhängig.
+
+#### 6. Freie Pufferkapazität: einen größeren freien Anteil bevorzugen
+
+- **Bewertungsgröße:** Freie Plätze und Gesamtkapazität des Ziel-Stores.
+- **Regel:** Je größer der freie Anteil, desto höher der Teilwert.
+- **Abbildung in `target_store_capacity_value()`:**
+  `normalize_ratio(freie Plätze, Gesamtkapazität) = freie Plätze / Gesamtkapazität`.
+- **Beispiel:** Zwei von zehn freien Plätzen ergeben `0.2`; acht von zehn
+  ergeben `0.8`.
+
+Bei positiver, endlicher Kapazität und gültiger Belegung liegt dieser Anteil
+in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht. Die Regel wird
+bei Place-Aktionen verwendet.
+
+#### 7. Defektschwere: bei stärkerem Defekt die Herabstufung höher bewerten
+
+- **Bewertungsgröße:** `defect_severity` des Jobs.
+- **Regel:** Bei einem bereits erzeugten `downgrade_product`-Kandidaten soll
+  ein höherer Schweregrad einen höheren Teilwert ergeben.
+- **Abbildung in `evaluate_defect_action()`:** Der Schweregrad wird auf
+  `[0, 1]` begrenzt und dann direkt als Teilwert übernommen, **nicht** mit
+  `direct_scale()` umgerechnet.
+- **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
+
+Welche Defektaktionen überhaupt technisch zulässig sind, bestimmt weiterhin
+der `ActionGenerator`. Diese Regel erzeugt keine Herabstufungsaktion.
+
+#### 8. Warten: bei höherem Termindruck einen kleineren Wartewert verwenden
+
+- **Bewertungsgröße:** EDD-Priorität des wartenden beziehungsweise geladenen
+  Jobs.
+- **Regel:** Je dringender der Job, desto weniger vorteilhaft ist Warten.
+- **Abbildung für normales Warten in `evaluate_wait_action()`:**
+  `Teilwert = 0.01 + 0.98 × (1 − EDD)`.
+  Ohne zugehörigen Job oder ohne dessen Deadline ist der Teilwert `0.01`.
+- **Abbildung für einen defekten Job in `evaluate_defect_action()`:**
+  `Teilwert = 1 − EDD`.
+- **Beispiel:** Bei `EDD = 0.75` ergibt normales Warten `0.255` und Warten
+  bei einem Defekt zunächst `0.25`, noch vor einem möglichen Strafabzug.
+
+#### Feste Werte sowie zusätzliche Deadline-Regeln
+
+Nicht jeder Wert entsteht durch die Skalierung eines Rohwerts:
+
+- **Abschluss:** `complete_job` erhält den festen Teilwert und Score `1`.
+- **Verarbeitung:** `process_machine_job` erhält den festen Score `0`.
+  Das verhindert die Verarbeitung nicht: Bei einer geladenen Maschine mit
+  freiem Ausgangspuffer ist dies der einzige erzeugte Kandidat.
+- **Ausschuss:** `job_scrap` verwendet den festen Grundteilwert `1` und
+  zusätzlich den EDD-Teilwert. Beide gehen gewichtet in den Score ein.
+
+Bei **erreichter oder überschrittener Deadline** gelten für Defektaktionen
+zusätzlich folgende Regeln:
+
+- **Herabstufung:** Ein Bonus-Teilwert `1` kommt mit
+  `rework_not_allowed_downgrade_bonus_weight` in den gewichteten Durchschnitt.
+- **Warten bei einem Defekt:** Nach der Scoreberechnung wird
+  `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
+- **Nacharbeit:** Nach der Scoreberechnung wird je nach Maschine
+  `rework_defect_machine_deadline_penalty_weight` oder
+  `rework_alternative_machine_deadline_penalty_weight` abgezogen,
+  standardmäßig jeweils `0.5`.
+
+Nach diesen Strafabzügen wird ein negativer Score auf `0` gesetzt. Das sind
+Anpassungen des Gesamtscores, keine zusätzlichen Rohwert-Abbildungen.
+Die Prüfung `is_rework_allowed()` betrachtet dabei nur, ob noch Zeit bis zur
+Deadline verbleibt; sie berechnet nicht, ob die Nacharbeit rechtzeitig
+abgeschlossen werden kann, und entfernt auch keinen Kandidaten.
+
+Erst **nach der Abbildung** verbindet `calculate_action_score()` die
+verwendeten Teilwerte mit ihren Gewichten zu einem Gesamtscore. Die Gewichte
+bestimmen ihre relative Wichtigkeit; sie ändern nicht die Richtung der
+Abbildung. Die mathematischen Verläufe und die genaue Zusammensetzung je
+Aktionsart sind im folgenden Abschnitt erläutert.
 
 ### ActionEvaluator
 

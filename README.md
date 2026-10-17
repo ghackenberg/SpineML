@@ -1131,7 +1131,7 @@ Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.
 ```mermaid
 flowchart LR
     A["Bewertungsgrößen<br/>z. B. Restzeit, Transportzeit"]
-    A -->|"Heuristische Regeln und Abbildungen<br/>z. B. EDD oder inverse_scale()"| B["Teilwerte<br/>zwischen 0 und 1"]
+    A -->|"Heuristische Regeln"| B["Teilwerte<br/>zwischen 0 und 1"]
 ```
 
 Eine **Bewertungsgröße** ist ein Rohwert, beispielsweise eine Transportzeit

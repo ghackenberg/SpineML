@@ -874,12 +874,14 @@ erzeugter Aktionskandidat für den aktuellen Simulationszustand?** Er erzeugt
 keine Aktionen und führt keine Aktion aus. Er berechnet nur einen Score für
 jeden Kandidaten.
 
-| Begriff | Bedeutung | Beispiel |
-|---|---|---|
-| Bewertungsgröße | Rohwert eines Kriteriums | Transportzeit oder Warteschlangenlänge |
-| Teilwert | Bewertung dieses Rohwerts im Bereich `0` bis `1` | `inverse_scale(Transportzeit)` |
-| Gewicht | Relative Wichtigkeit des Teilwerts | `pick_short_transport_time_weight` |
-| Aktionsscore | Gewichteter Gesamtscore der Aktion | `calculate_action_score()` |
+Der Evaluator verwendet dabei vier Begriffe: Eine **Bewertungsgröße** ist der
+Rohwert eines Kriteriums (zum Beispiel Transportzeit oder
+Warteschlangenlänge). Ein **Teilwert** ist die daraus berechnete Bewertung im
+Bereich `0` bis `1` (zum Beispiel `inverse_scale(Transportzeit)`). Ein
+**Gewicht** beschreibt die relative Wichtigkeit dieses Teilwerts (zum Beispiel
+`pick_short_transport_time_weight`). Der **Aktionsscore** ist schließlich der
+gewichtete Gesamtscore der Aktion und wird von `calculate_action_score()`
+berechnet.
 
 ### Aufgabe des Evaluators
 

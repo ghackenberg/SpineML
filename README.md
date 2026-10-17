@@ -862,11 +862,13 @@ zwingend optimale Entscheidung zu finden.
 
 ### Welches Problem wird gelöst?
 
-In jedem Simulationszustand können mehrere Jobs, Maschinen, Routen und
-Aktionen gleichzeitig möglich sein. Außerdem ändern sich die Bedingungen
-laufend, zum Beispiel wenn eine Maschine frei wird, ein Store voll ist oder
-ein Defekt auftritt. Eine vollständige Planung für alle zukünftigen Zustände
-wird deshalb nicht bei jeder Entscheidung neu berechnet.
+Bei der **dynamischen Produktionsplanung** wird die nächste Entscheidung nicht
+einmal für die gesamte Produktion festgelegt. In jedem Simulationszustand
+können mehrere Jobs, Maschinen, Routen und Aktionen möglich sein. Außerdem
+ändern sich die Bedingungen laufend, zum Beispiel wenn eine Maschine frei
+wird, ein Store voll ist oder ein Defekt auftritt. Deshalb wird die nächste
+Aktion jeweils auf Grundlage des aktuellen Zustands bewertet, anstatt alle
+zukünftigen Zustände vollständig vorauszuplanen.
 
 ### Wie wird das Problem heuristisch gelöst?
 

@@ -850,9 +850,11 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 ### Ziel von `HeuristicControl`
 
-`HeuristicControl` soll für den aktuellen Simulationszustand schnell eine
-geeignete nächste Aktion bewerten. Es soll die Produktion dadurch laufend
-steuern und die verfügbaren Ressourcen sinnvoll nutzen.
+`HeuristicControl` bewertet im aktuellen Simulationszustand alle vom
+`ActionGenerator` erzeugten Aktionskandidaten. Für jeden Kandidaten berechnet
+es einen Score; erst der `ActionSelector` wählt daraus die nächste Aktion aus.
+So wird die Produktion laufend gesteuert und die verfügbaren Ressourcen werden
+berücksichtigt.
 
 ### Was bedeutet „heuristisch“?
 

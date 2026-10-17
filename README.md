@@ -848,8 +848,10 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 # HeuristicControl
 
-„Heuristisch“ bedeutet, dass eine praktische Näherungsregel verwendet wird,
-um schnell eine gute Entscheidung zu finden. `HeuristicControl` ist der
+„Heuristisch“ bedeutet, dass eine praktische Näherungsregel verwendet wird.
+Dabei werden aktuelle Kriterien wie Termindruck, Bearbeitungszeit oder
+Maschinenverfügbarkeit betrachtet, um schnell eine gute, aber nicht zwingend
+optimale Entscheidung zu finden. `HeuristicControl` ist der
 Bewertungsteil der Policy: Der `ActionGenerator` erzeugt die zulässigen
 Aktionskandidaten, `HeuristicControl` bewertet jeden Kandidaten anhand des
 aktuellen Simulationszustands und der `ActionSelector` wählt anschließend eine

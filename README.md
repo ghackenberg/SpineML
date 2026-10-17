@@ -850,48 +850,68 @@ Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
 
 ### Ziel von `HeuristicControl`
 
-`HeuristicControl` bewertet im aktuellen Simulationszustand alle vom
-`ActionGenerator` erzeugten Aktionskandidaten. Für jeden Kandidaten berechnet
-es einen Score; erst der `ActionSelector` wählt daraus die nächste Aktion aus.
-So wird die Produktion laufend gesteuert und die verfügbaren Ressourcen werden
-berücksichtigt.
+`HeuristicControl` berechnet für alle vom `ActionGenerator` erzeugten
+Aktionskandidaten der aktuellen Entscheidungsrunde einen Score (numerischen
+Bewertungswert). Dadurch kann der `ActionSelector` die Kandidaten vergleichen
+und eine Aktion auswählen. Die Bewertung soll unter anderem Termintreue,
+kurze Verarbeitungs- und Transportzeiten sowie eine sinnvolle Werkzeugnutzung
+unterstützen.
 
 ### Was bedeutet „heuristisch“?
 
 „Heuristisch“ bedeutet, dass eine vereinfachte Entscheidungsregel verwendet
-wird. Aktuelle Kriterien werden bewertet, um schnell eine gute, aber nicht
-zwingend optimale Entscheidung zu finden.
+wird, zum Beispiel: „Bevorzuge einen dringenden Job“ oder „Bevorzuge einen
+kurzen Transportweg“. Mehrere solcher Regeln werden gewichtet miteinander
+verbunden. Damit lässt sich schnell eine geeignete nächste Aktion finden;
+eine insgesamt optimale Produktionsplanung ist dadurch nicht garantiert.
 
 ### Welches Problem wird gelöst?
 
-Bei der **dynamischen Produktionsplanung** wird die nächste Entscheidung nicht
-einmal für die gesamte Produktion festgelegt. In jedem Simulationszustand
-können mehrere Jobs, Maschinen, Routen und Aktionen möglich sein. Außerdem
-ändern sich die Bedingungen laufend, zum Beispiel wenn eine Maschine frei
-wird, ein Store voll ist oder ein Defekt auftritt. Deshalb wird die nächste
-Aktion jeweils auf Grundlage des aktuellen Zustands bewertet, anstatt alle
-zukünftigen Zustände vollständig vorauszuplanen.
+Bei der **dynamischen Produktionsplanung** muss die Steuerung wiederholt
+entscheiden, welcher Job als Nächstes transportiert oder verarbeitet wird,
+welche Maschine dafür verwendet wird und wie mit einem Defekt umzugehen ist.
+Dabei stehen häufig mehrere technisch mögliche Aktionen zur Auswahl.
+
+Diese Entscheidungen müssen an wechselnde Bedingungen angepasst werden:
+Eine Maschine wird frei, ein Store wird voll, ein Transport endet oder ein
+Defekt tritt auf. Das Problem besteht darin, aus den aktuell möglichen
+Aktionen eine geeignete nächste Aktion auszuwählen.
 
 ### Wie wird das Problem heuristisch gelöst?
 
 1. Der `ActionGenerator` erzeugt die technisch zulässigen Aktionskandidaten.
-2. `HeuristicControl` liest die relevanten Bewertungsgrößen aus dem aktuellen
-   Simulationszustand und bewertet damit jeden Kandidaten.
-3. Die Bewertungsgrößen werden in Teilwerte umgerechnet und mit ihren Gewichten
-   zu einem Gesamtscore verbunden.
+2. `HeuristicControl` ermittelt für jeden Kandidaten die relevanten
+   Bewertungsgrößen (zum Beispiel Restzeit bis zur Deadline oder Transportzeit)
+   aus dem aktuellen Simulationszustand, der Konfiguration und den Aktionsdaten.
+3. Daraus berechnet es Teilwerte (einzelne Bewertungen der Kriterien) und
+   verbindet sie mit ihren Gewichten (relativer Wichtigkeit) zu einem
+   Gesamtscore.
 4. Der `ActionSelector` vergleicht die Scores und wählt eine Aktion aus.
-5. Nach der Ausführung entsteht ein neuer Zustand, für den der Ablauf erneut
-   beginnt.
+5. Bei der nächsten Beobachtung werden die Kandidaten und ihre Scores anhand
+   des dann aktuellen Zustands erneut bestimmt.
 
-`HeuristicControl` erzeugt keine Aktionen und führt keine Aktion selbst in der
-Simulation aus.
+Der `ActionGenerator` bestimmt, welche Aktionen technisch möglich sind.
+`HeuristicControl` bewertet, welche dieser Möglichkeiten vorteilhafter ist.
+Die ausgewählte Aktion wird anschließend im Simulationskern ausgeführt.
 
 ### Heuristische Aspekte
 
-Die Bewertung berücksichtigt unter anderem Termindruck, Bearbeitungs- und
-Transportzeiten, Maschinenverfügbarkeit, Werkzeugreserve, Pufferkapazität
-sowie Defekt- und Nacharbeitsmöglichkeiten. Diese Kriterien beschreiben den
-aktuellen Zustand; sie ersetzen keine vollständige Zukunftsplanung.
+Je nach Aktionsart fließen unterschiedliche Regeln in die Bewertung ein:
+
+- **Termindruck:** Dringende Jobs erhalten eine höhere Priorität.
+- **Verarbeitungs- und Transportzeiten:** Kürzere Zeiten erhalten höhere
+  Teilwerte.
+- **Maschinenwarteschlangen:** Kürzere Warteschlangen werden bevorzugt.
+- **Werkzeugzustand:** Bereits montierte passende Werkzeuge und größere
+  Lebensdauerreserven erhalten höhere Teilwerte.
+- **Pufferkapazität:** Ein größerer Anteil freier Plätze im Zielpuffer wird
+  höher bewertet.
+- **Defektbehandlung:** Nacharbeit, Herabstufung und Warten werden unter
+  anderem anhand von Defektschwere, verbleibender Zeit bis zur Deadline und
+  Zustand der möglichen Nacharbeitsmaschine bewertet.
+
+Die Gewichte bestimmen, wie stark die einzelnen Kriterien innerhalb der
+jeweiligen Aktionsbewertung zählen.
 
 ## ActionEvaluator
 

@@ -1093,9 +1093,10 @@ Im vollständigen Code kommen je nach Aktion weitere Kriterien hinzu.
    Konfiguration und den Aktionsdaten. Im Beispiel benötigt der Transport zu A
    vier Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er
    eine Zeiteinheit; dort sind zwei von zehn Plätzen frei.
-3. **Teilwerte** (Bewertungen der einzelnen Bewertungsgrößen zwischen `0` und
-   `1`): Die Transportzeit wird mit `inverse_scale()` bewertet, die freie
-   Kapazität als Anteil berechnet. Für A entstehen die Teilwerte
+3. **Teilwerte** (auf den Bereich `0` bis `1` abgebildete Werte der einzelnen
+   Bewertungsgrößen): Für die Transportzeit wird `inverse_scale()` verwendet,
+   für die freie Kapazität das Verhältnis `freie Plätze / Gesamtkapazität`.
+   Für A entstehen die Teilwerte
    `1 / (1 + 4) = 0.2` und `4 / 10 = 0.4`. Für B ergeben sich
    `1 / (1 + 1) = 0.5` und `2 / 10 = 0.2`.
 4. **Gewichte** (relative Wichtigkeit der Teilwerte): Für dieses Rechenbeispiel
@@ -1166,7 +1167,7 @@ es garantiert keine global optimale Produktionsreihenfolge.
    Bewertungsmethode auf, zum Beispiel `evaluate_machine_pick_action()`.
 3. Diese Methode ermittelt die benötigten Bewertungsgrößen (Rohwerte eines
    Kriteriums, etwa eine Transportzeit von vier Zeiteinheiten) und berechnet
-   daraus Teilwerte (vergleichbare Bewertungen, etwa
+   daraus Teilwerte (auf den Bereich `0` bis `1` abgebildete Werte, etwa
    `inverse_scale(4) = 0.2`).
 4. `calculate_action_score()` verbindet die Teilwerte mit ihren Gewichten
    (relativer Wichtigkeit, etwa `pick_short_transport_time_weight`) zu einem
@@ -1265,7 +1266,8 @@ xychart-beta
 
 #### Teilwerte gewichten und Aktionsscore berechnen
 
-Ein Teilwert beschreibt, wie günstig ein einzelnes Kriterium bewertet wird.
+Ein Teilwert entsteht durch die Abbildung einer Bewertungsgröße auf den
+Bereich `0` bis `1`.
 Das zugehörige Gewicht aus `HeuristicWeights` legt fest, wie wichtig dieses
 Kriterium gegenüber den anderen Kriterien derselben Aktion ist.
 

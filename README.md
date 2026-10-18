@@ -1154,9 +1154,8 @@ xychart-beta
 **Verwendung:** [Freigabe](#freigabe-release_job),
 [Roboter-Pick](#roboter-pick-pick_main_robot-und-pick_corridor_arm_robot),
 [Maschinen-Pick](#maschinen-pick-pick_machine_job),
-[normales Warten](#normales-warten-wait_),
-[Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job) und
-[Ausschuss](#ausschuss-job_scrap).
+[normales Warten](#normales-warten-wait_) und
+[Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job).
 
 #### 2. Verarbeitungs-, Transport- und Lagerzeiten: kürzere Zeiten bevorzugen
 
@@ -1608,10 +1607,12 @@ Danach wird wegen der überschrittenen Deadline
 
 Diese Aktion wird ausschließlich erzeugt, wenn der Defektschweregrad außerhalb
 des technisch nacharbeitbaren Bereichs liegt. Dann ist sie der einzige
-Kandidat. Ihre Bewertung verwendet:
+Kandidat. `evaluate_defect_action()` gibt dafür einen konstanten Score zurück:
 
-1. `1 × job_scrap_weight`.
-2. **[Termindruck](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × deadline_pressure_scrap_bonus_weight`.
+`Score = 1.0`
+
+EDD und Gewichte werden für diese Aktion nicht verwendet. Da keine andere
+Aktion zur Auswahl steht, wird Ausschuss unabhängig vom Termindruck gewählt.
 
 #### Abschluss: `complete_job`
 

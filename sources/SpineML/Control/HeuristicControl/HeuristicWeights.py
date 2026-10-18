@@ -49,12 +49,7 @@ class HeuristicWeights:
 
     wait_defect_job_weight: float = 0.2
 
-    # Auch der Grundwert der Scrapaktion bleibt als Bewertungsaspekt aktiv.
-    job_scrap_weight: float = 0.1
-
     rework_not_allowed_downgrade_bonus_weight: float = 0.4
-
-    deadline_pressure_scrap_bonus_weight: float = 0.5
 
     deadline_missed_wait_penalty_weight: float = 0.2
 

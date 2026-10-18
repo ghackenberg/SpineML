@@ -399,6 +399,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         current_state: dict,
         observation: PolicyObservation,
     ) -> float:
+        # Ausschuss ist der einzige Kandidat; EDD und Gewichte sind nicht nötig.
+        if action_type == "job_scrap":
+            return 1.0
+
         remaining_time = self.estimate_remaining_time(current_state)
         deadline_missed = remaining_time <= 0
         current_time = float(
@@ -409,15 +413,6 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             float(current_state["latest_end_time"]),
             current_time,
         )
-
-        if action_type == "job_scrap":
-            return self.calculate_action_score([
-                (1.0, self.weights.job_scrap_weight),
-                (
-                    defect_edd_priority,
-                    self.weights.deadline_pressure_scrap_bonus_weight,
-                ),
-            ])
 
         if action_type == "wait_job":
             # A defective job may wait; the more urgent its deadline,

@@ -1123,6 +1123,7 @@ größeren Vorteil für die betrachtete Aktion.**
 Die Verwendung der Bewertungsgrößen wird in einem eigenen Kapitel
 [je Aktionstyp](#verwendung-der-bewertungsgrößen-nach-aktionstyp) erklärt.
 Unter jeder Regel führen Links direkt zu den zugehörigen Aktionstypen.
+Umgekehrt führen die verlinkten Kriterien der Aktionen zurück zur jeweiligen Regel.
 Die folgenden Regeln erklären jeweils Rohwert, Abbildung und Beispiel.
 
 ### Allgemeine heuristische Regeln
@@ -1427,10 +1428,12 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ### Verwendung der Bewertungsgrößen nach Aktionstyp
 
-Die allgemeinen Regeln legen fest, wie Rohwerte auf Teilwerte abgebildet
-werden. Dieses Kapitel erklärt getrennt davon, **welche Rohwerte bei welchem
+Die [allgemeinen Regeln](#allgemeine-heuristische-regeln) legen fest, wie
+Rohwerte auf Teilwerte abgebildet werden. Dieses Kapitel erklärt getrennt
+davon, **welche Rohwerte bei welchem
 Aktionstyp verwendet werden, wie sie ermittelt werden und welche Gewichte
-in den Score eingehen**.
+in den Score eingehen**. Die verlinkten Kriterien führen direkt zurück
+zur jeweiligen Regel mit ihrer Formel und ihrem Beispiel.
 
 Die Ausdrücke zeigen jeweils `Teilwert × Gewicht`.
 `calculate_action_score()` addiert diese Beiträge und teilt durch die
@@ -1441,8 +1444,8 @@ die dafür benötigten Daten beziehungsweise Bedingungen vorhanden sind.
 
 `evaluate_release_action()` berücksichtigt zwei Kriterien:
 
-1. **Termindruck:** `EDD × release_edd_weight`.
-2. **Durchschnittliche Routenverarbeitungszeit:**
+1. **[Termindruck](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × release_edd_weight`.
+2. **[Durchschnittliche Routenverarbeitungszeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
    `inverse_scale(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
 
 ##### Ermittlung der Routenzeit
@@ -1468,10 +1471,10 @@ Transport- und Wartezeiten sind in dieser Summe nicht enthalten.
 
 `evaluate_robot_pick_action()` bewertet den ausgewählten Job anhand von:
 
-1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`.
-2. **Entnahmezeit:** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
+1. **[EDD-/Queue-Priorität](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × queue_priority_weight`.
+2. **[Entnahmezeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
    Das Kriterium geht nur ein, wenn `storage_out_time` im Payload vorhanden ist.
-3. **Transportzeit:** `inverse_scale(Transportzeit) × pick_short_transport_time_weight`.
+3. **[Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(Transportzeit) × pick_short_transport_time_weight`.
 
 ##### Ermittlung der Transportzeit
 
@@ -1502,12 +1505,12 @@ als getrennte Teilwerte mit ihren jeweiligen Gewichten in den Score ein.
 
 `evaluate_machine_pick_action()` berücksichtigt:
 
-1. **EDD-/Queue-Priorität:** `EDD × queue_priority_weight`.
-2. **Operationsdauer:** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
+1. **[EDD-/Queue-Priorität](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × queue_priority_weight`.
+2. **[Operationsdauer](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
    Hier zählt die konfigurierte Operationsdauer.
-3. **Werkzeugpassung:** `Werkzeugpassung × machine_pick_tool_match_weight`,
+3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × machine_pick_tool_match_weight`,
    nur wenn die Operation ein Werkzeug benötigt.
-4. **Werkzeugreserve:**
+4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
    Vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv;
    siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve).
@@ -1534,19 +1537,19 @@ Bei einem vollen Ausgangspuffer wird stattdessen nur `wait_machine` erzeugt.
 
 `evaluate_place_action()` bewertet die möglichen Transportziele anhand von:
 
-1. **Freier Zielkapazität:**
+1. **[Freier Zielkapazität](#6-freie-pufferkapazität-einen-größeren-freien-anteil-bevorzugen):**
    `Anteil freier Plätze × target_store_free_capacity_weight`.
    `target_store_capacity_value()` ermittelt dafür den freien Kapazitätsanteil.
-2. **Transportzeit:**
+2. **[Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
    `inverse_scale(Transportzeit) × place_short_transport_time_weight`.
-3. **Einlagerungszeit:**
+3. **[Einlagerungszeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
    `inverse_scale(storage_in_time) × place_target_storage_time_weight`,
    falls `storage_in_time` im Payload vorhanden ist.
-4. **Maschinenwarteschlange:**
+4. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
    `inverse_scale(Warteschlangenlänge) × place_machine_queue_length_weight`.
    `place_machine_queue_value()` liest die Anzahl der Jobs im Eingangspuffer,
    falls eine Zielmaschine angegeben ist.
-5. **Dauer der nächsten Operation:**
+5. **[Dauer der nächsten Operation](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
    `inverse_scale(operation.duration) × place_operation_duration_weight`,
    falls der Payload eine nächste Operation enthält.
 
@@ -1568,7 +1571,8 @@ dieser Teilwert.
 `evaluate_wait_action()` betrachtet den wartenden Job oder den aktuell
 geladenen Job einer Maschine beziehungsweise eines Roboters.
 
-Es verwendet den normalen Wartewert aus Regel 8 als einzigen Teilwert mit
+Es verwendet den aus der [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen) abgeleiteten
+normalen [Wartewert](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-verwenden) als einzigen Teilwert mit
 `wait_action_weight`. Das Gewicht kürzt sich bei der Mittelwertbildung
 heraus. Für defekte Jobs gilt stattdessen die gesonderte Bewertung unter
 [Defektbehandlung](#defektbehandlung).
@@ -1594,10 +1598,12 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
 
 `evaluate_defect_recovery_action()` berücksichtigt:
 
-1. `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-2. `Werkzeugpassung × defect_recovery_tool_match_weight`, falls ein Werkzeug
-   benötigt wird.
-3. `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
+1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
+   `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
+2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`,
+   falls ein Werkzeug benötigt wird.
+3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
+   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv
    (siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve)).
 
@@ -1606,7 +1612,12 @@ Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
-Es gelten dieselben drei Kriterien. Zusätzlich geht
+Es gelten dieselben Kriterien wie bei der
+[Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine):
+[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen),
+[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) und
+[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen).
+Zusätzlich geht die [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen) als
 `inverse_scale(Transportzeit zur Nacharbeitsmaschine) × defect_recovery_transport_time_weight`
 ein, wenn diese Zeit geschätzt werden kann. Bei `remaining_time <= 0`
 wird `rework_alternative_machine_deadline_penalty_weight` abgezogen,
@@ -1622,7 +1633,7 @@ auf `0` gesetzt.
 
 ##### Herabstufung: `downgrade_product`
 
-1. `defect_severity × product_downgrade_defect_severity_weight`.
+1. **[Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten):** `defect_severity × product_downgrade_defect_severity_weight`.
 2. Ist die Deadline bereits erreicht oder überschritten, kommt der
    Bonus-Teilwert `1 × rework_not_allowed_downgrade_bonus_weight` hinzu.
 
@@ -1631,8 +1642,9 @@ ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
 
 ##### Warten bei einem Defekt: `wait_job`
 
-Der Defekt-Wartewert aus Regel 8 (`1 − EDD`) wird mit
-`wait_defect_job_weight` als einzigem Teilwert übergeben. Bei
+Der [Defekt-Wartewert](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-verwenden)
+(`1 − EDD`) verwendet die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen).
+Er wird mit `wait_defect_job_weight` als einzigem Teilwert übergeben. Bei
 `remaining_time <= 0` wird anschließend
 `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
 Ein negatives Ergebnis wird auf `0` gesetzt.
@@ -1644,7 +1656,7 @@ des technisch nacharbeitbaren Bereichs liegt. Dann ist sie der einzige
 Kandidat. Ihre Bewertung verwendet:
 
 1. `1 × job_scrap_weight`.
-2. `EDD × deadline_pressure_scrap_bonus_weight`.
+2. **[Termindruck](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × deadline_pressure_scrap_bonus_weight`.
 
 #### Abschluss: `complete_job`
 
@@ -1656,7 +1668,8 @@ Ein unbekannter `action_type` erhält in `evaluate_action()` den Score `0`.
 
 #### Codehinweis zur Werkzeugreserve
 
-**Aktueller Codezustand:** Dieser Teilwert wird bei den regulären Snapshots
+**Aktueller Codezustand:** Der [Werkzeugreserve-Teilwert](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen)
+wird bei den regulären Snapshots
 derzeit nicht hinzugefügt. `ConfigurationObjectObserver` liefert den Verbrauch
 im Konfigurationsmodell unter `consumed_life_units`,
 die Reservelogik in `evaluate_machine_pick_action()` und

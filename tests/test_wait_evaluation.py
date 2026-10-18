@@ -99,7 +99,13 @@ def test_wait_without_job_keeps_default_score(actor_type, action_type):
 
 @pytest.mark.parametrize(
     "current_time, expected_score",
-    [(998.0, 5.0 / 6.0), (1000.0, 0.3), (1001.0, 0.05), (2000.0, 0.0)],
+    [
+        (998.0, 5.0 / 6.0),
+        (1000.0, 0.3),
+        (1001.0, 0.05),
+        (1002.0, -1.0 / 30.0),
+        (2000.0, 0.5 / 1001.0 - 0.2),
+    ],
 )
 def test_defect_wait_keeps_deadline_penalty(current_time, expected_score):
     evaluator = LocalHeuristicActionEvaluator(HeuristicWeights())

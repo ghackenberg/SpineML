@@ -1096,7 +1096,8 @@ steht in
 4. **Score berechnen:** `calculate_action_score()` verbindet die Teilwerte
    mit ihren Gewichten (relativer Wichtigkeit) zu einem Gesamtscore.
    Bei bestimmten Defektaktionen wird anschließend eine Deadline-Strafe
-   abgezogen.
+   abgezogen. Der Endscore kann dadurch negativ werden und wird nicht
+   nachträglich begrenzt.
 
 Der `BaselineActionSelector` verwendet die fertigen Scores zur Auswahl.
 Er wählt eine bestbewertete Aktion oder erkundet gelegentlich eine fast
@@ -1506,7 +1507,7 @@ aktuelle Zeit `11`.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
-Ein nach dem Abzug negativer Score wird auf `0` gesetzt.
+Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
 **Beispiel:** Der Eingangspuffer der Defektmaschine ist leer und die Operation
 benötigt kein Werkzeug. Deshalb geht nur der Warteschlangen-Teilwert
@@ -1547,7 +1548,7 @@ Teilwert ab.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_alternative_machine_deadline_penalty_weight` abgezogen, standardmäßig
-`0.5`. Ein nach dem Abzug negativer Score wird auf `0` gesetzt.
+`0.5`. Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
 **Beispiel:** Der Eingangspuffer der alternativen Maschine ist leer, die
 Operation benötigt kein Werkzeug und die geschätzte Transportzeit beträgt
@@ -1607,7 +1608,7 @@ dieses Gewicht kürzt sich heraus.
 
 Bei `remaining_time <= 0` wird anschließend
 `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
-Ein negatives Ergebnis wird auf `0` gesetzt.
+Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
 **Beispiel vor der Deadline:** Bei Deadline `10` und aktueller Zeit `8`
 beträgt die Restzeit `2`. `calculate_edd_priority()` berechnet
@@ -1625,6 +1626,10 @@ Danach wird wegen der überschrittenen Deadline
 `deadline_missed_wait_penalty_weight = 0.2` abgezogen:
 
 `Score = 0.25 − 0.2 = 0.05`
+
+Bei aktueller Zeit `12` ist `EDD = 5 / 6`. Dann ergibt sich
+`Score = (1 − 5 / 6) − 0.2 = −1 / 30 ≈ −0.033`. Dieser negative Score
+wird nicht auf `0` gesetzt.
 
 ##### Ausschuss: `job_scrap`
 
@@ -1664,9 +1669,19 @@ Ein **Gewicht** legt fest, wie wichtig ein Teilwert gegenüber den anderen
 Teilwerten derselben Aktion ist. Der **Gesamtscore** verbindet die
 verwendeten Teilwerte zu einer numerischen Gesamtbewertung der Aktion.
 
-`calculate_action_score()` berechnet den gewichteten Durchschnitt:
+`calculate_action_score()` berechnet den gewichteten Durchschnitt vor
+etwaigen Strafabzügen:
 
-`Aktionsscore = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
+`Score vor Strafabzügen = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
+
+Für Defektaktionen mit einer Deadline-Strafe gilt anschließend:
+
+`Endscore = Score vor Strafabzügen − Deadline-Strafe`
+
+Ohne Strafabzug entspricht der Endscore dem gewichteten Durchschnitt.
+Negative Endscores bleiben unverändert. Auch für sie gilt: Ein höherer
+Score ist vorteilhafter, zum Beispiel `−0.1 > −0.4`. Ein negativer Score
+verbietet die Aktion nicht; die technische Zulässigkeit prüft der Generator.
 
 „Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
 berücksichtigt wird. Beispielsweise geht Werkzeugpassung nur ein, wenn die
@@ -1704,6 +1719,8 @@ multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
 Wichtigkeiten ändern sich dadurch nicht. Ohne die Division würde allein die
 größere Gewichtssumme den Score erhöhen.
 
+Das folgende Diagramm zeigt die Berechnung **vor** etwaigen Strafabzügen.
+
 ```mermaid
 flowchart LR
     A["Teilwerte xᵢ zwischen 0 und 1"] --> C["Teilwert × Gewicht"]
@@ -1716,6 +1733,8 @@ flowchart LR
 ```
 
 #### Mathematischer Verlauf des Gesamtscores
+
+Die folgenden Rechnungen und die Kurve zeigen den Score ohne Strafabzüge.
 
 Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
 

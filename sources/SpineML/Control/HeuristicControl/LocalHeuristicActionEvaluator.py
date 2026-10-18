@@ -39,8 +39,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     def normalize_ratio(value: float, maximum: float) -> float:
         return float(value) / float(maximum)
 
-    # Berechnet den gewichteten Gesamtscore aus allen Teilwerten einer Aktion.
-    # Bei Teilwerten in [0, 1] und positiven Gewichten liegt der Gesamtscore ebenfalls in [0, 1].
+    # Berechnet den gewichteten Durchschnitt der Teilwerte vor etwaigen Strafabzügen.
+    # Bei Teilwerten in [0, 1] und positiven Gewichten liegt dieser Durchschnitt ebenfalls in [0, 1].
     @staticmethod
     def calculate_action_score(
         weighted_parts: list[tuple[float, float]],
@@ -423,8 +423,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             # After the deadline, an additional waiting penalty is subtracted.
             if deadline_missed:
                 score -= self.weights.deadline_missed_wait_penalty_weight
-            # Returns the final score of the wait action.
-            return max(0.0, score)
+            # Negative Endscores bleiben für den Vergleich der Aktionen erhalten.
+            return score
 
         rework_allowed = self.is_rework_allowed(
             current_state,
@@ -537,7 +537,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             else:
                 penalty = self.weights.rework_alternative_machine_deadline_penalty_weight
             score -= penalty
-        return max(0.0, score)
+        # Negative Endscores bleiben für den Vergleich der Aktionen erhalten.
+        return score
 
     # Schätzt die Transportzeit vom aktuellen Jobstandort zum Eingangsstore
     # der ausgewählten rework machine.

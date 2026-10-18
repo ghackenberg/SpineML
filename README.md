@@ -1495,7 +1495,11 @@ aktuelle Zeit `11`.
 
 ##### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 
-`evaluate_defect_recovery_action()` berücksichtigt:
+Diese Aktion legt fest, dass die Operation, bei der der Produktdefekt
+entstanden ist, auf derselben Maschine wiederholt wird.
+
+**Bewertungskriterien:** `evaluate_defect_recovery_action()` verwendet die
+Zustände dieser Maschine und die Daten der zu wiederholenden Operation:
 
 1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
    `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
@@ -1508,41 +1512,53 @@ aktuelle Zeit `11`.
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    falls der Lebensdauerverbrauch der Operation positiv ist.
 
-`defect_recovery_transport_time_value()` berechnet den Weg vom aktuellen
-Jobstandort zum Eingangspuffer der Defektmaschine. Auch bei Nacharbeit auf
-dieser Maschine wird also die tatsächliche Wegstrecke berücksichtigt,
-nicht pauschal die Transportzeit `0`. Die geschätzte Zeit ergibt sich aus
-der achsenweisen Wegstrecke geteilt durch die konfigurierte
-Grundgeschwindigkeit und wird mit `inverse_scale()` abgebildet.
+**Transportzeit auf derselben Maschine:** Liegt der Job im Ausgangspuffer
+der Defektmaschine, haben sein Standort und der Eingangspuffer im aktuellen
+Layout dieselben Koordinaten. `defect_recovery_transport_time_value()`
+ermittelt deshalb für diesen Weg:
 
-Bei `remaining_time <= 0` wird nach der Mittelwertbildung
+`Transportzeit = 0` und `Transport-Teilwert = inverse_scale(0) = 1`.
+
+Der Teilwert `1` bedeutet hier: Für die geschätzte Wegstrecke fällt keine
+Transportzeit an. Er bleibt mit seinem Gewicht in der Bewertung enthalten;
+er macht nicht den gesamten Aktionsscore zu `1`. Zusätzliche Greif- und
+Hubbewegungen des Roboters sind in dieser Wegschätzung nicht enthalten.
+
+**Deadline:** Bei `remaining_time > 0` gibt es keinen Deadline-Strafabzug.
+Bei `remaining_time <= 0` wird nach der Berechnung des gewichteten Durchschnitts
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
 
-**Beispiel:** Die vier Kriterien ergeben mit den Standardgewichten:
+**Rechenbeispiel:** Der Job liegt im Ausgangspuffer dieser Maschine. Mit den
+Standardgewichten ergeben sich:
 
 - **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
   Gewicht `0.3`.
-- **Transportzeit:** Die geschätzte Zeit zum Eingangspuffer der Defektmaschine
-  beträgt `1`. `inverse_scale(1) = 0.5`, Gewicht `0.2`.
+- **Transportzeit:** Die Wegschätzung ergibt `0`. `inverse_scale(0) = 1`,
+  Gewicht `0.2`.
 - **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
   Teilwert `1`, Gewicht `0.2`.
 - **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
   `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
 
-`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
+`Score vor Strafabzug = (1 × 0.3 + 1 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 8 / 9 ≈ 0.889`
 
 Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
-keinen Strafabzug; der Score bleibt `7 / 9 ≈ 0.778`.
+keinen Strafabzug; der Score bleibt `8 / 9 ≈ 0.889`.
 
 Bei aktueller Zeit `11` ist die Deadline überschritten. Der Code zieht
 anschließend `0.5` ab:
 
-`Endscore = 7 / 9 − 0.5 = 5 / 18 ≈ 0.278`
+`Endscore = 8 / 9 − 0.5 = 7 / 18 ≈ 0.389`
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
-`evaluate_defect_recovery_action()` bewertet die ausgewählte alternative
-Nacharbeitsmaschine anhand von:
+Diese Aktion legt fest, dass die Operation, bei der der Produktdefekt
+entstanden ist, auf einer anderen geeigneten Maschine wiederholt wird.
+Der Job muss zum Eingangspuffer dieser ausgewählten Maschine gelangen.
+
+**Bewertungskriterien:** `evaluate_defect_recovery_action()` verwendet die
+Zustände der ausgewählten Maschine und die Daten der zu wiederholenden
+Operation:
 
 1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
    `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
@@ -1556,17 +1572,24 @@ Nacharbeitsmaschine anhand von:
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    falls der Lebensdauerverbrauch der Operation positiv ist.
 
-`defect_recovery_transport_time_value()` berechnet die achsenweise Wegstrecke
-vom aktuellen Jobstandort zum Eingangspuffer der ausgewählten
-Nacharbeitsmaschine, teilt sie durch die konfigurierte Grundgeschwindigkeit
-und bildet die geschätzte Transportzeit mit `inverse_scale()` auf einen
-Teilwert ab.
+**Transportzeit zur ausgewählten Maschine:**
+`defect_recovery_transport_time_value()` berechnet den Weg vom aktuellen
+Jobstandort zum Eingangspuffer dieser Maschine:
 
-Bei `remaining_time <= 0` wird nach der Mittelwertbildung
+`Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
+
+Die Zeit wird mit `inverse_scale()` auf einen Teilwert abgebildet. Eine
+kürzere geschätzte Transportzeit ergibt einen höheren Teilwert. Zusätzliche
+Greif- und Hubbewegungen des Roboters sind in dieser Wegschätzung nicht
+enthalten.
+
+**Deadline:** Bei `remaining_time > 0` gibt es keinen Deadline-Strafabzug.
+Bei `remaining_time <= 0` wird nach der Berechnung des gewichteten Durchschnitts
 `rework_alternative_machine_deadline_penalty_weight` abgezogen, standardmäßig
 `0.5`.
 
-**Beispiel:** Die vier Kriterien ergeben mit den Standardgewichten:
+**Rechenbeispiel:** Der Job soll zum Eingangspuffer dieser Maschine
+transportiert werden. Mit den Standardgewichten ergeben sich:
 
 - **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
   Gewicht `0.3`.

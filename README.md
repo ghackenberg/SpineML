@@ -1506,7 +1506,6 @@ aktuelle Zeit `11`.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
-Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
 **Beispiel:** Die drei Kriterien ergeben mit den Standardgewichten:
 
@@ -1552,7 +1551,7 @@ Teilwert ab.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_alternative_machine_deadline_penalty_weight` abgezogen, standardmäßig
-`0.5`. Ein nach dem Abzug negativer Endscore bleibt unverändert.
+`0.5`.
 
 **Beispiel:** Die vier Kriterien ergeben mit den Standardgewichten:
 
@@ -1617,7 +1616,6 @@ dieses Gewicht kürzt sich heraus.
 
 Bei `remaining_time <= 0` wird anschließend
 `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
-Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
 **Beispiel vor der Deadline:** Bei Deadline `10` und aktueller Zeit `8`
 beträgt die Restzeit `2`. `calculate_edd_priority()` berechnet

@@ -1258,10 +1258,15 @@ zwischen `0` und `1`.
 
 **Verwendung:** [Herabstufung](#herabstufung-downgrade_product).
 
-#### 8. Warten: bei höherem Termindruck einen kleineren Wartewert verwenden
+#### 8. Warten: je höher der Termindruck, desto niedriger der Teilwert
 
-- **Bewertungsgröße:** EDD-Priorität des betrachteten Jobs.
-- **Regel:** Je dringender der Job, desto weniger vorteilhaft ist Warten.
+Der Teilwert beschreibt, wie vorteilhaft die Aktion **Warten** ist, nicht
+wie lange der Job wartet.
+
+- **Bewertungsgröße:** Termindruck des Jobs, ausgedrückt durch seine
+  EDD-Priorität. Eine höhere EDD-Priorität bedeutet einen dringenderen Job.
+- **Regel:** Je höher die EDD-Priorität, desto niedriger der Teilwert für
+  Warten. Warten wird dadurch für dringende Jobs weniger vorteilhaft bewertet.
 - **Abbildung für normales Warten in `evaluate_wait_action()`:**
   - Mit zugehörigem Job und Deadline:
     `Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`.
@@ -1425,7 +1430,7 @@ die Warteaktionen von Robotern und Maschinen. `evaluate_wait_action()`
 verwendet die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
 des wartenden Jobs beziehungsweise des aktuell geladenen Jobs.
 
-Die [Warteregel](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-verwenden)
+Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
 wird hier so umgesetzt:
 
 `Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`
@@ -1510,7 +1515,7 @@ ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
 
 Auch ein als `defect` markierter Job führt dieselbe Aktion `wait_job` aus.
 Der Unterschied liegt nur in der Bewertung durch `evaluate_defect_action()`:
-Die [Warteregel](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-verwenden)
+Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
 verwendet die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
 hier ohne die zusätzliche Bereichsanpassung:
 

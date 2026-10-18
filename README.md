@@ -1199,6 +1199,7 @@ xychart-beta
   Werkzeugtyp.
 - **Regel und Abbildung:** Gleicher Werkzeugtyp ergibt den Teilwert `1`,
   ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
+  Benötigt die Operation kein Werkzeug, entfällt dieses Kriterium.
 - **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
   ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
 
@@ -1209,10 +1210,12 @@ xychart-beta
 #### 5. Werkzeugreserve: mehr Lebensdauer im Verhältnis zum Verbrauch bevorzugen
 
 - **Bewertungsgröße:** Verhältnis
-  `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
+  `r = max(verbleibende Werkzeuglebensdauer, 0.0) / Verbrauch der geplanten Operation`.
 - **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
   höheren Teilwert ergeben.
-- **Abbildung:** `direct_scale(r) = r / (1 + r)`.
+- **Abbildung:** Wenn ein Werkzeug benötigt wird und sein Verbrauch positiv
+  ist: `Teilwert = direct_scale(r) = r / (1 + r)`. Andernfalls entfällt
+  dieses Kriterium.
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
@@ -1249,8 +1252,8 @@ zwischen `0` und `1`.
 - **Bewertungsgröße:** `defect_severity` des Jobs.
 - **Regel:** Je höher der Defektschweregrad, desto stärker spricht dieses
   Kriterium für eine Herabstufung.
-- **Abbildung in `evaluate_defect_action()`:** Der Schweregrad wird direkt
-  als Teilwert übernommen: `Teilwert = defect_severity`.
+- **Abbildung in `evaluate_defect_action()`:**
+  `Teilwert = max(0.0, min(float(current_state.get("defect_severity", 0.0)), 1.0))`.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
 
 **Verwendung:** [Herabstufung](#herabstufung-downgrade_product).
@@ -1259,9 +1262,17 @@ zwischen `0` und `1`.
 
 - **Bewertungsgröße:** EDD-Priorität des betrachteten Jobs.
 - **Regel:** Je dringender der Job, desto weniger vorteilhaft ist Warten.
-- **Abbildung:** Die EDD-Priorität wird mit `1 − EDD` umgekehrt:
-  Hohe Dringlichkeit ergibt einen niedrigen Wert für Warten.
-- **Beispiel:** Bei `EDD = 0.75` ergibt sich `1 − 0.75 = 0.25`.
+- **Abbildung für normales Warten in `evaluate_wait_action()`:**
+  - Mit zugehörigem Job und Deadline:
+    `Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`.
+  - Ohne zugehörigen Job oder ohne dessen Deadline:
+    `Teilwert = WAIT_SCORE_MIN`.
+  - Die Codekonstanten sind `WAIT_SCORE_MIN = 0.01` und `WAIT_SCORE_MAX = 0.99`.
+- **Abbildung für einen defekten Job in `evaluate_defect_action()`:**
+  `Teilwert = 1.0 - EDD`.
+- **Beispiel:** Bei `EDD = 0.75` ergibt normales Warten
+  `0.01 + (0.99 - 0.01) * (1.0 - 0.75) = 0.255`;
+  beim defekten Job ergibt sich `1.0 - 0.75 = 0.25` vor einem Strafabzug.
 
 **Verwendung:** [Normales Warten](#normales-warten-wait_) und
 [Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job).
@@ -1352,7 +1363,7 @@ als getrennte Teilwerte mit ihren jeweiligen Gewichten in den Score ein.
 3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × machine_pick_tool_match_weight`,
    nur wenn die Operation ein Werkzeug benötigt.
 4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
+   `direct_scale(max(verbleibende Lebensdauer, 0.0) / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
    Berücksichtigt, wenn die Operation ein Werkzeug benötigt und dessen
    Lebensdauerverbrauch positiv ist.
 
@@ -1417,14 +1428,15 @@ des wartenden Jobs beziehungsweise des aktuell geladenen Jobs.
 Die [Warteregel](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-verwenden)
 wird hier so umgesetzt:
 
-`Teilwert = 0.01 + 0.98 × (1 − EDD)`
+`Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`
 
-Der Wert `1 − EDD` wird damit auf den Bereich von `0.01` bis `0.99`
+Mit `WAIT_SCORE_MIN = 0.01` und `WAIT_SCORE_MAX = 0.99` wird der Wert
+`1.0 - EDD` damit auf den Bereich von `0.01` bis `0.99`
 abgebildet. Ohne zugehörigen Job oder ohne dessen Deadline wird der feste
 Teilwert `0.01` verwendet.
 
 Zum Beispiel ergibt `EDD = 0.75` den Teilwert
-`0.01 + 0.98 × 0.25 = 0.255`.
+`0.01 + (0.99 - 0.01) * (1.0 - 0.75) = 0.255`.
 
 Dieser Teilwert wird mit `wait_action_weight` als einzigem Gewicht an
 `calculate_action_score()` übergeben. Das Gewicht kürzt sich heraus,
@@ -1457,7 +1469,7 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
 2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`,
    falls ein Werkzeug benötigt wird.
 3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
+   `direct_scale(max(verbleibende Lebensdauer, 0.0) / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    falls ein Werkzeug benötigt wird und der Lebensdauerverbrauch positiv ist.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
@@ -1486,7 +1498,8 @@ auf `0` gesetzt.
 
 ##### Herabstufung: `downgrade_product`
 
-1. **[Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten):** `defect_severity × product_downgrade_defect_severity_weight`.
+1. **[Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten):**
+   `Defektschwere-Teilwert × product_downgrade_defect_severity_weight`.
 2. Ist die Deadline bereits erreicht oder überschritten, kommt der
    Bonus-Teilwert `1 × rework_not_allowed_downgrade_bonus_weight` hinzu.
 
@@ -1501,7 +1514,7 @@ Die [Warteregel](#8-warten-bei-höherem-termindruck-einen-kleineren-wartewert-ve
 verwendet die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
 hier ohne die zusätzliche Bereichsanpassung:
 
-`Teilwert = 1 − EDD`
+`Teilwert = 1.0 - EDD`
 
 Zum Beispiel ergibt `EDD = 0.75` den Teilwert `0.25` vor dem Strafabzug.
 Der Teilwert wird mit `wait_defect_job_weight` als einzigem Gewicht übergeben;

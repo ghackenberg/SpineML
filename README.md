@@ -1835,22 +1835,32 @@ Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
 Die relativen Anteile sind `2/3` und `1/3`. Deshalb liegt der Score näher
 am stärker gewichteten Teilwert `0.8`.
 
-Die folgende Kurve variiert nur den ersten Teilwert `x₁`. Der zweite
-Teilwert bleibt `0.2`, die Gewichte bleiben `1.0` und `0.5`:
+Zur Veranschaulichung des Bereichs verändern sich in der folgenden Kurve
+beide Teilwerte gemeinsam: `x₁ = x₂ = x`. Die Gewichte bleiben `1.0` und
+`0.5`. Der gewichtete Durchschnitt entspricht dann dem gemeinsamen Teilwert:
 
-`Score(x₁) = (x₁ × 1.0 + 0.2 × 0.5) / 1.5`
+`Score(x) = (x × 1.0 + x × 0.5) / 1.5 = x`
 
 ```mermaid
 xychart-beta
-    title "Aktionsscore bei variablem Teilwert"
-    x-axis "Teilwert x₁" [0, 0.25, 0.5, 0.75, 1]
-    y-axis "Aktionsscore" 0 --> 1
-    line [0.067, 0.233, 0.4, 0.567, 0.733]
+    title "Gewichteter Durchschnitt im Bereich [0, 1]"
+    x-axis "Gemeinsamer Teilwert x" [0, 0.25, 0.5, 0.75, 1]
+    y-axis "Gewichteter Durchschnitt" 0 --> 1
+    line [0, 0.25, 0.5, 0.75, 1]
 ```
 
-Bei Teilwerten in `[0, 1]` und positiven Gewichten liegt der gewichtete
-Durchschnitt zwischen dem kleinsten und dem größten Teilwert und damit
-ebenfalls in `[0, 1]`. `calculate_action_score()` führt selbst keine
+Sind beide Teilwerte `0`, ist auch der Score `0`; sind beide `1`, ist der
+Score `1`. Für beliebige, auch unterschiedliche Teilwerte in `[0, 1]` und
+positive Gewichte gilt allgemein:
+
+`0 ≤ Summe(Teilwert × Gewicht) ≤ Summe(Gewichte)`
+
+Die Division durch die positive Gewichtssumme ergibt deshalb:
+
+`0 ≤ gewichteter Durchschnitt ≤ 1`
+
+Dieser Bereich entsteht durch die Mittelwertbildung, nicht durch eine
+nachträgliche Begrenzung. `calculate_action_score()` führt selbst keine
 Begrenzung oder Gewichtsprüfung durch. Die gültigen Gewichte werden von
 `HeuristicWeights` geprüft.
 

@@ -530,7 +530,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 )
             )
 
-            consumed_life = float(operation.get("consumes_life_units", 0.0))
+            consumed_life = float(operation.get("consumed_life_units", 0.0))
             if consumed_life > 0.0:
                 remaining_life = max(
                     float(
@@ -717,7 +717,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 (tool_match_value, self.weights.machine_pick_tool_match_weight)
             )
 
-        consumed_life = float(operation.get("consumes_life_units", 0.0))
+        consumed_life = float(operation.get("consumed_life_units", 0.0))
         if required_tool_id is not None and consumed_life > 0.0:
             remaining_life = max(float(
                 machine_state.get("remaining_life_units_by_tool", {})

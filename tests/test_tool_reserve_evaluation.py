@@ -1,0 +1,131 @@
+from types import SimpleNamespace
+
+import pytest
+
+from SpineML.Control.HeuristicControl.HeuristicWeights import HeuristicWeights
+from SpineML.Control.HeuristicControl.LocalHeuristicActionEvaluator import (
+    LocalHeuristicActionEvaluator,
+)
+from SpineML.Control.Interface.InterfaceTypes import (
+    ConfigurationObjectObserver,
+    PolicyObservation,
+)
+
+
+def make_observation(action_type, remaining_life, consumed_life):
+    operation = SimpleNamespace(
+        name="operation",
+        duration=4.0,
+        consumes_life_units=consumed_life,
+        defect_probability=0.0,
+        machine_type=SimpleNamespace(name="machine_type"),
+        tool_type=SimpleNamespace(name="tool"),
+        consumes_product_type=SimpleNamespace(name="raw"),
+        produces_product_type=SimpleNamespace(name="finished"),
+    )
+    model = ConfigurationObjectObserver.build_policy_configuration_model(
+        product_types=[],
+        operation_types=[operation],
+        machines=[],
+        tool_types=[],
+        corridors=[],
+        layouts=[],
+    )
+    machine = {
+        "object_id": "machine",
+        "object_type": "machine",
+        "corridor_id": "corridor",
+        "mounted_tool_type_id": "tool",
+        "remaining_life_units_by_tool": {"tool": remaining_life},
+        "input_storage": {
+            "store_id": "machine in",
+            "count": 2,
+            "job_summaries": [{
+                "job_id": "job",
+                "selected_operation_id": "operation",
+                "latest_end_time": 10.0,
+            }],
+        },
+    }
+    job = {
+        "object_type": "order_job",
+        "general_state": "defect",
+        "location": "start_storage",
+        "time": 10.0,
+        "latest_end_time": 20.0,
+    }
+    snapshot = {
+        "time": 10.0,
+        "configuration_model": model,
+        "simulation_object_states_by_id": {
+            "machine": machine,
+            "job": job,
+            "arm": {
+                "object_type": "corridor_arm_robot",
+                "corridor_id": "corridor",
+                "movement_speed": 1.5,
+            },
+        },
+        "store_positions_by_id": {
+            "start_storage": {"x": 0, "y": 0, "z": 0},
+            "machine in": {"x": 3, "y": 0, "z": 0},
+        },
+    }
+    if action_type == "pick_machine_job":
+        current_object_id = "machine"
+        payload = {"selected_job_id": "job", "target_store_id": "machine in"}
+    else:
+        current_object_id = "job"
+        payload = {
+            "selected_operation_id": "operation",
+            "selected_machine_id": "machine",
+        }
+    return (
+        PolicyObservation(snapshot, current_object_id),
+        {"action_type": action_type, "payload": payload},
+    )
+
+
+@pytest.mark.parametrize("action_type", [
+    "pick_machine_job",
+    "job_rework_on_defect_machine",
+    "job_rework_on_alternative_machine",
+])
+@pytest.mark.parametrize("remaining_life", [0.0, 4.0, 20.0])
+@pytest.mark.parametrize("consumed_life", [0.0, 2.0])
+def test_tool_reserve_uses_consumption_from_configuration_observer(
+    action_type, remaining_life, consumed_life,
+):
+    weights = HeuristicWeights()
+    evaluator = LocalHeuristicActionEvaluator(weights)
+    observation, action = make_observation(
+        action_type, remaining_life, consumed_life,
+    )
+    prepared_action = evaluator.prepare_action_candidate(action, observation)
+
+    if action_type == "pick_machine_job":
+        parts = [
+            (0.5, weights.queue_priority_weight),
+            (0.2, weights.machine_pick_operation_duration_weight),
+            (1.0, weights.machine_pick_tool_match_weight),
+        ]
+        reserve_weight = weights.machine_pick_tool_reserve_weight
+    else:
+        parts = [
+            (1 / 3, weights.defect_recovery_machine_queue_length_weight),
+            (1.0, weights.defect_recovery_tool_match_weight),
+        ]
+        if action_type == "job_rework_on_alternative_machine":
+            parts.append((1 / 3, weights.defect_recovery_transport_time_weight))
+        reserve_weight = weights.defect_recovery_tool_reserve_weight
+
+    if consumed_life > 0:
+        reserve_value = remaining_life / (remaining_life + consumed_life)
+        parts.append((reserve_value, reserve_weight))
+    expected_score = sum(value * weight for value, weight in parts) / sum(
+        weight for _, weight in parts
+    )
+
+    assert evaluator.evaluate_action(prepared_action, observation) == pytest.approx(
+        expected_score,
+    )

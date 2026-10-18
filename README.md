@@ -1216,7 +1216,7 @@ xychart-beta
   `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
 - **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
   höheren Teilwert ergeben.
-- **Vorgesehene Abbildung:** `direct_scale(r) = r / (1 + r)`.
+- **Abbildung:** `direct_scale(r) = r / (1 + r)`.
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
@@ -1237,11 +1237,9 @@ Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
 Eine negative Deadline-Restzeit wird bereits in
 `calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
 
-**Vorgesehene Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
+**Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
 [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
 [Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
-Der Teilwert ist derzeit nicht aktiv;
-siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve).
 
 #### 6. Freie Pufferkapazität: einen größeren freien Anteil bevorzugen
 
@@ -1512,8 +1510,8 @@ als getrennte Teilwerte mit ihren jeweiligen Gewichten in den Score ein.
    nur wenn die Operation ein Werkzeug benötigt.
 4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
-   Vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv;
-   siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve).
+   Berücksichtigt, wenn die Operation ein Werkzeug benötigt und dessen
+   Lebensdauerverbrauch positiv ist.
 
 ##### Verwendete Operationsdauer
 
@@ -1604,8 +1602,7 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
    falls ein Werkzeug benötigt wird.
 3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv
-   (siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve)).
+   falls ein Werkzeug benötigt wird und der Lebensdauerverbrauch positiv ist.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
@@ -1665,18 +1662,6 @@ Kandidat. Ihre Bewertung verwendet:
 resultierende Score `1`.
 
 Ein unbekannter `action_type` erhält in `evaluate_action()` den Score `0`.
-
-#### Codehinweis zur Werkzeugreserve
-
-**Aktueller Codezustand:** Der [Werkzeugreserve-Teilwert](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen)
-wird bei den regulären Snapshots
-derzeit nicht hinzugefügt. `ConfigurationObjectObserver` liefert den Verbrauch
-im Konfigurationsmodell unter `consumed_life_units`,
-die Reservelogik in `evaluate_machine_pick_action()` und
-`evaluate_defect_recovery_action()` liest aber `consumes_life_units` und
-erhält dadurch `0`. Die vorgesehene Berechnung setzt einen positiven
-Verbrauch voraus. Der tatsächliche Werkzeugverbrauch in `SimMachine` ist
-davon unabhängig.
 
 #### Abgrenzung zur tatsächlich simulierten Dauer
 

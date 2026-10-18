@@ -91,7 +91,7 @@ def make_observation(action_type, remaining_life, consumed_life):
     "job_rework_on_defect_machine",
     "job_rework_on_alternative_machine",
 ])
-@pytest.mark.parametrize("remaining_life", [0.0, 4.0, 20.0])
+@pytest.mark.parametrize("remaining_life", [-1.0, 0.0, 4.0, 20.0])
 @pytest.mark.parametrize("consumed_life", [0.0, 2.0])
 def test_tool_reserve_uses_consumption_from_configuration_observer(
     action_type, remaining_life, consumed_life,

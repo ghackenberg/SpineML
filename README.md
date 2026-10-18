@@ -1210,7 +1210,7 @@ xychart-beta
 #### 5. Werkzeugreserve: mehr Lebensdauer im Verhältnis zum Verbrauch bevorzugen
 
 - **Bewertungsgröße:** Verhältnis
-  `r = max(verbleibende Werkzeuglebensdauer, 0.0) / Verbrauch der geplanten Operation`.
+  `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
 - **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
   höheren Teilwert ergeben.
 - **Abbildung:** Wenn ein Werkzeug benötigt wird und sein Verbrauch positiv
@@ -1253,7 +1253,7 @@ zwischen `0` und `1`.
 - **Regel:** Je höher der Defektschweregrad, desto stärker spricht dieses
   Kriterium für eine Herabstufung.
 - **Abbildung in `evaluate_defect_action()`:**
-  `Teilwert = max(0.0, min(float(current_state.get("defect_severity", 0.0)), 1.0))`.
+  `Teilwert = float(current_state.get("defect_severity", 0.0))`.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
 
 **Verwendung:** [Herabstufung](#herabstufung-downgrade_product).
@@ -1363,7 +1363,7 @@ als getrennte Teilwerte mit ihren jeweiligen Gewichten in den Score ein.
 3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × machine_pick_tool_match_weight`,
    nur wenn die Operation ein Werkzeug benötigt.
 4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(max(verbleibende Lebensdauer, 0.0) / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
+   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
    Berücksichtigt, wenn die Operation ein Werkzeug benötigt und dessen
    Lebensdauerverbrauch positiv ist.
 
@@ -1469,7 +1469,7 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
 2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`,
    falls ein Werkzeug benötigt wird.
 3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(max(verbleibende Lebensdauer, 0.0) / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
+   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    falls ein Werkzeug benötigt wird und der Lebensdauerverbrauch positiv ist.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung

@@ -443,10 +443,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         if action_type == "downgrade_product":
             # A higher severity makes downgrading more attractive than rework.
-            defect_severity = max(
-                0.0,
-                min(float(current_state.get("defect_severity", 0.0)), 1.0),
-            )
+            defect_severity = float(current_state.get("defect_severity", 0.0))
             parts = [
                 (
                     defect_severity,
@@ -532,12 +529,9 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
             consumed_life = float(operation.get("consumed_life_units", 0.0))
             if consumed_life > 0.0:
-                remaining_life = max(
-                    float(
-                        machine_state.get("remaining_life_units_by_tool", {})
-                        .get(required_tool_id, 0.0)
-                    ),
-                    0.0,
+                remaining_life = float(
+                    machine_state.get("remaining_life_units_by_tool", {})
+                    .get(required_tool_id, 0.0)
                 )
                 parts.append(
                     (
@@ -719,10 +713,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         consumed_life = float(operation.get("consumed_life_units", 0.0))
         if required_tool_id is not None and consumed_life > 0.0:
-            remaining_life = max(float(
+            remaining_life = float(
                 machine_state.get("remaining_life_units_by_tool", {})
                 .get(required_tool_id, 0.0)
-            ), 0.0)
+            )
             # Eine größere Lebensdauerreserve ist besser. Das Verhältnis
             # zur benötigten Lebensdauer wird deshalb direkt skaliert.
             tool_life_score = self.direct_scale(

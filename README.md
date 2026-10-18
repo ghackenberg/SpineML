@@ -1232,10 +1232,20 @@ xychart-beta
     line [0, 0.5, 0.667, 0.75, 0.8, 0.833]
 ```
 
-Beide Skalierungen benötigen keine beobachteten Minimal- und Maximalwerte.
-Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
-Eine negative Deadline-Restzeit wird bereits in
-`calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
+Für `inverse_scale()` und `direct_scale()` gilt:
+
+- **Keine Vergleichswerte nötig:** Jede Funktion berechnet den Teilwert
+  allein aus dem übergebenen Rohwert. Zum Beispiel ergibt
+  `inverse_scale(4) = 1 / (1 + 4) = 0.2`, ohne vorher den kleinsten oder
+  größten Wert anderer Jobs bestimmen zu müssen.
+- **Eingaben ab `0`:** Die Formeln werden hier mit Rohwerten `>= 0`
+  verwendet. Die Funktionen prüfen diesen Eingabebereich nicht selbst und
+  setzen einen negativen Eingabewert auch nicht automatisch auf `0`.
+- **Überfällige Jobs:** Eine negative Restzeit wird nicht direkt an die
+  Skalierungsfunktionen übergeben. Bei `t = -2` ist der Job zwei
+  Zeiteinheiten überfällig. `calculate_edd_priority()` verwendet deshalb
+  die positive Überfälligkeit `2` und berechnet
+  `EDD = 0.5 + 0.5 × direct_scale(2) = 0.5 + 0.5 × (2 / 3) ≈ 0.833`.
 
 **Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
 [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und

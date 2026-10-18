@@ -1465,27 +1465,23 @@ deshalb entspricht der Score dem Teilwert.
 
 #### Defektbehandlung
 
-Der Generator prüft, welche Defektaktionen technisch möglich sind.
-`evaluate_defect_action()` berechnet für jeden erzeugten Kandidaten einen
-Score. Dabei berücksichtigt es auch die Restzeit bis zur Deadline des
-Auftrags:
+Der Generator erzeugt die technisch möglichen Aktionen für einen defekten
+Job. `evaluate_defect_action()` bewertet diese Aktionen. Dafür prüft die
+Methode, ob die Deadline des Auftrags bereits erreicht ist:
 
 `remaining_time = latest_end_time − aktuelle Zeit`
 
-**Eine erreichte oder überschrittene Deadline verbietet Nacharbeit im
-aktuellen Code nicht automatisch.** Technisch mögliche Nacharbeitsaktionen
-bleiben zur Auswahl. Bei `remaining_time <= 0` ändert sich jedoch ihre
-Bewertung sowie die Bewertung von Warten und Herabstufung:
+**Beispiel:** Die Deadline liegt bei `10`, die aktuelle Simulationszeit ist
+`11`. Dann ist `remaining_time = 10 − 11 = −1`: Der Auftrag ist seit einer
+Zeiteinheit überfällig. Die Bedingung `remaining_time <= 0` gilt bereits
+genau bei der Deadline, also auch bei Restzeit `0`.
 
-- **Nacharbeit:** Vom berechneten Score werden standardmäßig `0.5` abgezogen.
-- **Warten:** Vom berechneten Score werden standardmäßig `0.2` abgezogen.
-- **Herabstufung:** Der zusätzliche Teilwert `1` geht mit seinem Gewicht in
-  den Gesamtscore ein. Er wird nicht zum fertigen Score addiert.
-
-Dadurch werden Nacharbeit und Warten weniger vorteilhaft und Herabstufung
-vorteilhafter bewertet. Welche der verfügbaren Aktionen ausgewählt wird,
-entscheidet weiterhin der `ActionSelector`. Die genaue Berechnung steht
-jeweils beim zugehörigen Aktionstyp.
+**Der Evaluator entfernt eine angebotene Nacharbeit nicht aus der Auswahl,
+wenn die Deadline erreicht ist.** Er berechnet weiterhin ihren Score und
+zieht davon eine Deadline-Strafe ab. Die folgenden Aktionsabschnitte zeigen
+die jeweilige Berechnung mit den Standardgewichten aus `HeuristicWeights`.
+Für die Beispiele nach der Deadline gelten die Deadline `10` und die
+aktuelle Zeit `11`.
 
 ##### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 
@@ -1502,6 +1498,16 @@ jeweils beim zugehörigen Aktionstyp.
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
 Ein nach dem Abzug negativer Score wird auf `0` gesetzt.
+
+**Beispiel:** Der Eingangspuffer der Defektmaschine ist leer und die Operation
+benötigt kein Werkzeug. Deshalb geht nur der Warteschlangen-Teilwert
+`inverse_scale(0) = 1` mit seinem Standardgewicht `0.3` ein:
+
+`Score vor Strafabzug = (1 × 0.3) / 0.3 = 1`
+
+Weil die Deadline überschritten ist, zieht der Code anschließend `0.5` ab:
+
+`Score = 1 − 0.5 = 0.5`
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
@@ -1530,6 +1536,18 @@ Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_alternative_machine_deadline_penalty_weight` abgezogen, standardmäßig
 `0.5`. Ein nach dem Abzug negativer Score wird auf `0` gesetzt.
 
+**Beispiel:** Der Eingangspuffer der alternativen Maschine ist leer, die
+Operation benötigt kein Werkzeug und die geschätzte Transportzeit beträgt
+`1`. Damit entstehen die Teilwerte `inverse_scale(0) = 1` für die
+Warteschlange und `inverse_scale(1) = 0.5` für den Transport. Mit den
+Standardgewichten `0.3` und `0.2` ergibt sich:
+
+`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2) / (0.3 + 0.2) = 0.8`
+
+Nach dem Deadline-Strafabzug bleibt:
+
+`Score = 0.8 − 0.5 = 0.3`
+
 ##### Herabstufung: `downgrade_product`
 
 1. **[Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten):**
@@ -1544,6 +1562,19 @@ Für diesen Bonus prüft `is_rework_allowed()` nur, ob die Restzeit bis zur
 Deadline positiv ist. Die Methode berechnet nicht, ob eine komplette
 Nacharbeit noch vor der Deadline fertig werden kann.
 
+**Beispiel:** Der Job hat den Defektschweregrad `0.4`. Vor der Deadline geht
+nur dieser Teilwert mit dem Standardgewicht `0.4` ein:
+
+`Score vor der Deadline = (0.4 × 0.4) / 0.4 = 0.4`
+
+Bei erreichter oder überschrittener Deadline kommt der Teilwert `1` mit
+`rework_not_allowed_downgrade_bonus_weight = 0.4` hinzu:
+
+`Score = (0.4 × 0.4 + 1 × 0.4) / (0.4 + 0.4) = 0.7`
+
+Die Herabstufung erhält also den Score `0.7` statt `0.4`. Der zusätzliche
+Teilwert wird mitgewichtet; er wird nicht zum bisherigen Score addiert.
+
 ##### Warten bei einem Defekt: `wait_job`
 
 Für `wait_job` eines als `defect` markierten Jobs verwendet
@@ -1554,13 +1585,24 @@ lautet:
 
 `Teilwert = 1.0 - EDD`
 
-Zum Beispiel ergibt `EDD = 0.75` den Teilwert `0.25` vor dem Strafabzug.
 Der Teilwert wird mit `wait_defect_job_weight` als einzigem Gewicht übergeben;
 dieses Gewicht kürzt sich heraus.
 
 Bei `remaining_time <= 0` wird anschließend
 `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
 Ein negatives Ergebnis wird auf `0` gesetzt.
+
+**Beispiel:** Bei Deadline `10` und aktueller Zeit `11` berechnet
+`calculate_edd_priority()` die EDD-Priorität `0.75`. Daraus entsteht der
+Teilwert `1 − 0.75 = 0.25`. Mit dem einzigen Gewicht
+`wait_defect_job_weight = 0.2` ergibt sich zunächst:
+
+`Score vor Strafabzug = (0.25 × 0.2) / 0.2 = 0.25`
+
+Danach wird wegen der überschrittenen Deadline
+`deadline_missed_wait_penalty_weight = 0.2` abgezogen:
+
+`Score = 0.25 − 0.2 = 0.05`
 
 ##### Ausschuss: `job_scrap`
 

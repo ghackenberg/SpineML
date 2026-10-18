@@ -1931,10 +1931,21 @@ Die gewichteten Summen werden vollständig so berechnet:
 - **A:** `0.4 × 0.2 + 0.2 × 0.25 + 0.5 × 0.15 + 0.25 × 0.25 + 0.2 × 0.15 = 0.2975`.
 - **B:** `0.2 × 0.2 + 0.5 × 0.25 + 0.5 × 0.15 + 1 × 0.25 + 0.2 × 0.15 = 0.52`.
 
-B erhält den höheren Ablagescore: Kürzerer Transport und eine leere
-Maschinenwarteschlange gleichen den kleineren freien Kapazitätsanteil des
-Korridorpuffers mehr als aus. Einlagerzeit und Operationsdauer sind hier
-gleich und ergeben für beide Kandidaten dieselben Beiträge.
+Warum erhält B den höheren Score? Entscheidend sind die Unterschiede der
+**gewichteten Beiträge**:
+
+- **Freie Pufferkapazität:** A erhält `0.4 × 0.2 = 0.08`, B nur
+  `0.2 × 0.2 = 0.04`. Das ist ein Vorteil von `0.04` für A.
+- **Transportzeit:** B erhält `0.5 × 0.25 = 0.125`, A nur
+  `0.2 × 0.25 = 0.05`. Das ist ein Vorteil von `0.075` für B.
+- **Maschinenwarteschlange:** B erhält `1 × 0.25 = 0.25`, A nur
+  `0.25 × 0.25 = 0.0625`. Das ist ein Vorteil von `0.1875` für B.
+
+Einlagerzeit und Operationsdauer liefern für beide Kandidaten dieselben
+Beiträge und ändern daher ihren Abstand nicht. Die Vorteile von B überwiegen
+den Kapazitätsvorteil von A um `0.075 + 0.1875 − 0.04 = 0.2225`. Weil die
+Gewichtssumme hier `1.0` beträgt, ist dies zugleich der Unterschied der
+Gesamtscores: `0.52 − 0.2975 = 0.2225`.
 
 Der Generator bietet außerdem `wait_main_robot` an. Für die vollständige
 Auswahl sei die aktuelle Zeit `11` und die Auftragsdeadline `10`: Dann ist

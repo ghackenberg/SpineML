@@ -1247,11 +1247,10 @@ zwischen `0` und `1`.
 #### 7. Defektschwere: bei stärkerem Defekt die Herabstufung höher bewerten
 
 - **Bewertungsgröße:** `defect_severity` des Jobs.
-- **Regel:** Bei einer Herabstufung soll ein höherer Schweregrad einen
-  höheren Teilwert ergeben.
-- **Abbildung in `evaluate_defect_action()`:** Der Schweregrad wird auf
-  `[0, 1]` begrenzt und dann direkt als Teilwert übernommen, **nicht** mit
-  `direct_scale()` umgerechnet.
+- **Regel:** Je höher der Defektschweregrad, desto stärker spricht dieses
+  Kriterium für eine Herabstufung.
+- **Abbildung in `evaluate_defect_action()`:** Der Schweregrad wird direkt
+  als Teilwert übernommen: `Teilwert = defect_severity`.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
 
 **Verwendung:** [Herabstufung](#herabstufung-downgrade_product).

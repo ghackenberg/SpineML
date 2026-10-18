@@ -1486,6 +1486,18 @@ Zeit `8` ist `remaining_time = 10 − 8 = 2`. Es bleiben zwei Zeiteinheiten:
 erhalten Nacharbeit und Warten einen Deadline-Strafabzug. Bei Herabstufung
 kommt der zusätzliche Teilwert `1` hinzu.
 
+**Strafabzüge bei Nacharbeit und Warten**
+
+Die Deadline-Strafe wird erst nach der Berechnung des gewichteten
+Durchschnitts abgezogen. Sie gehört nicht zur Gewichtssumme im Nenner:
+
+`Endscore = gewichteter Durchschnitt − Deadline-Strafe`
+
+Ohne Strafabzug entspricht der Endscore dem gewichteten Durchschnitt.
+Negative Endscores bleiben unverändert. Auch für sie gilt: Ein höherer
+Score ist vorteilhafter, zum Beispiel `−0.1 > −0.4`. Ein negativer Score
+verbietet die Aktion nicht; die technische Zulässigkeit prüft der Generator.
+
 **Mathematische Begründung der Standardwerte**
 
 Die folgenden Scoregrenzen sind bewusst gewählte Steuerungsvorgaben.
@@ -1759,19 +1771,9 @@ Ein **Gewicht** legt fest, wie wichtig ein Teilwert gegenüber den anderen
 Teilwerten derselben Aktion ist. Der **Gesamtscore** verbindet die
 verwendeten Teilwerte zu einer numerischen Gesamtbewertung der Aktion.
 
-`calculate_action_score()` berechnet den gewichteten Durchschnitt vor
-etwaigen Strafabzügen:
+`calculate_action_score()` berechnet den gewichteten Durchschnitt:
 
-`Score vor Strafabzügen = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
-
-Für Defektaktionen mit einer Deadline-Strafe gilt anschließend:
-
-`Endscore = Score vor Strafabzügen − Deadline-Strafe`
-
-Ohne Strafabzug entspricht der Endscore dem gewichteten Durchschnitt.
-Negative Endscores bleiben unverändert. Auch für sie gilt: Ein höherer
-Score ist vorteilhafter, zum Beispiel `−0.1 > −0.4`. Ein negativer Score
-verbietet die Aktion nicht; die technische Zulässigkeit prüft der Generator.
+`Gewichteter Durchschnitt = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
 
 „Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
 berücksichtigt wird. Beispielsweise geht die Werkzeugreserve nur bei
@@ -1809,7 +1811,7 @@ multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
 Wichtigkeiten ändern sich dadurch nicht. Ohne die Division würde allein die
 größere Gewichtssumme den Score erhöhen.
 
-Das folgende Diagramm zeigt die Berechnung **vor** etwaigen Strafabzügen.
+Das folgende Diagramm zeigt die Berechnung des gewichteten Durchschnitts.
 
 ```mermaid
 flowchart LR
@@ -1824,7 +1826,7 @@ flowchart LR
 
 #### Mathematischer Verlauf des Gesamtscores
 
-Die folgenden Rechnungen und die Kurve zeigen den Score ohne Strafabzüge.
+Die folgenden Rechnungen und die Kurve zeigen den gewichteten Durchschnitt.
 
 Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
 

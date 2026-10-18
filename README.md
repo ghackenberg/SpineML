@@ -1465,18 +1465,27 @@ deshalb entspricht der Score dem Teilwert.
 
 #### Defektbehandlung
 
-Der Generator bestimmt die technisch verfügbaren Defektaktionen.
-`evaluate_defect_action()` bewertet diese Kandidaten anhand ihrer
-jeweiligen Kriterien und der Restzeit
-`remaining_time = latest_end_time − aktuelle Zeit`.
+Der Generator prüft, welche Defektaktionen technisch möglich sind.
+`evaluate_defect_action()` berechnet für jeden erzeugten Kandidaten einen
+Score. Dabei berücksichtigt es auch die Restzeit bis zur Deadline des
+Auftrags:
 
-Bei `remaining_time <= 0` ist die Deadline erreicht oder überschritten.
-Dann kann ein Bonus-Teilwert hinzukommen oder eine Strafe **nach** der
-Mittelwertbildung abgezogen werden. Diese beiden Mechanismen sind
-unterschiedlich und werden unten getrennt angegeben.
+`remaining_time = latest_end_time − aktuelle Zeit`
 
-Auch nach der Deadline können technisch erzeugte Nacharbeitskandidaten
-vorhanden sein; sie erhalten dann eine Score-Strafe.
+**Eine erreichte oder überschrittene Deadline verbietet Nacharbeit im
+aktuellen Code nicht automatisch.** Technisch mögliche Nacharbeitsaktionen
+bleiben zur Auswahl. Bei `remaining_time <= 0` ändert sich jedoch ihre
+Bewertung sowie die Bewertung von Warten und Herabstufung:
+
+- **Nacharbeit:** Vom berechneten Score werden standardmäßig `0.5` abgezogen.
+- **Warten:** Vom berechneten Score werden standardmäßig `0.2` abgezogen.
+- **Herabstufung:** Der zusätzliche Teilwert `1` geht mit seinem Gewicht in
+  den Gesamtscore ein. Er wird nicht zum fertigen Score addiert.
+
+Dadurch werden Nacharbeit und Warten weniger vorteilhaft und Herabstufung
+vorteilhafter bewertet. Welche der verfügbaren Aktionen ausgewählt wird,
+entscheidet weiterhin der `ActionSelector`. Die genaue Berechnung steht
+jeweils beim zugehörigen Aktionstyp.
 
 ##### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 

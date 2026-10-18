@@ -1644,37 +1644,38 @@ Teilwert wird mitgewichtet; er wird nicht zum bisherigen Score addiert.
 
 ##### Warten bei einem Defekt: `wait_job`
 
-`evaluate_defect_action()` berechnet den Score des Wartekandidaten `wait_job`
-für einen defekten Job. Die Bewertung hängt vom Termindruck dieses Jobs ab.
+`evaluate_defect_action()` bewertet das Warten eines defekten Jobs nach der
+[Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert):
+**Je dringender der Job, desto niedriger ist der Warte-Score.**
 
-**Warum hängt die Bewertung vom Termindruck ab?** Solange noch Zeit bis zur
-Deadline bleibt, kann Warten eher infrage kommen. Je dringender der Job wird,
-desto weniger vorteilhaft soll weiteres Warten sein. Deshalb bildet die
-[Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
-eine höhere [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
-auf einen niedrigeren Warte-Teilwert ab.
+`calculate_edd_priority()` berechnet dafür die
+[EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen) des Jobs. Eine
+höhere EDD-Priorität bedeutet höheren Termindruck. Für Warten wird diese
+Richtung umgekehrt:
 
-**Berechnung in `evaluate_defect_action()`:**
+`Teilwert = 1.0 - EDD`
 
-1. `calculate_edd_priority()` berechnet die EDD-Priorität des defekten Jobs.
-2. Daraus entsteht `Teilwert = 1.0 - EDD`. Weil nur dieser eine Teilwert mit
-   `wait_defect_job_weight` in `calculate_action_score()` eingeht, ist der
-   gewichtete Durchschnitt ebenfalls `1.0 - EDD`.
-3. **Vor der Deadline** ist dieser Wert bereits der fertige Score.
-   **Ab Erreichen der Deadline** (`remaining_time <= 0`) wird zusätzlich
-   `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
+`calculate_action_score()` erhält nur diesen Teilwert mit
+`wait_defect_job_weight`. Weil der gewichtete Durchschnitt eines einzelnen
+Teilwerts wieder dieser Teilwert ist, ergibt sich zunächst `Score = 1.0 - EDD`.
 
-**Beispiel mit Deadline `10` und dem Standard-Strafabzug `0.2`:**
+- **Vor der Deadline** (`remaining_time > 0`) bleibt dieser Score unverändert.
+- **Ab Erreichen der Deadline** (`remaining_time <= 0`) zieht der Code
+  zusätzlich `deadline_missed_wait_penalty_weight` ab, standardmäßig `0.2`:
+  `Score = (1.0 - EDD) - 0.2`.
 
-| Aktuelle Zeit | Restzeit `10 − aktuelle Zeit` | EDD | Warte-Teilwert `1 − EDD` | Fertiger Score |
-| --- | --- | --- | --- | --- |
-| `8` – vor der Deadline | `2` | `1 / 6 ≈ 0.167` | `5 / 6 ≈ 0.833` | `≈ 0.833`, kein Abzug |
-| `10` – Deadline erreicht | `0` | `0.5` | `0.5` | `0.5 − 0.2 = 0.3` |
-| `11` – Deadline überschritten | `−1` | `0.75` | `0.25` | `0.25 − 0.2 = 0.05` |
+**Beispiele mit Deadline `10` und dem Standard-Strafabzug `0.2`:**
 
-Der sinkende Score macht weiteres Warten im Aktionsvergleich weniger
-vorteilhaft. Der `ActionSelector` vergleicht diesen Score mit den Scores der
-anderen erzeugten Kandidaten und wählt eine Aktion aus.
+- Bei aktueller Zeit `8` bleiben zwei Zeiteinheiten bis zur Deadline.
+  `EDD = 0.5 × inverse_scale(2) ≈ 0.167`.
+  Warten erhält `Score = 1 − 0.167 ≈ 0.833`; es gibt keinen Strafabzug.
+- Bei aktueller Zeit `11` ist der Auftrag eine Zeiteinheit überfällig.
+  `EDD = 0.5 + 0.5 × direct_scale(1) = 0.75`.
+  Warten erhält `Score = (1 − 0.75) − 0.2 = 0.05`.
+
+Der `ActionSelector` vergleicht den Warte-Score mit den Scores der anderen
+erzeugten Kandidaten. Ein niedrigerer Warte-Score macht Warten dabei weniger
+vorteilhaft.
 
 ##### Ausschuss: `job_scrap`
 

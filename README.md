@@ -1593,8 +1593,10 @@ transportiert werden. Mit den Standardgewichten ergeben sich:
 
 - **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
   Gewicht `0.3`.
-- **Transportzeit:** Die geschätzte Zeit zur alternativen Maschine beträgt
-  `1`. `inverse_scale(1) = 0.5`, Gewicht `0.2`.
+- **Transportzeit:** Im Beispiel nehmen wir eine Wegstrecke von `1.5` und
+  eine Grundgeschwindigkeit von `1.5` an. Daraus ergibt sich die geschätzte
+  Transportzeit `1.5 / 1.5 = 1`. Das ist kein fester Wert im Code.
+  `inverse_scale(1) = 0.5`, Gewicht `0.2`.
 - **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
   Teilwert `1`, Gewicht `0.2`.
 - **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation

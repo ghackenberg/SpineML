@@ -1644,9 +1644,8 @@ Teilwert wird mitgewichtet; er wird nicht zum bisherigen Score addiert.
 
 ##### Warten bei einem Defekt: `wait_job`
 
-**Was macht die Aktion?** Der defekte Job wartet in `SimOrderJob` eine
-Simulationszeiteinheit und fordert danach erneut eine Aktion bei der Bridge an.
-`wait_job` wählt selbst keine neue Nacharbeits- oder Herabstufungsstrategie.
+`evaluate_defect_action()` berechnet den Score des Wartekandidaten `wait_job`
+für einen defekten Job. Die Bewertung hängt vom Termindruck dieses Jobs ab.
 
 **Warum hängt die Bewertung vom Termindruck ab?** Solange noch Zeit bis zur
 Deadline bleibt, kann Warten eher infrage kommen. Je dringender der Job wird,
@@ -1674,9 +1673,8 @@ auf einen niedrigeren Warte-Teilwert ab.
 | `11` – Deadline überschritten | `−1` | `0.75` | `0.25` | `0.25 − 0.2 = 0.05` |
 
 Der sinkende Score macht weiteres Warten im Aktionsvergleich weniger
-vorteilhaft. Er bestimmt **nicht die Wartezeit**; diese bleibt eine
-Simulationszeiteinheit. Ob Warten gewählt wird, hängt von den Scores der
-anderen erzeugten Kandidaten ab.
+vorteilhaft. Der `ActionSelector` vergleicht diesen Score mit den Scores der
+anderen erzeugten Kandidaten und wählt eine Aktion aus.
 
 ##### Ausschuss: `job_scrap`
 

@@ -1122,6 +1122,7 @@ größeren Vorteil für die betrachtete Aktion.**
 
 Die Verwendung der Bewertungsgrößen wird in einem eigenen Kapitel
 [je Aktionstyp](#verwendung-der-bewertungsgrößen-nach-aktionstyp) erklärt.
+Unter jeder Regel führen Links direkt zu den zugehörigen Aktionstypen.
 Die folgenden Regeln erklären jeweils Rohwert, Abbildung und Beispiel.
 
 ### Allgemeine heuristische Regeln
@@ -1151,6 +1152,13 @@ xychart-beta
     line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
 ```
 
+**Verwendung:** [Freigabe](#freigabe-release_job),
+[Roboter-Pick](#roboter-pick-pick_main_robot-und-pick_corridor_arm_robot),
+[Maschinen-Pick](#maschinen-pick-pick_machine_job),
+[normales Warten](#normales-warten-wait_),
+[Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job) und
+[Ausschuss](#ausschuss-job_scrap).
+
 #### 2. Verarbeitungs-, Transport- und Lagerzeiten: kürzere Zeiten bevorzugen
 
 - **Bewertungsgröße:** Eine nichtnegative Zeit `x`.
@@ -1170,6 +1178,12 @@ xychart-beta
     line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
 ```
 
+**Verwendung:** [Freigabe](#freigabe-release_job),
+[Roboter-Pick](#roboter-pick-pick_main_robot-und-pick_corridor_arm_robot),
+[Maschinen-Pick](#maschinen-pick-pick_machine_job),
+[Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot) und
+[Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
+
 #### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
 
 - **Bewertungsgröße:** Anzahl `n` der Jobs im Eingangspuffer der Maschine.
@@ -1177,6 +1191,10 @@ xychart-beta
 - **Abbildung:** `inverse_scale(n) = 1 / (1 + n)`.
 - **Beispiel:** Kein wartender Job ergibt `1`; drei wartende Jobs ergeben
   `0.25`.
+
+**Verwendung:** [Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot),
+[Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
+[Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
 
 #### 4. Werkzeugpassung: ein bereits montiertes passendes Werkzeug bevorzugen
 
@@ -1186,6 +1204,10 @@ xychart-beta
   ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
 - **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
   ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
+
+**Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
+[Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
+[Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
 
 #### 5. Werkzeugreserve: mehr Lebensdauer im Verhältnis zum Verbrauch bevorzugen
 
@@ -1214,6 +1236,12 @@ Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
 Eine negative Deadline-Restzeit wird bereits in
 `calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
 
+**Vorgesehene Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
+[Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
+[Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
+Der Teilwert ist derzeit nicht aktiv;
+siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve).
+
 #### 6. Freie Pufferkapazität: einen größeren freien Anteil bevorzugen
 
 - **Bewertungsgröße:** Freie Plätze und Gesamtkapazität des Ziel-Stores.
@@ -1226,6 +1254,8 @@ Eine negative Deadline-Restzeit wird bereits in
 Bei positiver, endlicher Kapazität und gültiger Belegung liegt dieser Anteil
 in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht.
 
+**Verwendung:** [Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot).
+
 #### 7. Defektschwere: bei stärkerem Defekt die Herabstufung höher bewerten
 
 - **Bewertungsgröße:** `defect_severity` des Jobs.
@@ -1235,6 +1265,8 @@ in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht.
   `[0, 1]` begrenzt und dann direkt als Teilwert übernommen, **nicht** mit
   `direct_scale()` umgerechnet.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
+
+**Verwendung:** [Herabstufung](#herabstufung-downgrade_product).
 
 #### 8. Warten: bei höherem Termindruck einen kleineren Wartewert verwenden
 
@@ -1250,6 +1282,9 @@ in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht.
   bei einem Defekt zunächst `0.25`, noch vor einem möglichen Strafabzug.
 
 Der normale Wartewert liegt zwischen `0.01` und `0.99`.
+
+**Verwendung:** [Normales Warten](#normales-warten-wait_) und
+[Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job).
 
 ### Gewichte und Gesamtscore
 

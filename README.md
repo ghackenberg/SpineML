@@ -1267,17 +1267,15 @@ wie lange der Job wartet.
   EDD-Priorität. Eine höhere EDD-Priorität bedeutet einen dringenderen Job.
 - **Regel:** Je höher die EDD-Priorität, desto niedriger der Teilwert für
   Warten. Warten wird dadurch für dringende Jobs weniger vorteilhaft bewertet.
-- **Abbildung für normales Warten in `evaluate_wait_action()`:**
-  - Mit zugehörigem Job und Deadline:
-    `Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`.
-  - Ohne zugehörigen Job oder ohne dessen Deadline:
-    `Teilwert = WAIT_SCORE_MIN`.
-  - Die Codekonstanten sind `WAIT_SCORE_MIN = 0.01` und `WAIT_SCORE_MAX = 0.99`.
-- **Abbildung für einen defekten Job in `evaluate_defect_action()`:**
+- **Abbildung:** Für normales Warten in `evaluate_wait_action()` und für
+  Warten eines defekten Jobs in `evaluate_defect_action()` gilt bei bekannter
+  Deadline dieselbe Formel:
   `Teilwert = 1.0 - EDD`.
-- **Beispiel:** Bei `EDD = 0.75` ergibt normales Warten
-  `0.01 + (0.99 - 0.01) * (1.0 - 0.75) = 0.255`;
-  beim defekten Job ergibt sich `1.0 - 0.75 = 0.25` vor einem Strafabzug.
+- **Ohne Job oder Deadline:** `evaluate_wait_action()` verwendet den festen
+  Ersatzwert `DEFAULT_WAIT_SCORE = 0.01`.
+- **Beispiel:** Bei `EDD = 0.75` ergibt sich in beiden Fällen
+  `1.0 - 0.75 = 0.25`. Bei einem defekten Job kann anschließend noch ein
+  Strafabzug hinzukommen.
 
 **Verwendung:** [Normales Warten](#normales-warten-wait_) und
 [Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job).
@@ -1433,15 +1431,13 @@ des wartenden Jobs beziehungsweise des aktuell geladenen Jobs.
 Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
 wird hier so umgesetzt:
 
-`Teilwert = WAIT_SCORE_MIN + (WAIT_SCORE_MAX - WAIT_SCORE_MIN) * (1.0 - EDD)`
+`Teilwert = 1.0 - EDD`
 
-Mit `WAIT_SCORE_MIN = 0.01` und `WAIT_SCORE_MAX = 0.99` wird der Wert
-`1.0 - EDD` damit auf den Bereich von `0.01` bis `0.99`
-abgebildet. Ohne zugehörigen Job oder ohne dessen Deadline wird der feste
-Teilwert `0.01` verwendet.
+Ohne zugehörigen Job oder ohne dessen Deadline wird der feste Ersatzwert
+`DEFAULT_WAIT_SCORE = 0.01` verwendet.
 
 Zum Beispiel ergibt `EDD = 0.75` den Teilwert
-`0.01 + (0.99 - 0.01) * (1.0 - 0.75) = 0.255`.
+`1.0 - 0.75 = 0.25`.
 
 Dieser Teilwert wird mit `wait_action_weight` als einzigem Gewicht an
 `calculate_action_score()` übergeben. Das Gewicht kürzt sich heraus,
@@ -1514,10 +1510,11 @@ ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
 ##### Warten bei einem Defekt: `wait_job`
 
 Auch ein als `defect` markierter Job führt dieselbe Aktion `wait_job` aus.
-Der Unterschied liegt nur in der Bewertung durch `evaluate_defect_action()`:
+`evaluate_defect_action()` verwendet dieselbe
+[EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen) und
+dieselbe Grundabbildung wie beim normalen Warten.
 Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
-verwendet die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
-hier ohne die zusätzliche Bereichsanpassung:
+lautet auch hier:
 
 `Teilwert = 1.0 - EDD`
 

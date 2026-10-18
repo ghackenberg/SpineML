@@ -7,8 +7,7 @@ from .HeuristicWeights import HeuristicWeights
 class LocalHeuristicActionEvaluator(ActionEvaluator):
     """Prepare action candidates and evaluate them with weights."""
 
-    WAIT_SCORE_MIN = 0.01
-    WAIT_SCORE_MAX = 0.99
+    DEFAULT_WAIT_SCORE = 0.01
 
     # Store the configurable weight set used by all evaluation methods.
     # Example: HeuristicWeights(queue_priority_weight=0.4) is stored in self.weights.
@@ -268,10 +267,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         return 0.0
 
 
-    # Bewertet eine normale Warteaktion anhand des Termindrucks des wartenden Jobs.
-    # Ein leerer Roboter oder eine leere Maschine erhält den unteren Wartewert,
-    # damit Warten bei einer verfügbaren Pick-Aktion nicht pauschal mit 1
-    # bewertet wird. Die Wartewerte bleiben bewusst innerhalb von 0 und 1.
+    # Bewertet Warten mit 1 - EDD: Je dringender der Job, desto niedriger der Score.
+    # Ohne zugehörigen Job oder dessen Deadline gilt der feste Ersatzwert.
     def evaluate_wait_action(
         self,
         observation: PolicyObservation,
@@ -283,11 +280,11 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             job_summary = current_state.get("current_job_summary")
 
         if not job_summary:
-            wait_value = self.WAIT_SCORE_MIN
+            wait_value = self.DEFAULT_WAIT_SCORE
         else:
             latest_end_time = job_summary.get("latest_end_time")
             if latest_end_time is None:
-                wait_value = self.WAIT_SCORE_MIN
+                wait_value = self.DEFAULT_WAIT_SCORE
             else:
                 current_time = float(
                     observation.simulation_configuration_snapshot["time"]
@@ -296,9 +293,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                     float(latest_end_time),
                     current_time,
                 )
-                wait_value = self.WAIT_SCORE_MIN + (
-                    self.WAIT_SCORE_MAX - self.WAIT_SCORE_MIN
-                ) * (1.0 - edd_priority)
+                wait_value = 1.0 - edd_priority
 
         return self.calculate_action_score([
             (wait_value, self.weights.wait_action_weight),

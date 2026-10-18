@@ -461,8 +461,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         return 0.0
 
-    # Evaluates a rework action solely based on the selected
-    # machine and its associated operation.
+    # Bewertet beide Nacharbeitsarten mit denselben Kriterien.
     def evaluate_defect_recovery_action(
         self,
         action_type: str,
@@ -493,19 +492,18 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             ),
         ]
 
-        if action_type == "job_rework_on_alternative_machine":
-            transport_time_value = self.defect_recovery_transport_time_value(
-                action,
-                observation,
-                machine_state,
-            )
-            if transport_time_value is not None:
-                parts.append(
-                    (
-                        transport_time_value,
-                        self.weights.defect_recovery_transport_time_weight,
-                    )
+        transport_time_value = self.defect_recovery_transport_time_value(
+            action,
+            observation,
+            machine_state,
+        )
+        if transport_time_value is not None:
+            parts.append(
+                (
+                    transport_time_value,
+                    self.weights.defect_recovery_transport_time_weight,
                 )
+            )
 
         # Jede Operation legt einen benötigten Werkzeugtyp fest.
         required_tool_id = operation["tool_type_id"]

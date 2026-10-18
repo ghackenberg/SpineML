@@ -1178,7 +1178,8 @@ xychart-beta
 **Verwendung:** [Freigabe](#freigabe-release_job),
 [Roboter-Pick](#roboter-pick-pick_main_robot-und-pick_corridor_arm_robot),
 [Maschinen-Pick](#maschinen-pick-pick_machine_job),
-[Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot) und
+[Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot),
+[Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
 [Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine).
 
 #### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
@@ -1498,33 +1499,45 @@ aktuelle Zeit `11`.
 
 1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
    `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`.
+2. **[Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
+   `inverse_scale(Transportzeit zur Defektmaschine) × defect_recovery_transport_time_weight`,
+   wenn diese Zeit geschätzt werden kann.
+3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`.
    Dieses Kriterium geht immer ein.
-3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
+4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    falls der Lebensdauerverbrauch der Operation positiv ist.
+
+`defect_recovery_transport_time_value()` berechnet den Weg vom aktuellen
+Jobstandort zum Eingangspuffer der Defektmaschine. Auch bei Nacharbeit auf
+dieser Maschine wird also die tatsächliche Wegstrecke berücksichtigt,
+nicht pauschal die Transportzeit `0`. Die geschätzte Zeit ergibt sich aus
+der achsenweisen Wegstrecke geteilt durch die konfigurierte
+Grundgeschwindigkeit und wird mit `inverse_scale()` abgebildet.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
 
-**Beispiel:** Die drei Kriterien ergeben mit den Standardgewichten:
+**Beispiel:** Die vier Kriterien ergeben mit den Standardgewichten:
 
 - **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
   Gewicht `0.3`.
+- **Transportzeit:** Die geschätzte Zeit zum Eingangspuffer der Defektmaschine
+  beträgt `1`. `inverse_scale(1) = 0.5`, Gewicht `0.2`.
 - **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
   Teilwert `1`, Gewicht `0.2`.
 - **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
   `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
 
-`Score vor Strafabzug = (1 × 0.3 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2) = 6 / 7 ≈ 0.857`
+`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
 
 Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
-keinen Strafabzug; der Score bleibt `6 / 7 ≈ 0.857`.
+keinen Strafabzug; der Score bleibt `7 / 9 ≈ 0.778`.
 
 Bei aktueller Zeit `11` ist die Deadline überschritten. Der Code zieht
 anschließend `0.5` ab:
 
-`Endscore = 6 / 7 − 0.5 = 5 / 14 ≈ 0.357`
+`Endscore = 7 / 9 − 0.5 = 5 / 18 ≈ 0.278`
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 

@@ -62,6 +62,7 @@ def make_rework_observation(current_time):
             "simulation_object_states_by_id": states,
             "store_positions_by_id": {
                 "source": {"x": 0, "y": 0, "z": 0},
+                "defect_machine in": {"x": 1, "y": 0, "z": 0},
                 "alternative_machine in": {"x": 1, "y": 0, "z": 0},
             },
         },
@@ -82,7 +83,7 @@ def rework_action(action_type, machine_id):
 @pytest.mark.parametrize(
     "action_type, machine_id, score_before_penalty",
     [
-        ("job_rework_on_defect_machine", "defect_machine", 13.0 / 70.0),
+        ("job_rework_on_defect_machine", "defect_machine", 23.0 / 90.0),
         ("job_rework_on_alternative_machine", "alternative_machine", 1.0 / 3.0),
     ],
 )

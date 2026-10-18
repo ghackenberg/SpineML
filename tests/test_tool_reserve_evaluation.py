@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -120,8 +121,7 @@ def test_tool_reserve_uses_consumption_from_configuration_observer(
             (1 / 3, weights.defect_recovery_machine_queue_length_weight),
             (tool_match_value, weights.defect_recovery_tool_match_weight),
         ]
-        if action_type == "job_rework_on_alternative_machine":
-            parts.append((1 / 3, weights.defect_recovery_transport_time_weight))
+        parts.append((1 / 3, weights.defect_recovery_transport_time_weight))
         reserve_weight = weights.defect_recovery_tool_reserve_weight
 
     if consumed_life > 0:
@@ -151,3 +151,73 @@ def test_operation_requires_tool_type_id(action_type):
 
     with pytest.raises(KeyError, match="tool_type_id"):
         evaluator.evaluate_action(prepared_action, observation)
+
+
+@pytest.mark.parametrize("action_type", [
+    "job_rework_on_defect_machine",
+    "job_rework_on_alternative_machine",
+])
+@pytest.mark.parametrize("distance", [0.0, 1.5, 6.0])
+def test_both_rework_types_include_actual_transport_distance(action_type, distance):
+    weights = HeuristicWeights()
+    evaluator = LocalHeuristicActionEvaluator(weights)
+    observation, action = make_observation(action_type, 4.0, 2.0)
+    observation.simulation_configuration_snapshot[
+        "store_positions_by_id"
+    ]["machine in"]["x"] = distance
+    transport_value = 1.0 / (1.0 + distance / 1.5)
+    expected_score = (
+        (1.0 / 3.0) * weights.defect_recovery_machine_queue_length_weight
+        + transport_value * weights.defect_recovery_transport_time_weight
+        + weights.defect_recovery_tool_match_weight
+        + (2.0 / 3.0) * weights.defect_recovery_tool_reserve_weight
+    ) / (
+        weights.defect_recovery_machine_queue_length_weight
+        + weights.defect_recovery_transport_time_weight
+        + weights.defect_recovery_tool_match_weight
+        + weights.defect_recovery_tool_reserve_weight
+    )
+
+    assert evaluator.evaluate_action(action, observation) == pytest.approx(expected_score)
+
+
+@pytest.mark.parametrize("action_type", [
+    "job_rework_on_defect_machine",
+    "job_rework_on_alternative_machine",
+])
+def test_both_rework_types_omit_transport_when_position_is_unknown(action_type):
+    evaluator = LocalHeuristicActionEvaluator(HeuristicWeights())
+    observation, action = make_observation(action_type, 4.0, 2.0)
+    del observation.simulation_configuration_snapshot[
+        "store_positions_by_id"
+    ]["machine in"]
+
+    assert evaluator.evaluate_action(action, observation) == pytest.approx(13.0 / 21.0)
+
+
+@pytest.mark.parametrize("current_time", [8.0, 10.0, 11.0])
+def test_rework_types_have_equal_scores_for_equal_conditions(current_time):
+    evaluator = LocalHeuristicActionEvaluator(HeuristicWeights())
+    observation, defect_action = make_observation("job_rework_on_defect_machine", 4.0, 2.0)
+    snapshot = observation.simulation_configuration_snapshot
+    snapshot["time"] = current_time
+    states = snapshot["simulation_object_states_by_id"]
+    states["job"]["time"] = current_time
+    states["job"]["latest_end_time"] = 10.0
+    states["alternative"] = deepcopy(states["machine"])
+    states["alternative"]["object_id"] = "alternative"
+    states["alternative"]["input_storage"]["store_id"] = "alternative in"
+    snapshot["store_positions_by_id"]["alternative in"] = dict(
+        snapshot["store_positions_by_id"]["machine in"]
+    )
+    alternative_action = {
+        "action_type": "job_rework_on_alternative_machine",
+        "payload": {
+            "selected_operation_id": "operation",
+            "selected_machine_id": "alternative",
+        },
+    }
+
+    assert evaluator.evaluate_action(defect_action, observation) == pytest.approx(
+        evaluator.evaluate_action(alternative_action, observation)
+    )

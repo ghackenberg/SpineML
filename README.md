@@ -1465,15 +1465,25 @@ deshalb entspricht der Score dem Teilwert.
 #### Defektbehandlung
 
 Der Generator erzeugt die technisch möglichen Aktionen für einen defekten
-Job. `evaluate_defect_action()` bewertet diese Aktionen. Dafür prüft die
-Methode, ob die Deadline des Auftrags bereits erreicht ist:
+Job. `evaluate_defect_action()` bewertet diese Aktionen. Für Nacharbeit,
+Warten und Herabstufung berücksichtigt die Methode die Restzeit bis zur
+Deadline des Auftrags:
 
 `remaining_time = latest_end_time − aktuelle Zeit`
 
-**Beispiel:** Die Deadline liegt bei `10`, die aktuelle Simulationszeit ist
-`11`. Dann ist `remaining_time = 10 − 11 = −1`: Der Auftrag ist seit einer
-Zeiteinheit überfällig. Die Bedingung `remaining_time <= 0` gilt bereits
-genau bei der Deadline, also auch bei Restzeit `0`.
+**Vor der Deadline (`remaining_time > 0`):** Bei Deadline `10` und aktueller
+Zeit `8` ist `remaining_time = 10 − 8 = 2`. Es bleiben zwei Zeiteinheiten:
+
+- **Nacharbeit:** Der berechnete Score erhält keinen Deadline-Strafabzug.
+- **Warten:** Der Score ergibt sich aus `1 − EDD`, ohne Deadline-Strafabzug.
+  Die EDD-Priorität berücksichtigt den Termindruck bereits vor der Deadline.
+- **Herabstufung:** Nur der Defektschweregrad geht als Teilwert ein. Der
+  zusätzliche Deadline-Teilwert `1` wird noch nicht berücksichtigt.
+
+**Deadline erreicht oder überschritten (`remaining_time <= 0`):** Bei Zeit
+`10` ist die Restzeit `0`; bei Zeit `11` ist sie `−1`. Ab Restzeit `0`
+erhalten Nacharbeit und Warten einen Deadline-Strafabzug. Bei Herabstufung
+kommt der zusätzliche Teilwert `1` hinzu.
 
 **Der Evaluator entfernt eine angebotene Nacharbeit nicht aus der Auswahl,
 wenn die Deadline erreicht ist.** Er berechnet weiterhin ihren Score und
@@ -1504,7 +1514,11 @@ benötigt kein Werkzeug. Deshalb geht nur der Warteschlangen-Teilwert
 
 `Score vor Strafabzug = (1 × 0.3) / 0.3 = 1`
 
-Weil die Deadline überschritten ist, zieht der Code anschließend `0.5` ab:
+Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
+keinen Strafabzug; der Score bleibt `1`.
+
+Bei aktueller Zeit `11` ist die Deadline überschritten. Der Code zieht
+anschließend `0.5` ab:
 
 `Score = 1 − 0.5 = 0.5`
 
@@ -1543,7 +1557,10 @@ Standardgewichten `0.3` und `0.2` ergibt sich:
 
 `Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2) / (0.3 + 0.2) = 0.8`
 
-Nach dem Deadline-Strafabzug bleibt:
+Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
+keinen Strafabzug; der Score bleibt `0.8`.
+
+Bei aktueller Zeit `11` wird der Deadline-Strafabzug angewendet:
 
 `Score = 0.8 − 0.5 = 0.3`
 
@@ -1561,8 +1578,9 @@ Für diesen Bonus prüft `is_rework_allowed()` nur, ob die Restzeit bis zur
 Deadline positiv ist. Die Methode berechnet nicht, ob eine komplette
 Nacharbeit noch vor der Deadline fertig werden kann.
 
-**Beispiel:** Der Job hat den Defektschweregrad `0.4`. Vor der Deadline geht
-nur dieser Teilwert mit dem Standardgewicht `0.4` ein:
+**Beispiel:** Der Job hat den Defektschweregrad `0.4`. Bei aktueller Zeit `8`
+liegt die Deadline `10` noch in der Zukunft. Nur der Defektschweregrad geht
+als Teilwert mit dem Standardgewicht `0.4` ein:
 
 `Score vor der Deadline = (0.4 × 0.4) / 0.4 = 0.4`
 
@@ -1591,7 +1609,12 @@ Bei `remaining_time <= 0` wird anschließend
 `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`.
 Ein negatives Ergebnis wird auf `0` gesetzt.
 
-**Beispiel:** Bei Deadline `10` und aktueller Zeit `11` berechnet
+**Beispiel vor der Deadline:** Bei Deadline `10` und aktueller Zeit `8`
+beträgt die Restzeit `2`. `calculate_edd_priority()` berechnet
+`EDD = 0.5 × inverse_scale(2) = 1 / 6 ≈ 0.167`. Der Score für Warten ist
+damit `1 − EDD = 5 / 6 ≈ 0.833`. Es wird keine Deadline-Strafe abgezogen.
+
+**Beispiel nach der Deadline:** Bei Deadline `10` und aktueller Zeit `11` berechnet
 `calculate_edd_priority()` die EDD-Priorität `0.75`. Daraus entsteht der
 Teilwert `1 − 0.75 = 0.25`. Mit dem einzigen Gewicht
 `wait_defect_job_weight = 0.2` ergibt sich zunächst:

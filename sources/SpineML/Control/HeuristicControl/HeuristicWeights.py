@@ -49,7 +49,8 @@ class HeuristicWeights:
 
     wait_defect_job_weight: float = 0.2
 
-    rework_not_allowed_downgrade_bonus_weight: float = 0.4
+    # Gewicht des zusätzlichen Herabstufungs-Teilwerts ab Erreichen der Deadline.
+    deadline_reached_downgrade_bonus_weight: float = 0.4
 
     deadline_missed_wait_penalty_weight: float = 0.2
 

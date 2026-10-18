@@ -1613,17 +1613,20 @@ Bei aktueller Zeit `11` wird der Deadline-Strafabzug angewendet:
 
 ##### Herabstufung: `downgrade_product`
 
-1. **[Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten):**
-   `Defektschwere-Teilwert × product_downgrade_defect_severity_weight`.
-2. Ist die Deadline bereits erreicht oder überschritten, kommt der
-   Bonus-Teilwert `1 × rework_not_allowed_downgrade_bonus_weight` hinzu.
+`evaluate_defect_action()` unterscheidet zwei Fälle:
 
-Diese Beiträge werden zu einem gewichteten Durchschnitt verbunden. Der Bonus
-ist ein zusätzlicher Teilwert innerhalb dieser Berechnung.
+1. **Vor der Deadline (`remaining_time > 0`):** Nur die
+   [Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten)
+   geht mit `product_downgrade_defect_severity_weight` ein. Da dies der
+   einzige Teilwert ist, entspricht der Score dem Defektschweregrad.
+2. **Deadline erreicht oder überschritten (`remaining_time <= 0`):**
+   Zusätzlich geht der feste Teilwert `1` mit
+   `deadline_reached_downgrade_bonus_weight` ein. `calculate_action_score()`
+   bildet den gewichteten Durchschnitt aus Defektschwere und diesem
+   zusätzlichen Teilwert.
 
-Für diesen Bonus prüft `is_rework_allowed()` nur, ob die Restzeit bis zur
-Deadline positiv ist. Die Methode berechnet nicht, ob eine komplette
-Nacharbeit noch vor der Deadline fertig werden kann.
+Die Prüfung heißt `is_deadline_reached()` und liefert bei
+`remaining_time <= 0` den Wert `True`. Sie prüft ausschließlich den Termin.
 
 **Beispiel:** Der Job hat den Defektschweregrad `0.4`. Bei aktueller Zeit `8`
 liegt die Deadline `10` noch in der Zukunft. Nur der Defektschweregrad geht
@@ -1632,7 +1635,7 @@ als Teilwert mit dem Standardgewicht `0.4` ein:
 `Score vor der Deadline = (0.4 × 0.4) / 0.4 = 0.4`
 
 Bei erreichter oder überschrittener Deadline kommt der Teilwert `1` mit
-`rework_not_allowed_downgrade_bonus_weight = 0.4` hinzu:
+`deadline_reached_downgrade_bonus_weight = 0.4` hinzu:
 
 `Score = (0.4 × 0.4 + 1 × 0.4) / (0.4 + 0.4) = 0.7`
 

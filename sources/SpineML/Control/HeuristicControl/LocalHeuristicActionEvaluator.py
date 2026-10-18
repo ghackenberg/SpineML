@@ -377,18 +377,13 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     def estimate_remaining_time(self, current_state: dict) -> float:
         return current_state["latest_end_time"] - current_state["time"]
 
-    # Prüft, ob für Rework noch Zeit bis zur Deadline vorhanden ist.
-    # Beispiel: remaining_time=3 ergibt True; remaining_time=0 ergibt False.
-    def is_rework_allowed(
+    # Prüft, ob die Deadline des Auftrags erreicht oder überschritten ist.
+    # Beispiel: remaining_time=3 ergibt False; remaining_time=0 ergibt True.
+    def is_deadline_reached(
         self,
         current_state: dict,
-        observation: PolicyObservation,
     ) -> bool:
-        remaining_time = self.estimate_remaining_time(current_state)
-        if remaining_time <= 0:
-            return False
-
-        return True
+        return self.estimate_remaining_time(current_state) <= 0
 
     # Evaluates scrap, waiting, downgrade, or one of the rework options.
     # Example: action_type="downgrade_product" returns the downgrade score.
@@ -403,8 +398,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         if action_type == "job_scrap":
             return 1.0
 
-        remaining_time = self.estimate_remaining_time(current_state)
-        deadline_missed = remaining_time <= 0
+        deadline_reached = self.is_deadline_reached(current_state)
         current_time = float(
             observation.simulation_configuration_snapshot["time"]
         )
@@ -421,15 +415,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 (1.0 - defect_edd_priority, self.weights.wait_defect_job_weight),
             ])
             # After the deadline, an additional waiting penalty is subtracted.
-            if deadline_missed:
+            if deadline_reached:
                 score -= self.weights.deadline_missed_wait_penalty_weight
             # Negative Endscores bleiben für den Vergleich der Aktionen erhalten.
             return score
-
-        rework_allowed = self.is_rework_allowed(
-            current_state,
-            observation,
-        )
 
         if action_type == "downgrade_product":
             # A higher severity makes downgrading more attractive than rework.
@@ -441,10 +430,9 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 ),
             ]
 
-            # If rework is no longer possible within the deadline,
-            # downgrading receives an additional bonus.
-            if not rework_allowed:
-                parts.append((1.0, self.weights.rework_not_allowed_downgrade_bonus_weight))
+            # Ab Erreichen der Deadline geht der zusätzliche Teilwert 1 ein.
+            if deadline_reached:
+                parts.append((1.0, self.weights.deadline_reached_downgrade_bonus_weight))
             # Returns the final score of the downgrade action.
             return self.calculate_action_score(parts)
 
@@ -456,7 +444,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 action_type,
                 action,
                 observation,
-                deadline_missed,
+                deadline_reached,
             )
 
         return 0.0
@@ -467,7 +455,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         action_type: str,
         action: dict[str, Any],
         observation: PolicyObservation,
-        deadline_missed: bool,
+        deadline_reached: bool,
     ) -> float:
         payload = action["payload"]
         machine_id = payload.get("selected_machine_id")
@@ -529,7 +517,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             )
 
         score = self.calculate_action_score(parts)
-        if deadline_missed:
+        if deadline_reached:
             if action_type == "job_rework_on_defect_machine":
                 penalty = self.weights.rework_defect_machine_deadline_penalty_weight
             else:

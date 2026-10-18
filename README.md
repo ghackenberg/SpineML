@@ -1695,10 +1695,13 @@ resultierende Score `1`.
 
 #### Abgrenzung zur tatsächlich simulierten Dauer
 
-Die Simulation bildet die Produktionsumgebung nach. Für ihre Zeitschätzungen
-verwendet die Steuerung **Sollwerte** (konfigurierte Referenzwerte für Dauer
-und Geschwindigkeit). Die **Ist-Dauern** (die bei der Ausführung tatsächlich
-verstrichenen Zeiten) entstehen dagegen in der Simulation:
+Die Simulation übernimmt die Rolle einer **realen Produktionsumgebung**:
+Sie führt die gewählten Aktionen aus und bildet dabei die **Ist-Werte** ab
+(zum Beispiel die tatsächlich simulierten Verarbeitungs- und Transportdauern).
+Die Steuerung geht für ihre Zeitschätzungen dagegen von **Sollwerten** aus
+(der konfigurierten Operationsdauer und Grundgeschwindigkeit). Deshalb können
+die in der Simulation entstehenden Ist-Dauern von den Zeitschätzungen der
+Steuerung abweichen:
 
 - **Maschine:** Die Steuerung verwendet die konfigurierte Operationsdauer
   `operation.duration`. `SimMachine` berechnet die Ist-Dauer zusätzlich
@@ -1708,10 +1711,9 @@ verstrichenen Zeiten) entstehen dagegen in der Simulation:
   Geschwindigkeit bei jeder Bewegung um bis zu fünf Prozent; entsprechend
   kann die Ist-Dauer von der Schätzung abweichen.
 
-Die Sollwerte dienen somit dem **Vergleich noch nicht ausgeführter
-Aktionskandidaten**, nicht der exakten Vorhersage ihrer Ist-Dauer. Den
-aktuellen Ist-Zustand der Produktion berücksichtigt die Steuerung weiterhin
-über den Snapshot.
+Diese Trennung betrifft die Schätzung zukünftiger Dauern. Den **aktuellen
+Ist-Zustand** der Produktion berücksichtigt die Steuerung weiterhin über den
+Snapshot.
 
 ### Gewichte und Gesamtscore
 

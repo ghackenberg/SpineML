@@ -1120,9 +1120,11 @@ Die Teilwerte sind dimensionslos, obwohl ihre Rohwerte unterschiedliche
 Einheiten haben. Für alle gilt: **Ein höherer Teilwert bedeutet einen
 größeren Vorteil für die betrachtete Aktion.**
 
+Die Verwendung der Bewertungsgrößen wird in einem eigenen Kapitel
+[je Aktionstyp](#verwendung-der-bewertungsgrößen-nach-aktionstyp) erklärt.
 Die folgenden Regeln erklären jeweils Rohwert, Abbildung und Beispiel.
-Welche davon gemeinsam in eine Aktion eingehen, steht anschließend unter
-[Bewertungsregeln nach Aktionsart](#bewertungsregeln-nach-aktionsart).
+
+### Allgemeine heuristische Regeln
 
 #### 1. Termindruck: dringendere Jobs bevorzugen
 
@@ -1149,11 +1151,6 @@ xychart-beta
     line [0.9, 0.875, 0.833, 0.75, 0.5, 0.25, 0.167, 0.125, 0.1]
 ```
 
-Der EDD-Teilwert geht unter anderem in Freigabe- und Pick-Aktionen ein.
-`prepare_action_candidate()` ergänzt ihn bei jedem Pick-Kandidaten als
-`queue_priority` im Payload. Für Warteaktionen wird daraus dagegen ein
-Wartewert berechnet, siehe Regel 8.
-
 #### 2. Verarbeitungs-, Transport- und Lagerzeiten: kürzere Zeiten bevorzugen
 
 - **Bewertungsgröße:** Eine nichtnegative Zeit `x`.
@@ -1173,87 +1170,6 @@ xychart-beta
     line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
 ```
 
-Welche Zeit als Rohwert verwendet wird, hängt von der Aktion ab:
-
-##### Nächste Operation: Dauer eines einzelnen Verarbeitungsschritts
-
-Beim Maschinen-Pick verwendet der Evaluator die konfigurierte Dauer
-`operation.duration` der nächsten Operation des Jobs. Dasselbe gilt beim
-Ablegen, wenn der Kandidat eine nächste Operation angibt. Es zählt **nur
-diese eine Operation**, nicht der gesamte weitere Weg bis zum Endprodukt.
-
-Zum Beispiel ergibt eine Operationsdauer von `4` Zeiteinheiten den Teilwert
-`inverse_scale(4) = 1 / (1 + 4) = 0.2`. Eine andere mögliche Operation mit
-Dauer `1` erhält bei diesem Kriterium den höheren Teilwert `0.5`.
-
-##### Jobfreigabe: durchschnittliche Verarbeitungszeit der möglichen Routen
-
-Bei der Freigabe wird dagegen die Verarbeitungszeit **über alle Operationen
-einer Route** betrachtet. `estimate_release_processing_time()` ermittelt
-die möglichen Operationsfolgen zum Zielprodukt. Für jede Folge addiert es
-die konfigurierten Operationsdauern und bildet danach den Mittelwert über
-die Routenzeiten.
-
-Zum Beispiel:
-
-- Route A: Zwei Operationen mit Dauer `3` und `5` ergeben insgesamt `8`.
-- Route B: Zwei Operationen mit Dauer `4` und `8` ergeben insgesamt `12`.
-- Der Rohwert für die Freigabe ist `(8 + 12) / 2 = 10`.
-- Daraus entsteht der Teilwert `inverse_scale(10) = 1 / 11 ≈ 0.091`.
-
-Dabei wird keine Route ausgewählt. Der Mittelwert dient nur dazu, die
-Freigabe dieses Jobs anhand seiner geschätzten Verarbeitungszeit zu bewerten.
-Transport- und Wartezeiten sind in dieser Summe nicht enthalten.
-
-##### Transport: Wegstrecke geteilt durch Grundgeschwindigkeit
-
-Bei Roboter-Pick- und Place-Aktionen berechnet `transport_time_value()`
-den Weg von der aktuellen Roboterposition zum Store der Aktion. Weil sich
-der Roboter achsenweise bewegt, werden die Wege in X-, Y- und Z-Richtung
-addiert:
-
-`Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
-
-Zum Beispiel ergeben drei Wegeinheiten in X-Richtung und eine in Y-Richtung
-bei Grundgeschwindigkeit `2` Wegeinheiten pro Zeiteinheit den Rohwert
-`(3 + 1 + 0) / 2 = 2` Zeiteinheiten.
-Der Teilwert ist dann `inverse_scale(2) = 1 / 3 ≈ 0.333`.
-
-Bei Nacharbeit auf einer anderen Maschine verwendet
-`defect_recovery_transport_time_value()` dasselbe Prinzip, aber mit einem
-anderen Start und Ziel: vom aktuellen Jobstandort zum Eingangspuffer der
-ausgewählten Nacharbeitsmaschine.
-
-##### Ein- und Auslagern: zusätzliche Zeit am Store
-
-Diese Zeiten sind **nicht die Fahrt zum Store**, sondern die Zeit für das
-Herausnehmen beziehungsweise Ablegen des Jobs:
-
-- Beim Pick verwendet `pick_source_storage_time_value()` die Auslagerzeit
-  `storage_out_time` des Quell-Stores.
-- Beim Place verwendet `place_target_storage_time_value()` die Einlagerzeit
-  `storage_in_time` des Ziel-Stores.
-
-Eine Lagerzeit von `2` ergibt beispielsweise
-`inverse_scale(2) = 1 / 3 ≈ 0.333`. Das jeweilige Kriterium wird nur
-hinzugefügt, wenn das zugehörige Zeitfeld im Aktions-Payload vorhanden ist.
-Transportzeit und Lagerzeit gehen als getrennte Teilwerte in den Score ein.
-
-##### Unterschied zur tatsächlich simulierten Dauer
-
-Die genannten Zeitwerte dienen dem **Vergleich der Aktionskandidaten**.
-Sie bilden die tatsächliche Ausführungsdauer nicht vollständig nach:
-
-- **Maschine:** `SimMachine` berücksichtigt zusätzlich Produktgröße,
-  Maschinengeschwindigkeit und einen Zufallsfaktor. Diese Einflüsse fehlen
-  im Verarbeitungszeit-Kriterium. Für dieselbe Operation liefert dieses
-  Kriterium daher denselben Teilwert, auch wenn zwei Maschinen
-  unterschiedlich schnell verarbeiten.
-- **Roboter:** Die Schätzung verwendet die konfigurierte Grundgeschwindigkeit.
-  In der Simulation schwankt die Geschwindigkeit bei jeder Bewegung um bis
-  zu fünf Prozent. Dadurch kann die tatsächliche Bewegungsdauer von der
-  geschätzten Zeit abweichen.
-
 #### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
 
 - **Bewertungsgröße:** Anzahl `n` der Jobs im Eingangspuffer der Maschine.
@@ -1261,9 +1177,6 @@ Sie bilden die tatsächliche Ausführungsdauer nicht vollständig nach:
 - **Abbildung:** `inverse_scale(n) = 1 / (1 + n)`.
 - **Beispiel:** Kein wartender Job ergibt `1`; drei wartende Jobs ergeben
   `0.25`.
-
-Das gilt beim Ablegen an eine Maschine in `place_machine_queue_value()` und
-bei Nacharbeitsaktionen in `evaluate_defect_recovery_action()`.
 
 #### 4. Werkzeugpassung: ein bereits montiertes passendes Werkzeug bevorzugen
 
@@ -1273,10 +1186,6 @@ bei Nacharbeitsaktionen in `evaluate_defect_recovery_action()`.
   ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
 - **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
   ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
-
-Die Regel steht in `evaluate_machine_pick_action()` und
-`evaluate_defect_recovery_action()`. Benötigt die Operation kein Werkzeug,
-wird kein Werkzeugpassungs-Teilwert hinzugefügt.
 
 #### 5. Werkzeugreserve: mehr Lebensdauer im Verhältnis zum Verbrauch bevorzugen
 
@@ -1305,40 +1214,27 @@ Sie erwarten nichtnegative Eingaben und begrenzen diese nicht nachträglich.
 Eine negative Deadline-Restzeit wird bereits in
 `calculate_edd_priority()` getrennt als Überfälligkeit behandelt.
 
-**Aktueller Codezustand:** Dieser Teilwert wird bei den regulären Snapshots
-derzeit nicht hinzugefügt. `ConfigurationObjectObserver` liefert den Verbrauch
-im Konfigurationsmodell unter `consumed_life_units`,
-die Reservelogik in `evaluate_machine_pick_action()` und
-`evaluate_defect_recovery_action()` liest aber `consumes_life_units` und
-erhält dadurch `0`. Die vorgesehene Berechnung setzt einen positiven
-Verbrauch voraus. Der tatsächliche Werkzeugverbrauch in `SimMachine` ist
-davon unabhängig.
-
 #### 6. Freie Pufferkapazität: einen größeren freien Anteil bevorzugen
 
 - **Bewertungsgröße:** Freie Plätze und Gesamtkapazität des Ziel-Stores.
 - **Regel:** Je größer der freie Anteil, desto höher der Teilwert.
-- **Abbildung in `target_store_capacity_value()`:**
+- **Abbildung mit `normalize_ratio()`:**
   `normalize_ratio(freie Plätze, Gesamtkapazität) = freie Plätze / Gesamtkapazität`.
 - **Beispiel:** Zwei von zehn freien Plätzen ergeben `0.2`; acht von zehn
   ergeben `0.8`.
 
 Bei positiver, endlicher Kapazität und gültiger Belegung liegt dieser Anteil
-in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht. Die Regel wird
-bei Place-Aktionen verwendet.
+in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht.
 
 #### 7. Defektschwere: bei stärkerem Defekt die Herabstufung höher bewerten
 
 - **Bewertungsgröße:** `defect_severity` des Jobs.
-- **Regel:** Bei einem bereits erzeugten `downgrade_product`-Kandidaten soll
-  ein höherer Schweregrad einen höheren Teilwert ergeben.
+- **Regel:** Bei einer Herabstufung soll ein höherer Schweregrad einen
+  höheren Teilwert ergeben.
 - **Abbildung in `evaluate_defect_action()`:** Der Schweregrad wird auf
   `[0, 1]` begrenzt und dann direkt als Teilwert übernommen, **nicht** mit
   `direct_scale()` umgerechnet.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
-
-Welche Defektaktionen überhaupt technisch zulässig sind, bestimmt weiterhin
-der `ActionGenerator`. Diese Regel erzeugt keine Herabstufungsaktion.
 
 #### 8. Warten: bei höherem Termindruck einen kleineren Wartewert verwenden
 
@@ -1353,9 +1249,7 @@ der `ActionGenerator`. Diese Regel erzeugt keine Herabstufungsaktion.
 - **Beispiel:** Bei `EDD = 0.75` ergibt normales Warten `0.255` und Warten
   bei einem Defekt zunächst `0.25`, noch vor einem möglichen Strafabzug.
 
-Der normale Wartewert liegt zwischen `0.01` und `0.99`. Für defekte Jobs
-kann zusätzlich eine Deadline-Strafe anfallen; diese wird erst nach der
-Scoreberechnung abgezogen, siehe [Defektbehandlung](#defektbehandlung).
+Der normale Wartewert liegt zwischen `0.01` und `0.99`.
 
 ### Gewichte und Gesamtscore
 
@@ -1496,10 +1390,12 @@ Ist Puffer B inzwischen voll, erzeugt der Generator keine Ablageaktion für
 dieses Ziel. Die Bewertung entscheidet also nicht über die technische
 Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
-### Bewertungsregeln nach Aktionsart
+### Verwendung der Bewertungsgrößen nach Aktionstyp
 
-Die folgenden Abschnitte zeigen, **welche der oben erklärten Teilwerte für
-welche Aktion kombiniert werden und welche Gewichte dazugehören**.
+Die allgemeinen Regeln legen fest, wie Rohwerte auf Teilwerte abgebildet
+werden. Dieses Kapitel erklärt getrennt davon, **welche Rohwerte bei welchem
+Aktionstyp verwendet werden, wie sie ermittelt werden und welche Gewichte
+in den Score eingehen**.
 
 Die Ausdrücke zeigen jeweils `Teilwert × Gewicht`.
 `calculate_action_score()` addiert diese Beiträge und teilt durch die
@@ -1513,8 +1409,25 @@ die dafür benötigten Daten beziehungsweise Bedingungen vorhanden sind.
 1. **Termindruck:** `EDD × release_edd_weight`.
 2. **Durchschnittliche Routenverarbeitungszeit:**
    `inverse_scale(erwartete Verarbeitungszeit) × release_average_route_duration_weight`.
-   Die Ermittlung der Routenzeit ist bei Regel 2 beschrieben. Sie enthält
-   insbesondere keine Transport- oder Wartezeiten.
+
+##### Ermittlung der Routenzeit
+
+Bei der Freigabe wird die Verarbeitungszeit **über alle Operationen
+einer Route** betrachtet. `estimate_release_processing_time()` ermittelt
+die möglichen Operationsfolgen zum Zielprodukt. Für jede Folge addiert es
+die konfigurierten Operationsdauern und bildet danach den Mittelwert über
+die Routenzeiten.
+
+Zum Beispiel:
+
+- Route A: Zwei Operationen mit Dauer `3` und `5` ergeben insgesamt `8`.
+- Route B: Zwei Operationen mit Dauer `4` und `8` ergeben insgesamt `12`.
+- Der Rohwert für die Freigabe ist `(8 + 12) / 2 = 10`.
+- Daraus entsteht der Teilwert `inverse_scale(10) = 1 / 11 ≈ 0.091`.
+
+Dabei wird keine Route ausgewählt. Der Mittelwert dient nur dazu, die
+Freigabe dieses Jobs anhand seiner geschätzten Verarbeitungszeit zu bewerten.
+Transport- und Wartezeiten sind in dieser Summe nicht enthalten.
 
 #### Roboter-Pick: `pick_main_robot` und `pick_corridor_arm_robot`
 
@@ -1524,6 +1437,31 @@ die dafür benötigten Daten beziehungsweise Bedingungen vorhanden sind.
 2. **Entnahmezeit:** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
    Das Kriterium geht nur ein, wenn `storage_out_time` im Payload vorhanden ist.
 3. **Transportzeit:** `inverse_scale(Transportzeit) × pick_short_transport_time_weight`.
+
+##### Ermittlung der Transportzeit
+
+Bei Roboter-Pick- und Place-Aktionen berechnet `transport_time_value()`
+den Weg von der aktuellen Roboterposition zum Store der Aktion. Weil sich
+der Roboter achsenweise bewegt, werden die Wege in X-, Y- und Z-Richtung
+addiert:
+
+`Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
+
+Zum Beispiel ergeben drei Wegeinheiten in X-Richtung und eine in Y-Richtung
+bei Grundgeschwindigkeit `2` Wegeinheiten pro Zeiteinheit den Rohwert
+`(3 + 1 + 0) / 2 = 2` Zeiteinheiten.
+Der Teilwert ist dann `inverse_scale(2) = 1 / 3 ≈ 0.333`.
+
+##### Auslagerzeit am Quell-Store
+
+Die Auslagerzeit ist die Zeit für das Herausnehmen des Jobs aus dem Store,
+nicht die Fahrt dorthin. `pick_source_storage_time_value()` liest dafür
+`storage_out_time` aus dem Aktions-Payload. Ist das Feld nicht vorhanden,
+entfällt dieser Teilwert.
+
+Eine Auslagerzeit von `2` ergibt zum Beispiel
+`inverse_scale(2) = 1 / 3 ≈ 0.333`. Transportzeit und Auslagerzeit gehen
+als getrennte Teilwerte mit ihren jeweiligen Gewichten in den Score ein.
 
 #### Maschinen-Pick: `pick_machine_job`
 
@@ -1536,8 +1474,19 @@ die dafür benötigten Daten beziehungsweise Bedingungen vorhanden sind.
    nur wenn die Operation ein Werkzeug benötigt.
 4. **Werkzeugreserve:**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
-   Vorgesehen bei positivem Lebensdauerverbrauch; wegen des bei Regel 5
-   beschriebenen Feldnamenunterschieds derzeit nicht aktiv.
+   Vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv;
+   siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve).
+
+##### Verwendete Operationsdauer
+
+Beim Maschinen-Pick verwendet der Evaluator die konfigurierte Dauer
+`operation.duration` der nächsten Operation des Jobs. Dasselbe gilt beim
+Ablegen, wenn der Kandidat eine nächste Operation angibt. Es zählt **nur
+diese eine Operation**, nicht der gesamte weitere Weg bis zum Endprodukt.
+
+Zum Beispiel ergibt eine Operationsdauer von `4` Zeiteinheiten den Teilwert
+`inverse_scale(4) = 1 / (1 + 4) = 0.2`. Eine andere mögliche Operation mit
+Dauer `1` erhält bei diesem Kriterium den höheren Teilwert `0.5`.
 
 #### Verarbeitung: `process_machine_job`
 
@@ -1552,17 +1501,32 @@ Bei einem vollen Ausgangspuffer wird stattdessen nur `wait_machine` erzeugt.
 
 1. **Freier Zielkapazität:**
    `Anteil freier Plätze × target_store_free_capacity_weight`.
+   `target_store_capacity_value()` ermittelt dafür den freien Kapazitätsanteil.
 2. **Transportzeit:**
    `inverse_scale(Transportzeit) × place_short_transport_time_weight`.
 3. **Einlagerungszeit:**
    `inverse_scale(storage_in_time) × place_target_storage_time_weight`,
    falls `storage_in_time` im Payload vorhanden ist.
 4. **Maschinenwarteschlange:**
-   `inverse_scale(Warteschlangenlänge) × place_machine_queue_length_weight`,
+   `inverse_scale(Warteschlangenlänge) × place_machine_queue_length_weight`.
+   `place_machine_queue_value()` liest die Anzahl der Jobs im Eingangspuffer,
    falls eine Zielmaschine angegeben ist.
 5. **Dauer der nächsten Operation:**
    `inverse_scale(operation.duration) × place_operation_duration_weight`,
    falls der Payload eine nächste Operation enthält.
+
+##### Verwendete Zeitwerte
+
+Die Transportzeit wird wie beim Roboter-Pick aus Wegstrecke und
+Grundgeschwindigkeit berechnet. Enthält der Kandidat eine nächste Operation,
+zählt deren konfigurierte Dauer, wie beim Maschinen-Pick beschrieben.
+
+Zusätzlich verwendet `place_target_storage_time_value()` die Einlagerzeit
+`storage_in_time` des Ziel-Stores. Sie beschreibt das Ablegen des Jobs,
+nicht die Fahrt zum Store, und wird getrennt von der Transportzeit auf
+einen Teilwert abgebildet. Eine Einlagerzeit von `2` ergibt beispielsweise
+`inverse_scale(2) = 1 / 3 ≈ 0.333`. Fehlt das Feld im Payload, entfällt
+dieser Teilwert.
 
 #### Normales Warten: `wait_*`
 
@@ -1600,7 +1564,7 @@ Nacharbeitskandidaten vorhanden sein; sie erhalten dann eine Score-Strafe.
    benötigt wird.
 3. `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
    vorgesehen bei positivem Lebensdauerverbrauch, derzeit aber nicht aktiv
-   (siehe Regel 5).
+   (siehe [Codehinweis zur Werkzeugreserve](#codehinweis-zur-werkzeugreserve)).
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
@@ -1612,6 +1576,11 @@ Es gelten dieselben drei Kriterien. Zusätzlich geht
 ein, wenn diese Zeit geschätzt werden kann. Bei `remaining_time <= 0`
 wird `rework_alternative_machine_deadline_penalty_weight` abgezogen,
 standardmäßig `0.5`.
+
+`defect_recovery_transport_time_value()` schätzt die Transportzeit ebenfalls
+als Wegstrecke geteilt durch Grundgeschwindigkeit. Hier wird der Weg vom
+aktuellen Jobstandort zum Eingangspuffer der ausgewählten Nacharbeitsmaschine
+betrachtet.
 
 Bei beiden Nacharbeitsaktionen wird ein nach dem Abzug negativer Score
 auf `0` gesetzt.
@@ -1649,6 +1618,32 @@ Kandidat. Ihre Bewertung verwendet:
 resultierende Score `1`.
 
 Ein unbekannter `action_type` erhält in `evaluate_action()` den Score `0`.
+
+#### Codehinweis zur Werkzeugreserve
+
+**Aktueller Codezustand:** Dieser Teilwert wird bei den regulären Snapshots
+derzeit nicht hinzugefügt. `ConfigurationObjectObserver` liefert den Verbrauch
+im Konfigurationsmodell unter `consumed_life_units`,
+die Reservelogik in `evaluate_machine_pick_action()` und
+`evaluate_defect_recovery_action()` liest aber `consumes_life_units` und
+erhält dadurch `0`. Die vorgesehene Berechnung setzt einen positiven
+Verbrauch voraus. Der tatsächliche Werkzeugverbrauch in `SimMachine` ist
+davon unabhängig.
+
+#### Abgrenzung zur tatsächlich simulierten Dauer
+
+Die genannten Zeitwerte dienen dem **Vergleich der Aktionskandidaten**.
+Sie bilden die tatsächliche Ausführungsdauer nicht vollständig nach:
+
+- **Maschine:** `SimMachine` berücksichtigt zusätzlich Produktgröße,
+  Maschinengeschwindigkeit und einen Zufallsfaktor. Diese Einflüsse fehlen
+  im Verarbeitungszeit-Kriterium. Für dieselbe Operation liefert dieses
+  Kriterium daher denselben Teilwert, auch wenn zwei Maschinen
+  unterschiedlich schnell verarbeiten.
+- **Roboter:** Die Schätzung verwendet die konfigurierte Grundgeschwindigkeit.
+  In der Simulation schwankt die Geschwindigkeit bei jeder Bewegung um bis
+  zu fünf Prozent. Dadurch kann die tatsächliche Bewegungsdauer von der
+  geschätzten Zeit abweichen.
 
 ## Optimierungsvorgang
 

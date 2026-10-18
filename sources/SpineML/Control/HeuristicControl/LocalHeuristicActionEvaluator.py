@@ -2,7 +2,7 @@ from typing import Any
 
 from ..GeneralControl.ActionGenerators import SpineActionGenerator
 from ..Interface.InterfaceTypes import ActionEvaluator, PolicyObservation
-from .HeuristicWeights import HeuristicWeights
+from .HeuristicWeights import EDD_AT_DEADLINE, SCORE_MAX, HeuristicWeights
 
 class LocalHeuristicActionEvaluator(ActionEvaluator):
     """Prepare action candidates and evaluate them with weights."""
@@ -109,11 +109,13 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         time_until_deadline = latest_end_time - current_time
         if time_until_deadline >= 0:
             # Je weniger Restzeit vorhanden ist, desto höher ist der Druck.
-            return 0.5 * self.inverse_scale(time_until_deadline)
+            return EDD_AT_DEADLINE * self.inverse_scale(time_until_deadline)
 
         overdue_time = -time_until_deadline
         # Bei einer Überschreitung steigt der Druck mit der Überfälligkeit.
-        return 0.5 + 0.5 * self.direct_scale(overdue_time)
+        return EDD_AT_DEADLINE + (
+            SCORE_MAX - EDD_AT_DEADLINE
+        ) * self.direct_scale(overdue_time)
 
 
     # Sucht einen Store rekursiv im Snapshot und gibt sein Zustands-Dictionary zurück.
@@ -414,7 +416,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             score = self.calculate_action_score([
                 (1.0 - defect_edd_priority, self.weights.wait_defect_job_weight),
             ])
-            # After the deadline, an additional waiting penalty is subtracted.
+            # Ab der Deadline ergibt die Standardstrafe 0.5 - 0.3 einen Score <= 0.3.
             if deadline_reached:
                 score -= self.weights.deadline_missed_wait_penalty_weight
             # Negative Endscores bleiben für den Vergleich der Aktionen erhalten.
@@ -430,7 +432,8 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 ),
             ]
 
-            # Ab Erreichen der Deadline geht der zusätzliche Teilwert 1 ein.
+            # Standardgewichte 0.5 : 0.5 ergeben s + 0.5 * (1 - s).
+            # Der Bonus hebt Herabstufung damit ab der Deadline in [0.5, 1].
             if deadline_reached:
                 parts.append((1.0, self.weights.deadline_reached_downgrade_bonus_weight))
             # Returns the final score of the downgrade action.
@@ -518,6 +521,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         score = self.calculate_action_score(parts)
         if deadline_reached:
+            # Die Standardstrafe 1 - 0.5 begrenzt den Endscore auf höchstens 0.5.
             if action_type == "job_rework_on_defect_machine":
                 penalty = self.weights.rework_defect_machine_deadline_penalty_weight
             else:

@@ -1486,6 +1486,43 @@ Zeit `8` ist `remaining_time = 10 − 8 = 2`. Es bleiben zwei Zeiteinheiten:
 erhalten Nacharbeit und Warten einen Deadline-Strafabzug. Bei Herabstufung
 kommt der zusätzliche Teilwert `1` hinzu.
 
+**Mathematische Begründung der Standardwerte**
+
+Die folgenden Scoregrenzen sind bewusst gewählte Steuerungsvorgaben.
+[HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
+leitet daraus die Standardstrafen und die
+Herabstufungsgewichte ab. `s` bezeichnet den Defektschweregrad in `[0, 1]`:
+
+```mermaid
+flowchart TD
+    D["Deadline erreicht oder überschritten<br/>remaining_time ≤ 0"]
+    D --> R["Nacharbeit<br/>Score höchstens 0.5"]
+    R --> RP["Grundscore höchstens 1<br/>Strafe = 1 − 0.5 = 0.5"]
+    D --> W["Warten<br/>Score höchstens 0.3"]
+    W --> WP["EDD ≥ 0.5: 1 − EDD ≤ 0.5<br/>Strafe = 0.5 − 0.3 = 0.2"]
+    D --> G["Herabstufung<br/>Score zwischen 0.5 und 1"]
+    G --> GB["Bonus = 0.5 × (1 − s)<br/>Score = s + Bonus"]
+```
+
+Bei der **Herabstufung** wird die Untergrenze `0.5` an den maximalen
+Nacharbeitsscore ab der Deadline angelehnt. Die lineare Abbildung soll am
+unteren Rand `s = 0` den Score `0.5` und am oberen Rand `s = 1` den Score `1`
+ergeben. Daraus folgt:
+
+`Score = 0.5 + (1 − 0.5) × s = s + 0.5 × (1 − s)`
+
+Im gewichteten Durchschnitt mit dem zusätzlichen Deadline-Teilwert `1`
+entspricht das dem normierten Gewichtsverhältnis `0.5 : 0.5`: Defektschwere
+und Deadline-Teilwert erhalten jeweils das Gewicht `0.5`. Der Bonus ist also
+**die Hälfte des noch verbleibenden Abstands zum Score `1`**, kein pauschaler
+Aufschlag von `0.5`.
+
+Damit erhält Herabstufung bei positiver Defektschwere ab der Deadline einen
+höheren Score als Nacharbeit und Warten. Diese Bevorzugung ist beabsichtigt.
+Die Herleitung gilt für die **Standardgewichte**; bei manuell geänderten oder
+optimierten Gewichten können sich die Scoregrenzen ändern. Die Zielgrenzen
+sind eine Modellierungsentscheidung, kein Nachweis einer optimalen Steuerung.
+
 **Der Evaluator entfernt eine angebotene Nacharbeit nicht aus der Auswahl,
 wenn die Deadline erreicht ist.** Er berechnet weiterhin ihren Score und
 zieht davon eine Deadline-Strafe ab. Die folgenden Aktionsabschnitte zeigen
@@ -1630,17 +1667,17 @@ Die Prüfung heißt `is_deadline_reached()` und liefert bei
 
 **Beispiel:** Der Job hat den Defektschweregrad `0.4`. Bei aktueller Zeit `8`
 liegt die Deadline `10` noch in der Zukunft. Nur der Defektschweregrad geht
-als Teilwert mit dem Standardgewicht `0.4` ein:
+als Teilwert mit dem Standardgewicht `0.5` ein:
 
-`Score vor der Deadline = (0.4 × 0.4) / 0.4 = 0.4`
+`Score vor der Deadline = (0.4 × 0.5) / 0.5 = 0.4`
 
 Bei erreichter oder überschrittener Deadline kommt der Teilwert `1` mit
-`deadline_reached_downgrade_bonus_weight = 0.4` hinzu:
+`deadline_reached_downgrade_bonus_weight = 0.5` hinzu:
 
-`Score = (0.4 × 0.4 + 1 × 0.4) / (0.4 + 0.4) = 0.7`
+`Score = (0.4 × 0.5 + 1 × 0.5) / (0.5 + 0.5) = 0.7`
 
-Die Herabstufung erhält also den Score `0.7` statt `0.4`. Der zusätzliche
-Teilwert wird mitgewichtet; er wird nicht zum bisherigen Score addiert.
+Die Anhebung entspricht dem Bonus `0.5 × (1 − 0.4) = 0.3`:
+Die Herabstufung erhält den Score `0.4 + 0.3 = 0.7` statt `0.4`.
 
 ##### Warten bei einem Defekt: `wait_job`
 

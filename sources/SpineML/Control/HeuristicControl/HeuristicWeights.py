@@ -3,6 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 
 
+# Gemeinsame Score-Skala und EDD-Wert genau bei Erreichen der Deadline.
+SCORE_MAX = 1.0
+EDD_AT_DEADLINE = 0.5
+
+# Bewusst gewählte Zielgrenzen für die Standardparametrierung ab der Deadline.
+DEFAULT_DEADLINE_REWORK_SCORE_MAX = 0.5
+DEFAULT_DEADLINE_WAIT_SCORE_MAX = 0.3
+DEFAULT_DEADLINE_DOWNGRADE_SCORE_MIN = DEFAULT_DEADLINE_REWORK_SCORE_MAX
+
+
 @dataclass(frozen=True)
 class HeuristicWeights:
     """Weights used by the local heuristic action evaluation."""
@@ -45,18 +55,32 @@ class HeuristicWeights:
 
     defect_recovery_tool_reserve_weight: float = 0.2
 
-    product_downgrade_defect_severity_weight: float = 0.4
+    # Normierte Gewichte: Score = s + b * (1 - s), mit b = 0.5.
+    # Damit liegt Herabstufung für s in [0, 1] ab der Deadline in [0.5, 1].
+    product_downgrade_defect_severity_weight: float = (
+        SCORE_MAX - DEFAULT_DEADLINE_DOWNGRADE_SCORE_MIN
+    ) / SCORE_MAX
 
     wait_defect_job_weight: float = 0.2
 
-    # Gewicht des zusätzlichen Herabstufungs-Teilwerts ab Erreichen der Deadline.
-    deadline_reached_downgrade_bonus_weight: float = 0.4
+    # Der Deadline-Anteil b legt die Untergrenze des Herabstufungsscores fest.
+    deadline_reached_downgrade_bonus_weight: float = (
+        DEFAULT_DEADLINE_DOWNGRADE_SCORE_MIN / SCORE_MAX
+    )
 
-    deadline_missed_wait_penalty_weight: float = 0.2
+    # Warten: 1 - EDD <= 0.5; für Score <= 0.3 folgt Strafe = 0.5 - 0.3.
+    deadline_missed_wait_penalty_weight: float = (
+        SCORE_MAX - EDD_AT_DEADLINE - DEFAULT_DEADLINE_WAIT_SCORE_MAX
+    )
 
-    rework_defect_machine_deadline_penalty_weight: float = 0.5
+    # Nacharbeit: Grundscore <= 1; für Score <= 0.5 folgt Strafe = 1 - 0.5.
+    rework_defect_machine_deadline_penalty_weight: float = (
+        SCORE_MAX - DEFAULT_DEADLINE_REWORK_SCORE_MAX
+    )
 
-    rework_alternative_machine_deadline_penalty_weight: float = 0.5
+    rework_alternative_machine_deadline_penalty_weight: float = (
+        SCORE_MAX - DEFAULT_DEADLINE_REWORK_SCORE_MAX
+    )
 
     def __post_init__(self) -> None:
         # Alle lokalen weights sind normiert, damit kein Weight allein wegen

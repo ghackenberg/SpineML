@@ -1173,28 +1173,86 @@ xychart-beta
     line [1, 0.5, 0.333, 0.25, 0.2, 0.167]
 ```
 
-Die Zeit stammt je nach Kandidat aus unterschiedlichen Daten:
+Welche Zeit als Rohwert verwendet wird, hängt von der Aktion ab:
 
-- **Verarbeitung:** Beim Maschinen-Pick und beim Ablegen an eine Maschine
-  zählt die konfigurierte Dauer `operation.duration` der nächsten Operation.
-  Bei der Freigabe berechnet `estimate_release_processing_time()` stattdessen
-  die Summe der Operationsdauern jeder möglichen Route und anschließend den
-  Mittelwert dieser Routenzeiten. Zum Beispiel ergeben Routen mit den
-  Gesamtzeiten `8` und `12` den Rohwert `10` und damit `1 / 11 ≈ 0.091`.
-- **Transport:** `transport_time_value()` schätzt die Zeit als
-  `(|Δx| + |Δy| + |Δz|) / movement_speed`. Die Abstände werden addiert,
-  weil die Bewegung achsenweise erfolgt. Bei Nacharbeit auf einer anderen
-  Maschine schätzt `defect_recovery_transport_time_value()` entsprechend
-  die Zeit vom Jobstandort zum Eingangspuffer der Nacharbeitsmaschine.
-- **Ein- und Auslagern:** `pick_source_storage_time_value()` verwendet
-  `storage_out_time`, `place_target_storage_time_value()` verwendet
-  `storage_in_time`, sofern das jeweilige Feld im Payload vorhanden ist.
+##### Nächste Operation: Dauer eines einzelnen Verarbeitungsschritts
 
-Die Verarbeitungszeitschätzung enthält keine späteren Größen-,
-Geschwindigkeits- oder Zufallsfaktoren der Maschine. Auch die
-Transportzeitschätzung sagt die zufällige Geschwindigkeitsschwankung der
-einzelnen Bewegung nicht voraus; sie verwendet eine konfigurierte
-Grundgeschwindigkeit.
+Beim Maschinen-Pick verwendet der Evaluator die konfigurierte Dauer
+`operation.duration` der nächsten Operation des Jobs. Dasselbe gilt beim
+Ablegen, wenn der Kandidat eine nächste Operation angibt. Es zählt **nur
+diese eine Operation**, nicht der gesamte weitere Weg bis zum Endprodukt.
+
+Zum Beispiel ergibt eine Operationsdauer von `4` Zeiteinheiten den Teilwert
+`inverse_scale(4) = 1 / (1 + 4) = 0.2`. Eine andere mögliche Operation mit
+Dauer `1` erhält bei diesem Kriterium den höheren Teilwert `0.5`.
+
+##### Jobfreigabe: durchschnittliche Verarbeitungszeit der möglichen Routen
+
+Bei der Freigabe wird dagegen die Verarbeitungszeit **über alle Operationen
+einer Route** betrachtet. `estimate_release_processing_time()` ermittelt
+die möglichen Operationsfolgen zum Zielprodukt. Für jede Folge addiert es
+die konfigurierten Operationsdauern und bildet danach den Mittelwert über
+die Routenzeiten.
+
+Zum Beispiel:
+
+- Route A: Zwei Operationen mit Dauer `3` und `5` ergeben insgesamt `8`.
+- Route B: Zwei Operationen mit Dauer `4` und `8` ergeben insgesamt `12`.
+- Der Rohwert für die Freigabe ist `(8 + 12) / 2 = 10`.
+- Daraus entsteht der Teilwert `inverse_scale(10) = 1 / 11 ≈ 0.091`.
+
+Dabei wird keine Route ausgewählt. Der Mittelwert dient nur dazu, die
+Freigabe dieses Jobs anhand seiner geschätzten Verarbeitungszeit zu bewerten.
+Transport- und Wartezeiten sind in dieser Summe nicht enthalten.
+
+##### Transport: Wegstrecke geteilt durch Grundgeschwindigkeit
+
+Bei Roboter-Pick- und Place-Aktionen berechnet `transport_time_value()`
+den Weg von der aktuellen Roboterposition zum Store der Aktion. Weil sich
+der Roboter achsenweise bewegt, werden die Wege in X-, Y- und Z-Richtung
+addiert:
+
+`Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
+
+Zum Beispiel ergeben drei Wegeinheiten in X-Richtung und eine in Y-Richtung
+bei Grundgeschwindigkeit `2` Wegeinheiten pro Zeiteinheit den Rohwert
+`(3 + 1 + 0) / 2 = 2` Zeiteinheiten.
+Der Teilwert ist dann `inverse_scale(2) = 1 / 3 ≈ 0.333`.
+
+Bei Nacharbeit auf einer anderen Maschine verwendet
+`defect_recovery_transport_time_value()` dasselbe Prinzip, aber mit einem
+anderen Start und Ziel: vom aktuellen Jobstandort zum Eingangspuffer der
+ausgewählten Nacharbeitsmaschine.
+
+##### Ein- und Auslagern: zusätzliche Zeit am Store
+
+Diese Zeiten sind **nicht die Fahrt zum Store**, sondern die Zeit für das
+Herausnehmen beziehungsweise Ablegen des Jobs:
+
+- Beim Pick verwendet `pick_source_storage_time_value()` die Auslagerzeit
+  `storage_out_time` des Quell-Stores.
+- Beim Place verwendet `place_target_storage_time_value()` die Einlagerzeit
+  `storage_in_time` des Ziel-Stores.
+
+Eine Lagerzeit von `2` ergibt beispielsweise
+`inverse_scale(2) = 1 / 3 ≈ 0.333`. Das jeweilige Kriterium wird nur
+hinzugefügt, wenn das zugehörige Zeitfeld im Aktions-Payload vorhanden ist.
+Transportzeit und Lagerzeit gehen als getrennte Teilwerte in den Score ein.
+
+##### Unterschied zur tatsächlich simulierten Dauer
+
+Die genannten Zeitwerte dienen dem **Vergleich der Aktionskandidaten**.
+Sie bilden die tatsächliche Ausführungsdauer nicht vollständig nach:
+
+- **Maschine:** `SimMachine` berücksichtigt zusätzlich Produktgröße,
+  Maschinengeschwindigkeit und einen Zufallsfaktor. Diese Einflüsse fehlen
+  im Verarbeitungszeit-Kriterium. Für dieselbe Operation liefert dieses
+  Kriterium daher denselben Teilwert, auch wenn zwei Maschinen
+  unterschiedlich schnell verarbeiten.
+- **Roboter:** Die Schätzung verwendet die konfigurierte Grundgeschwindigkeit.
+  In der Simulation schwankt die Geschwindigkeit bei jeder Bewegung um bis
+  zu fünf Prozent. Dadurch kann die tatsächliche Bewegungsdauer von der
+  geschätzten Zeit abweichen.
 
 #### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
 

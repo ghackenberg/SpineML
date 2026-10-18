@@ -507,28 +507,28 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                     )
                 )
 
-        required_tool_id = operation.get("tool_type_id")
-        if required_tool_id is not None:
-            mounted_tool_id = machine_state.get("mounted_tool_type_id")
+        # Jede Operation legt einen benötigten Werkzeugtyp fest.
+        required_tool_id = operation["tool_type_id"]
+        mounted_tool_id = machine_state.get("mounted_tool_type_id")
+        parts.append(
+            (
+                1.0 if mounted_tool_id == required_tool_id else 0.0,
+                self.weights.defect_recovery_tool_match_weight,
+            )
+        )
+
+        consumed_life = float(operation.get("consumed_life_units", 0.0))
+        if consumed_life > 0.0:
+            remaining_life = float(
+                machine_state.get("remaining_life_units_by_tool", {})
+                .get(required_tool_id, 0.0)
+            )
             parts.append(
                 (
-                    1.0 if mounted_tool_id == required_tool_id else 0.0,
-                    self.weights.defect_recovery_tool_match_weight,
+                    self.direct_scale(remaining_life / consumed_life),
+                    self.weights.defect_recovery_tool_reserve_weight,
                 )
             )
-
-            consumed_life = float(operation.get("consumed_life_units", 0.0))
-            if consumed_life > 0.0:
-                remaining_life = float(
-                    machine_state.get("remaining_life_units_by_tool", {})
-                    .get(required_tool_id, 0.0)
-                )
-                parts.append(
-                    (
-                        self.direct_scale(remaining_life / consumed_life),
-                        self.weights.defect_recovery_tool_reserve_weight,
-                    )
-                )
 
         score = self.calculate_action_score(parts)
         if deadline_missed:
@@ -662,7 +662,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         return self.calculate_action_score(parts)
 
     # Bewertet einen Maschinen-Pick nach EDD, kurzer Operationsdauer und Werkzeugzustand.
-    # Beispiel: Passendes Werkzeug erhöht den Score um machine_pick_tool_match_weight.
+    # Beispiel: Ein bereits passendes Werkzeug erhält den Teilwert 1, sonst 0.
     def evaluate_machine_pick_action(
         self,
         action: dict[str, Any],
@@ -689,21 +689,18 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             )
         )
 
-        required_tool_id = operation.get("tool_type_id")
+        # Jede Operation legt einen benötigten Werkzeugtyp fest.
+        required_tool_id = operation["tool_type_id"]
         machine_state = self.current_state(observation)
         mounted_tool_id = machine_state.get("mounted_tool_type_id")
-        if required_tool_id is not None:
-            # Eine Werkzeugpassung ist ein normierter Teilwert: passend=1,
-            # nicht passend=0.
-            tool_match_value = (
-                1.0 if mounted_tool_id == required_tool_id else 0.0
-            )
-            parts.append(
-                (tool_match_value, self.weights.machine_pick_tool_match_weight)
-            )
+        # Die Werkzeugpassung geht immer ein, auch wenn kein Werkzeug montiert ist.
+        tool_match_value = 1.0 if mounted_tool_id == required_tool_id else 0.0
+        parts.append(
+            (tool_match_value, self.weights.machine_pick_tool_match_weight)
+        )
 
         consumed_life = float(operation.get("consumed_life_units", 0.0))
-        if required_tool_id is not None and consumed_life > 0.0:
+        if consumed_life > 0.0:
             remaining_life = float(
                 machine_state.get("remaining_life_units_by_tool", {})
                 .get(required_tool_id, 0.0)
@@ -714,7 +711,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
                 remaining_life / consumed_life
             )
             parts.append((tool_life_score, self.weights.machine_pick_tool_reserve_weight))
-    # Return the weighted average of the machine-pick component scores.
+        # Verbindet die Teilwerte zu ihrem gewichteten Durchschnitt.
         return self.calculate_action_score(parts)
 
     # Wandelt die storage_out_time des Quell-Stores in einen Pick-Score um.

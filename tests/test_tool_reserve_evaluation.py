@@ -93,27 +93,32 @@ def make_observation(action_type, remaining_life, consumed_life):
 ])
 @pytest.mark.parametrize("remaining_life", [-1.0, 0.0, 4.0, 20.0])
 @pytest.mark.parametrize("consumed_life", [0.0, 2.0])
+@pytest.mark.parametrize("mounted_tool_id", ["tool", "other_tool", None])
 def test_tool_reserve_uses_consumption_from_configuration_observer(
-    action_type, remaining_life, consumed_life,
+    action_type, remaining_life, consumed_life, mounted_tool_id,
 ):
     weights = HeuristicWeights()
     evaluator = LocalHeuristicActionEvaluator(weights)
     observation, action = make_observation(
         action_type, remaining_life, consumed_life,
     )
+    observation.simulation_configuration_snapshot[
+        "simulation_object_states_by_id"
+    ]["machine"]["mounted_tool_type_id"] = mounted_tool_id
     prepared_action = evaluator.prepare_action_candidate(action, observation)
+    tool_match_value = 1.0 if mounted_tool_id == "tool" else 0.0
 
     if action_type == "pick_machine_job":
         parts = [
             (0.5, weights.queue_priority_weight),
             (0.2, weights.machine_pick_operation_duration_weight),
-            (1.0, weights.machine_pick_tool_match_weight),
+            (tool_match_value, weights.machine_pick_tool_match_weight),
         ]
         reserve_weight = weights.machine_pick_tool_reserve_weight
     else:
         parts = [
             (1 / 3, weights.defect_recovery_machine_queue_length_weight),
-            (1.0, weights.defect_recovery_tool_match_weight),
+            (tool_match_value, weights.defect_recovery_tool_match_weight),
         ]
         if action_type == "job_rework_on_alternative_machine":
             parts.append((1 / 3, weights.defect_recovery_transport_time_weight))
@@ -129,3 +134,20 @@ def test_tool_reserve_uses_consumption_from_configuration_observer(
     assert evaluator.evaluate_action(prepared_action, observation) == pytest.approx(
         expected_score,
     )
+
+
+@pytest.mark.parametrize("action_type", [
+    "pick_machine_job",
+    "job_rework_on_defect_machine",
+    "job_rework_on_alternative_machine",
+])
+def test_operation_requires_tool_type_id(action_type):
+    evaluator = LocalHeuristicActionEvaluator(HeuristicWeights())
+    observation, action = make_observation(action_type, 4.0, 2.0)
+    del observation.simulation_configuration_snapshot[
+        "configuration_model"
+    ]["operations_by_id"]["operation"]["tool_type_id"]
+    prepared_action = evaluator.prepare_action_candidate(action, observation)
+
+    with pytest.raises(KeyError, match="tool_type_id"):
+        evaluator.evaluate_action(prepared_action, observation)

@@ -1196,10 +1196,10 @@ xychart-beta
 #### 4. Werkzeugpassung: ein bereits montiertes passendes Werkzeug bevorzugen
 
 - **Bewertungsgröße:** Übereinstimmung zwischen benötigtem und montiertem
-  Werkzeugtyp.
+  Werkzeugtyp. Jede Operation hat einen festgelegten benötigten Werkzeugtyp.
 - **Regel und Abbildung:** Gleicher Werkzeugtyp ergibt den Teilwert `1`,
   ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
-  Benötigt die Operation kein Werkzeug, entfällt dieses Kriterium.
+  Das Kriterium geht bei Maschinen-Pick und Nacharbeit immer ein.
 - **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
   ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
 
@@ -1213,9 +1213,9 @@ xychart-beta
   `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
 - **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
   höheren Teilwert ergeben.
-- **Abbildung:** Wenn ein Werkzeug benötigt wird und sein Verbrauch positiv
-  ist: `Teilwert = direct_scale(r) = r / (1 + r)`. Andernfalls entfällt
-  dieses Kriterium.
+- **Abbildung:** Bei positivem Verbrauch gilt
+  `Teilwert = direct_scale(r) = r / (1 + r)`. Bei Verbrauch `0` entfällt
+  dieses Kriterium, da das Verhältnis sonst eine Division durch null wäre.
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
@@ -1367,12 +1367,11 @@ Bei dieser Aktion nimmt die Maschine einen Job aus ihrem Eingangspuffer auf.
 1. **[EDD-/Queue-Priorität](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × queue_priority_weight`.
 2. **[Operationsdauer](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
    Hier zählt die konfigurierte Operationsdauer.
-3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × machine_pick_tool_match_weight`,
-   nur wenn die Operation ein Werkzeug benötigt.
+3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × machine_pick_tool_match_weight`.
+   Dieses Kriterium geht immer ein.
 4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × machine_pick_tool_reserve_weight`.
-   Berücksichtigt, wenn die Operation ein Werkzeug benötigt und dessen
-   Lebensdauerverbrauch positiv ist.
+   Berücksichtigt, wenn der Lebensdauerverbrauch der Operation positiv ist.
 
 ##### Verwendete Operationsdauer
 
@@ -1499,29 +1498,34 @@ aktuelle Zeit `11`.
 
 1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
    `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`,
-   falls ein Werkzeug benötigt wird.
+2. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`.
+   Dieses Kriterium geht immer ein.
 3. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   falls ein Werkzeug benötigt wird und der Lebensdauerverbrauch positiv ist.
+   falls der Lebensdauerverbrauch der Operation positiv ist.
 
 Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
 Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
-**Beispiel:** Der Eingangspuffer der Defektmaschine ist leer und die Operation
-benötigt kein Werkzeug. Deshalb geht nur der Warteschlangen-Teilwert
-`inverse_scale(0) = 1` mit seinem Standardgewicht `0.3` ein:
+**Beispiel:** Die drei Kriterien ergeben mit den Standardgewichten:
 
-`Score vor Strafabzug = (1 × 0.3) / 0.3 = 1`
+- **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
+  Gewicht `0.3`.
+- **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
+  Teilwert `1`, Gewicht `0.2`.
+- **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
+  `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
+
+`Score vor Strafabzug = (1 × 0.3 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2) = 6 / 7 ≈ 0.857`
 
 Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
-keinen Strafabzug; der Score bleibt `1`.
+keinen Strafabzug; der Score bleibt `6 / 7 ≈ 0.857`.
 
 Bei aktueller Zeit `11` ist die Deadline überschritten. Der Code zieht
 anschließend `0.5` ab:
 
-`Score = 1 − 0.5 = 0.5`
+`Endscore = 6 / 7 − 0.5 = 5 / 14 ≈ 0.357`
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
@@ -1534,11 +1538,11 @@ Nacharbeitsmaschine anhand von:
    `inverse_scale(Transportzeit zur Nacharbeitsmaschine) × defect_recovery_transport_time_weight`,
    wenn diese Zeit geschätzt werden kann.
 3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):**
-   `Werkzeugpassung × defect_recovery_tool_match_weight`, falls ein Werkzeug
-   benötigt wird.
+   `Werkzeugpassung × defect_recovery_tool_match_weight`.
+   Dieses Kriterium geht immer ein.
 4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
    `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   falls ein Werkzeug benötigt wird und der Lebensdauerverbrauch positiv ist.
+   falls der Lebensdauerverbrauch der Operation positiv ist.
 
 `defect_recovery_transport_time_value()` berechnet die achsenweise Wegstrecke
 vom aktuellen Jobstandort zum Eingangspuffer der ausgewählten
@@ -1550,20 +1554,25 @@ Bei `remaining_time <= 0` wird nach der Mittelwertbildung
 `rework_alternative_machine_deadline_penalty_weight` abgezogen, standardmäßig
 `0.5`. Ein nach dem Abzug negativer Endscore bleibt unverändert.
 
-**Beispiel:** Der Eingangspuffer der alternativen Maschine ist leer, die
-Operation benötigt kein Werkzeug und die geschätzte Transportzeit beträgt
-`1`. Damit entstehen die Teilwerte `inverse_scale(0) = 1` für die
-Warteschlange und `inverse_scale(1) = 0.5` für den Transport. Mit den
-Standardgewichten `0.3` und `0.2` ergibt sich:
+**Beispiel:** Die vier Kriterien ergeben mit den Standardgewichten:
 
-`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2) / (0.3 + 0.2) = 0.8`
+- **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
+  Gewicht `0.3`.
+- **Transportzeit:** Die geschätzte Zeit zur alternativen Maschine beträgt
+  `1`. `inverse_scale(1) = 0.5`, Gewicht `0.2`.
+- **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
+  Teilwert `1`, Gewicht `0.2`.
+- **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
+  `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
+
+`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
 
 Bei aktueller Zeit `8` liegt die Deadline `10` noch in der Zukunft. Es gibt
-keinen Strafabzug; der Score bleibt `0.8`.
+keinen Strafabzug; der Score bleibt `7 / 9 ≈ 0.778`.
 
 Bei aktueller Zeit `11` wird der Deadline-Strafabzug angewendet:
 
-`Score = 0.8 − 0.5 = 0.3`
+`Endscore = 7 / 9 − 0.5 = 5 / 18 ≈ 0.278`
 
 ##### Herabstufung: `downgrade_product`
 
@@ -1684,9 +1693,9 @@ Score ist vorteilhafter, zum Beispiel `−0.1 > −0.4`. Ein negativer Score
 verbietet die Aktion nicht; die technische Zulässigkeit prüft der Generator.
 
 „Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
-berücksichtigt wird. Beispielsweise geht Werkzeugpassung nur ein, wenn die
-Operation ein Werkzeug benötigt. Nur die Gewichte dieser berücksichtigten
-Teilwerte stehen im Nenner.
+berücksichtigt wird. Beispielsweise geht die Werkzeugreserve nur bei
+positivem Lebensdauerverbrauch der Operation ein. Nur die Gewichte dieser
+berücksichtigten Teilwerte stehen im Nenner.
 
 #### Warum unterschiedliche Kriterien kombiniert werden können
 

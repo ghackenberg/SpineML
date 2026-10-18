@@ -1120,10 +1120,8 @@ Die Teilwerte sind dimensionslos, obwohl ihre Rohwerte unterschiedliche
 Einheiten haben. Für alle gilt: **Ein höherer Teilwert bedeutet einen
 größeren Vorteil für die betrachtete Aktion.**
 
-Die Verwendung der Bewertungsgrößen wird in einem eigenen Kapitel
-[je Aktionstyp](#verwendung-der-bewertungsgrößen-nach-aktionstyp) erklärt.
-Unter jeder Regel führen Links direkt zu den zugehörigen Aktionstypen.
-Umgekehrt führen die verlinkten Kriterien der Aktionen zurück zur jeweiligen Regel.
+Regeln und [Aktionstypen](#verwendung-der-bewertungsgrößen-nach-aktionstyp)
+sind über ihre Kriterien gegenseitig verlinkt.
 Die folgenden Regeln erklären jeweils Rohwert, Abbildung und Beispiel.
 
 ### Allgemeine heuristische Regeln
@@ -1167,9 +1165,7 @@ xychart-beta
 - **Abbildung:** `inverse_scale(x) = 1 / (1 + x)`.
 - **Beispiel:** Zeit `1 → 0.5`; Zeit `4 → 0.2`.
 
-Für endliche, nichtnegative Eingaben liegt `inverse_scale(x)` in `(0, 1]`.
-Bei `x = 0` ergibt sich `1`; mit wachsendem `x` sinkt der Teilwert
-gegen `0`.
+Bei `x = 0` ergibt sich `1`; mit wachsendem `x` nähert sich der Teilwert `0`.
 
 ```mermaid
 xychart-beta
@@ -1220,9 +1216,7 @@ xychart-beta
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
-Für endliche, nichtnegative Eingaben liegt `direct_scale(x)` in `[0, 1)`.
-Bei `x = 0` ergibt sich `0`; mit wachsendem `x` steigt der Teilwert
-gegen `1`. Dabei gilt: `direct_scale(x) = 1 − inverse_scale(x)`.
+Bei `r = 0` ergibt sich `0`; mit wachsendem `r` nähert sich der Teilwert `1`.
 
 ```mermaid
 xychart-beta
@@ -1246,7 +1240,7 @@ xychart-beta
   ergeben `0.8`.
 
 Bei positiver, endlicher Kapazität und gültiger Belegung liegt dieser Anteil
-in `[0, 1]`. `normalize_ratio()` selbst begrenzt ihn nicht.
+zwischen `0` und `1`.
 
 **Verwendung:** [Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot).
 

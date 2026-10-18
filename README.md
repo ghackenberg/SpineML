@@ -1697,18 +1697,23 @@ resultierende Score `1`.
 
 #### Abgrenzung zur tatsächlich simulierten Dauer
 
-Die genannten Zeitwerte dienen dem **Vergleich der Aktionskandidaten**.
-Sie bilden die tatsächliche Ausführungsdauer nicht vollständig nach:
+Die Simulation bildet die Produktionsumgebung nach. Für ihre Zeitschätzungen
+verwendet die Steuerung **Sollwerte** (konfigurierte Referenzwerte für Dauer
+und Geschwindigkeit). Die **Ist-Dauern** (die bei der Ausführung tatsächlich
+verstrichenen Zeiten) entstehen dagegen in der Simulation:
 
-- **Maschine:** `SimMachine` berücksichtigt zusätzlich Produktgröße,
-  Maschinengeschwindigkeit und einen Zufallsfaktor. Diese Einflüsse fehlen
-  im Verarbeitungszeit-Kriterium. Für dieselbe Operation liefert dieses
-  Kriterium daher denselben Teilwert, auch wenn zwei Maschinen
-  unterschiedlich schnell verarbeiten.
-- **Roboter:** Die Schätzung verwendet die konfigurierte Grundgeschwindigkeit.
-  In der Simulation schwankt die Geschwindigkeit bei jeder Bewegung um bis
-  zu fünf Prozent. Dadurch kann die tatsächliche Bewegungsdauer von der
-  geschätzten Zeit abweichen.
+- **Maschine:** Die Steuerung verwendet die konfigurierte Operationsdauer
+  `operation.duration`. `SimMachine` berechnet die Ist-Dauer zusätzlich
+  abhängig von Produktgröße, Maschinengeschwindigkeit und einem Zufallsfaktor.
+- **Roboter:** Die Steuerung schätzt die Transportzeit aus dem Weg und der
+  konfigurierten Grundgeschwindigkeit. In der Simulation schwankt die
+  Geschwindigkeit bei jeder Bewegung um bis zu fünf Prozent; entsprechend
+  kann die Ist-Dauer von der Schätzung abweichen.
+
+Die Sollwerte dienen somit dem **Vergleich noch nicht ausgeführter
+Aktionskandidaten**, nicht der exakten Vorhersage ihrer Ist-Dauer. Den
+aktuellen Ist-Zustand der Produktion berücksichtigt die Steuerung weiterhin
+über den Snapshot.
 
 ### Gewichte und Gesamtscore
 

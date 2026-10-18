@@ -1767,18 +1767,23 @@ Snapshot.
 
 ### Gewichte und Gesamtscore
 
-Ein **Gewicht** legt fest, wie wichtig ein Teilwert gegenüber den anderen
-Teilwerten derselben Aktion ist. Der **Gesamtscore** verbindet die
-verwendeten Teilwerte zu einer numerischen Gesamtbewertung der Aktion.
+`calculate_action_score()` verbindet die Teilwerte eines Aktionskandidaten
+zu einem **Gesamtscore**. Dazu erhält die Funktion für jedes verwendete
+Kriterium ein Paar aus Teilwert und Gewicht. Die Teilwerte sind bereits
+auf `[0, 1]` abgebildet; ein höherer Teilwert ist vorteilhafter.
 
-`calculate_action_score()` berechnet den gewichteten Durchschnitt:
+Das **Gewicht** bestimmt, wie stark ein Teilwert gegenüber den anderen
+Teilwerten derselben Aktion zählt. Ein Gewicht von `0.6` zählt beispielsweise
+doppelt so stark wie `0.3`. Die Funktion bildet daraus einen gewichteten
+Durchschnitt:
 
-`Gewichteter Durchschnitt = Summe(Teilwert × Gewicht) / Summe(aktive Gewichte)`
+`Gesamtscore = Summe(Teilwert × Gewicht) / Summe(zugehörige Gewichte)`
 
-„Aktiv“ bedeutet hier, dass das Kriterium bei dieser konkreten Aktion
-berücksichtigt wird. Beispielsweise geht die Werkzeugreserve nur bei
-positivem Lebensdauerverbrauch der Operation ein. Nur die Gewichte dieser
-berücksichtigten Teilwerte stehen im Nenner.
+In beide Summen gehen **dieselben verwendeten Kriterien** ein. Ein Teilwert
+von `0` trägt im Zähler zwar `0` bei, sein Gewicht bleibt aber im Nenner
+enthalten. Wird ein Kriterium bei dieser Aktion nicht verwendet, gehen weder
+sein Teilwert noch sein Gewicht ein. Das betrifft beispielsweise die
+Werkzeugreserve, wenn die Operation keine Werkzeuglebensdauer verbraucht.
 
 #### Warum unterschiedliche Kriterien kombiniert werden können
 
@@ -1801,68 +1806,72 @@ stark kurze Transportzeiten gegenüber freier Kapazität zählen.
 
 #### Warum durch die Gewichtssumme geteilt wird
 
-Durch die Division entsteht aus jedem Gewicht ein relativer Anteil
-`αᵢ = wᵢ / Summe(w)`. Die Summe dieser Anteile ist `1`; der Score lautet
-damit auch `Summe(xᵢ × αᵢ)`. Ein Gewicht von `0.6` zählt doppelt so stark
-wie ein Gewicht von `0.3`.
+Die **gewichtete Summe im Zähler** allein ist noch kein Durchschnitt.
+Sie hängt auch davon ab, wie groß die Gewichte insgesamt sind. Die Division
+durch die **Gewichtssumme im Nenner** macht deshalb nur die relative
+Wichtigkeit der Teilwerte wirksam:
+
+`Relativer Gewichtsanteil = Gewicht / Summe(zugehörige Gewichte)`
+
+Diese Anteile ergeben zusammen `1`. Die Gewichte selbst müssen sich dagegen
+**nicht zu `1` addieren**.
 
 Werden alle berücksichtigten Gewichte mit demselben positiven Faktor
 multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
 Wichtigkeiten ändern sich dadurch nicht. Ohne die Division würde allein die
 größere Gewichtssumme den Score erhöhen.
 
-Das folgende Diagramm zeigt die Berechnung des gewichteten Durchschnitts.
+**Beispiel:** Die Teilwerte `0.8` und `0.2` erhalten die Gewichte `1.0` und
+`0.5`. Der erste Teilwert zählt damit doppelt so stark wie der zweite.
+Sein relativer Anteil ist `1.0 / 1.5 = 2/3`, der des zweiten Teilwerts `1/3`:
 
 ```mermaid
-flowchart LR
-    A["Teilwerte xᵢ zwischen 0 und 1"] --> C["Teilwert × Gewicht"]
-    B["Aktive Gewichte wᵢ > 0"] --> C
-    C --> D["Gewichtete Teilwerte addieren"]
-    B --> E["Aktive Gewichte addieren"]
-    D --> F["Zähler ÷ Nenner"]
-    E --> F
-    F --> G["Aktionsscore zwischen 0 und 1"]
+flowchart TD
+    A["Teilwerte: 0.8 und 0.2<br/>Zugehörige Gewichte: 1.0 und 0.5"]
+    A --> Z["Zähler: gewichtete Summe<br/>0.8 × 1.0 + 0.2 × 0.5 = 0.9"]
+    A --> N["Nenner: Gewichtssumme<br/>1.0 + 0.5 = 1.5"]
+    Z --> S["Gesamtscore: Zähler ÷ Nenner<br/>0.9 / 1.5 = 0.6"]
+    N --> S
+    S --> B["Zwischen den Teilwerten: 0.2 ≤ 0.6 ≤ 0.8<br/>Damit auch im Bereich von 0 bis 1"]
 ```
 
-#### Mathematischer Verlauf des Gesamtscores
+Der Score `0.6` liegt näher am stärker gewichteten Teilwert `0.8`. Die
+gewichtete Summe `0.9` und der Gesamtscore `0.6` sind also unterschiedliche
+Größen; erst die Division liefert den Durchschnitt.
 
-Die folgenden Rechnungen und die Kurve zeigen den gewichteten Durchschnitt.
+#### Warum der Gesamtscore zwischen 0 und 1 liegt
 
-Die Teilwerte `0.8` und `0.2` mit Gewichten `1.0` und `0.5` ergeben:
+Für jeden Teilwert `xᵢ` in `[0, 1]` und sein positives Gewicht `wᵢ` gilt:
 
-`(0.8 × 1.0 + 0.2 × 0.5) / (1.0 + 0.5) = 0.6`
+`0 ≤ xᵢ × wᵢ ≤ wᵢ`
 
-Die relativen Anteile sind `2/3` und `1/3`. Deshalb liegt der Score näher
-am stärker gewichteten Teilwert `0.8`.
+Nach dem Addieren gilt deshalb auch für Zähler und Nenner:
 
-Zur Veranschaulichung des Bereichs verändern sich in der folgenden Kurve
-beide Teilwerte gemeinsam: `x₁ = x₂ = x`. Die Gewichte bleiben `1.0` und
-`0.5`. Der gewichtete Durchschnitt entspricht dann dem gemeinsamen Teilwert:
+`0 ≤ Summe(Teilwert × Gewicht) ≤ Summe(zugehörige Gewichte)`
 
-`Score(x) = (x × 1.0 + x × 0.5) / 1.5 = x`
+Der Zähler ist somit weder negativ noch größer als der positive Nenner.
+Durch die Division folgt unmittelbar:
+
+`0 ≤ Gesamtscore ≤ 1`
+
+Dieser Bereich entsteht **durch die Mittelwertbildung**, nicht durch eine
+nachträgliche Begrenzung. Die Aussage bezieht sich auf den Rückgabewert von
+`calculate_action_score()`.
+
+**Die Kurve veranschaulicht die Randwerte:** Sind alle verwendeten Teilwerte
+`0`, ergibt sich der Score `0`; sind alle `1`, ergibt sich `1`. Wenn alle
+Teilwerte gemeinsam den Wert `x` annehmen, entspricht auch ihr gewichteter
+Durchschnitt `x` – unabhängig von ihren positiven Gewichten:
+
+`Score(x) = Summe(x × Gewicht) / Summe(Gewichte) = x`
 
 ```mermaid
 xychart-beta
-    title "Gewichteter Durchschnitt im Bereich [0, 1]"
-    x-axis "Gemeinsamer Teilwert x" [0, 0.25, 0.5, 0.75, 1]
-    y-axis "Gewichteter Durchschnitt" 0 --> 1
+    title "Scoregrenzen bei gemeinsam veränderten Teilwerten"
+    x-axis "Alle verwendeten Teilwerte = x" [0, 0.25, 0.5, 0.75, 1]
+    y-axis "Gesamtscore" 0 --> 1
     line [0, 0.25, 0.5, 0.75, 1]
 ```
-
-Sind beide Teilwerte `0`, ist auch der Score `0`; sind beide `1`, ist der
-Score `1`. Für beliebige, auch unterschiedliche Teilwerte in `[0, 1]` und
-positive Gewichte gilt allgemein:
-
-`0 ≤ Summe(Teilwert × Gewicht) ≤ Summe(Gewichte)`
-
-Die Division durch die positive Gewichtssumme ergibt deshalb:
-
-`0 ≤ gewichteter Durchschnitt ≤ 1`
-
-Dieser Bereich entsteht durch die Mittelwertbildung, nicht durch eine
-nachträgliche Begrenzung. `calculate_action_score()` führt selbst keine
-Begrenzung oder Gewichtsprüfung durch. Die gültigen Gewichte werden von
-`HeuristicWeights` geprüft.
 
 Bei genau einem Teilwert kürzt sich dessen Gewicht heraus:
 `(Teilwert × Gewicht) / Gewicht = Teilwert`. Das betrifft beispielsweise
@@ -1872,14 +1881,12 @@ Gewichts verändert den Score daher nicht.
 #### HeuristicWeights
 
 [HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
-definiert die lokalen Gewichte für Teilwerte und Deadline-Strafen. Alle Werte
-müssen in `(0, 1]` liegen; diese Prüfung erfolgt beim Erzeugen eines
-`HeuristicWeights`-Objekts.
+enthält die einstellbaren Parameter der lokalen Bewertung. Beim Erzeugen
+eines `HeuristicWeights`-Objekts werden dessen Gewichte auf den Bereich
+`(0, 1]` geprüft. `calculate_action_score()` prüft oder begrenzt die
+übergebenen Werte dagegen nicht selbst.
 
-Innerhalb eines gewichteten Durchschnitts bestimmt ein Gewicht die relative
-Wichtigkeit gegenüber den anderen berücksichtigten Kriterien. Die
-Strafgewichte werden dagegen direkt nach der Mittelwertbildung abgezogen.
-Bei der Optimierung werden diese lokalen Gewichte verändert. Sie sind von
+Bei der Optimierung werden diese lokalen Parameter verändert. Sie sind von
 den globalen Gewichten zur Bewertung eines gesamten Simulationslaufs getrennt.
 
 ### Rechenbeispiel: zwei Ablageziele

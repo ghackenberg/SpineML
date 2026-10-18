@@ -1872,34 +1872,62 @@ den globalen Gewichten zur Bewertung eines gesamten Simulationslaufs getrennt.
 
 ### Rechenbeispiel: zwei Ablageziele
 
-Der `ActionGenerator` erzeugt beispielsweise zwei Kandidaten: „Job in
-Puffer A ablegen“ und „Job in Puffer B ablegen“. Das vereinfachte Beispiel
-verwendet nur Transportzeit und freie Pufferkapazität. Im vollständigen Code
-kommen je nach Aktion weitere Kriterien hinzu.
+Der Main-Roboter trägt einen intakten, noch nicht fertigen Job. Die nächste
+Operation kann auf Maschine A oder Maschine B ausgeführt werden. Der
+`ActionGenerator` erzeugt dafür zwei Kandidaten des echten Aktionstyps
+**`place_main_robot`**:
 
-1. **Bewertungsgrößen:** Zum Beispiel benötigt der Transport zu A vier
-   Zeiteinheiten; dort sind vier von zehn Plätzen frei. Zu B dauert er eine
-   Zeiteinheit; dort sind zwei von zehn Plätzen frei.
-2. **Abbildung auf Teilwerte:** Die Transportzeit wird mit
-   `inverse_scale()` abgebildet, die freie Kapazität als
-   `freie Plätze / Gesamtkapazität`. Beide Teilwerte zeigen damit in
-   dieselbe Vorteilsrichtung.
-3. **Gewichtung:** Nur für dieses Rechenbeispiel erhält die Transportzeit
-   das Gewicht `0.75` und die freie Kapazität `0.25`. Die Transportzeit
-   zählt damit dreimal so stark. Dies sind keine Standardgewichte aus
-   `HeuristicWeights`.
+- **Kandidat A:** Den Job in Korridorpuffer A für den Weitertransport zu
+  Maschine A ablegen.
+- **Kandidat B:** Den Job in Korridorpuffer B für den Weitertransport zu
+  Maschine B ablegen.
+
+Die folgenden Werte sind **Beispielannahmen**; die Berechnung verwendet alle
+fünf Kriterien, die `evaluate_place_action()` für diese Kandidaten einbezieht,
+und die Standardgewichte aus `HeuristicWeights`.
+
+1. **Bewertungsgrößen:** Die Wege zu den Korridorpuffern betragen `8` und `2`
+   Längeneinheiten. Bei konfigurierter Grundgeschwindigkeit `2` ergeben sich
+   Transportzeitschätzungen von `4` und `1`. In Puffer A sind vier von zehn
+   Plätzen frei, in Puffer B zwei von zehn. Im Eingangspuffer von Maschine A
+   warten drei Jobs; der Eingangspuffer von Maschine B ist leer. Die
+   konfigurierte Einlagerzeit beträgt jeweils `1`, die Dauer der nächsten
+   Operation auf beiden Routen `4`.
+2. **Abbildung auf Teilwerte:** `inverse_scale()` bildet Transportzeit,
+   Einlagerzeit, Maschinenwarteschlangenlänge und Operationsdauer ab. Der freie
+   Kapazitätsanteil ergibt sich aus `freie Plätze / Gesamtkapazität`. Für alle
+   Teilwerte gilt damit dieselbe Vorteilsrichtung: Höher ist vorteilhafter.
+3. **Gewichtung:** Die Tabelle zeigt die tatsächlich verwendeten
+   Standardgewichte. Die Kapazität bezieht sich auf den **Korridorpuffer**, die
+   Warteschlangenlänge dagegen auf den **Eingangspuffer der Zielmaschine**.
 4. **Gesamtscore:** `calculate_action_score()` addiert die gewichteten
-   Teilwerte und teilt durch die Gewichtssumme `0.75 + 0.25 = 1.0`:
+   Teilwerte und teilt durch die Gewichtssumme
+   `0.2 + 0.25 + 0.15 + 0.25 + 0.15 = 1.0`:
 
-| Aktionskandidat | Transportzeit → Teilwert | Freie Plätze → Teilwert | Gewichtete Summe | Gesamtscore |
-|---|---|---|---|---|
-| Job in Puffer A ablegen | `4 → 0.2` | `4 von 10 → 0.4` | `0.2 × 0.75 + 0.4 × 0.25 = 0.25` | `0.25 / 1.0 = 0.25` |
-| Job in Puffer B ablegen | `1 → 0.5` | `2 von 10 → 0.2` | `0.5 × 0.75 + 0.2 × 0.25 = 0.425` | `0.425 / 1.0 = 0.425` |
+| Bewertungsgröße | Standardgewicht | Kandidat A: Rohwert → Teilwert | Kandidat B: Rohwert → Teilwert |
+|---|---|---|---|
+| Freie Korridorpufferkapazität | `0.2` | `4 / 10 → 0.4` | `2 / 10 → 0.2` |
+| Transportzeit | `0.25` | `4 → 0.2` | `1 → 0.5` |
+| Einlagerzeit | `0.15` | `1 → 0.5` | `1 → 0.5` |
+| Maschinenwarteschlangenlänge | `0.25` | `3 → 0.25` | `0 → 1` |
+| Operationsdauer | `0.15` | `4 → 0.2` | `4 → 0.2` |
+| **Gewichtete Summe** | — | `0.2975` | `0.52` |
+| **Gesamtscore** | Gewichtssumme `1.0` | `0.2975 / 1.0 = 0.2975` | `0.52 / 1.0 = 0.52` |
 
-B hat unter diesen beiden Kandidaten den höheren Gesamtscore: Der Vorteil
-des kürzeren Transports zählt bei diesen Gewichten stärker als die
-zusätzliche freie Kapazität von A. Der Selector verwendet die berechneten
-Scores für seine Auswahl.
+Die gewichteten Summen werden vollständig so berechnet:
+
+- **A:** `0.4 × 0.2 + 0.2 × 0.25 + 0.5 × 0.15 + 0.25 × 0.25 + 0.2 × 0.15 = 0.2975`.
+- **B:** `0.2 × 0.2 + 0.5 × 0.25 + 0.5 × 0.15 + 1 × 0.25 + 0.2 × 0.15 = 0.52`.
+
+B erhält den höheren Ablagescore: Kürzerer Transport und eine leere
+Maschinenwarteschlange gleichen den kleineren freien Kapazitätsanteil des
+Korridorpuffers mehr als aus. Einlagerzeit und Operationsdauer sind hier
+gleich und ergeben für beide Kandidaten dieselben Beiträge.
+
+Der Generator bietet außerdem `wait_main_robot` an. Für die vollständige
+Auswahl sei die aktuelle Zeit `11` und die Auftragsdeadline `10`: Dann ist
+`EDD = 0.75` und der Warte-Score `1 − 0.75 = 0.25`. Damit liegt Kandidat B
+auch über Warten.
 
 Bei der nächsten Beobachtung werden Kandidaten und Scores erneut bestimmt.
 Ist Puffer B inzwischen voll, erzeugt der Generator keine Ablageaktion für

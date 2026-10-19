@@ -10,7 +10,9 @@ from ...Configuration import (
 )
 from ...Simulation import SimLayout, SimScenario
 from ...Simulation.SimMachine import SimMachine
+from ..GeneralControl.ActionSelectors import BaselineActionSelector
 from ..GeneralControl.GeneratorSelectorPolicy import GeneratorSelectorPolicy
+from ..Interface.InterfaceTypes import Policy
 from ..SimulationBridge.SimulationBridge import SimulationBridge
 from .GlobalSimulationEvaluation import GlobalSimulationMetrics
 from .HeuristicWeights import HeuristicWeights
@@ -20,7 +22,7 @@ from .LocalHeuristicActionEvaluator import (
 
 
 class SpineMLSimulationRunner:
-    """Run a complete headless SpineML simulation for weights and a seed."""
+    """Run a headless SpineML simulation with heuristic weights or any Policy."""
 
     # Speichert Layout, Szenario und die maximale Simulationszeit für spätere Läufe.
     def __init__(
@@ -33,13 +35,21 @@ class SpineMLSimulationRunner:
         self.scenario = scenario
         self.till = till
 
-        # Run a complete simulation with a weight set and seed,
-        # then return the resulting global metrics.
+    # Erstellt die heuristische Policy für einen Gewichtssatz und einen Seed.
     def __call__(
         self,
         weights: HeuristicWeights,
         seed: int,
     ) -> GlobalSimulationMetrics:
+        evaluator = LocalHeuristicActionEvaluator(weights)
+        policy = GeneratorSelectorPolicy(
+            action_evaluator=evaluator,
+            action_selector=BaselineActionSelector(rng=random.Random(seed)),
+        )
+        return self.run_policy(policy, seed)
+
+    def run_policy(self, policy: Policy, seed: int) -> GlobalSimulationMetrics:
+        """Führt die übergebene Policy über dieselbe Bridge aus und misst die Ergebnisse."""
         sim.yieldless(False)
      
         # Setzt den Python-Zufallszahlengenerator auf diesen Seed für reproduzierbare Zufallswerte.
@@ -48,10 +58,6 @@ class SpineMLSimulationRunner:
         SimMachine.QUALITY_SEED = int(seed)
 
         env = sim.Environment(time_unit="hours", random_seed=seed)
-        evaluator = LocalHeuristicActionEvaluator(
-            weights,
-        )
-        policy = GeneratorSelectorPolicy(action_evaluator=evaluator)
         bridge = SimulationBridge(policy, env=env)
         sim_layout = SimLayout(
             self.layout,

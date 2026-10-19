@@ -23,6 +23,8 @@ NORMAL_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "normal"
 OPTIMIZATION_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "optimization"
 EXAMPLE_FILE = "example-1.py"
 SEEDS = [1, 2]
+# Nur für den abschließenden Vergleich, nicht für die Gewichtssuche.
+BENCHMARK_SEEDS = [101, 102, 103, 104, 105]
 ITERATIONS = 2
 INITIAL_WEIGHT_STEP = 0.40
 EXPLORATION_CANDIDATES = 3
@@ -234,17 +236,11 @@ def create_optimizer(model_file: str, model_stamp: int):
         till=sim.inf,
     )
 
-    # Definiert die Funktion, die einen Lauf mit einem vollständigen lokalen
-    # weight set und einem Seed startet.
-    def run_simulation(weights, seed):
-        # Übergibt den weight set und den Seed an den Simulationsrunner.
-        return runner(weights, seed)
-
     # Erstellt den Optimierer. Bei optimize_iteratively() lässt er später
     # verschiedene lokale heuristische weight sets simulieren, vergleicht
     # ihre globalen Kosten und wählt den besten Satz aus.
     return LocalHeuristicWeightOptimizer(
-        simulation_runner=run_simulation,
+        simulation_runner=runner,
         global_evaluation=_global_evaluation(),
     )
 
@@ -370,7 +366,7 @@ def metric_deviation_from_candidate_1(metrics, container=None):
     target.altair_chart(chart, use_container_width=True)
 
 
-# Zeigt den Mittelwertvergleich zwischen Baseline und optimierten weights.
+# Vergleicht Zufallspolicy, Standardheuristik und optimierte Heuristik.
 def compare_baseline_optimized(benchmark):
     if not benchmark:
         return
@@ -400,7 +396,11 @@ def compare_baseline_optimized(benchmark):
         as_index=False,
     )[metric_names].mean()
 
-    st.subheader("Comparison: original weights vs. optimized weights")
+    st.subheader("Comparison: random vs. default vs. optimized heuristic")
+    st.caption(
+        "Held-out benchmark seeds (not used for weight optimization). "
+        "Random selects non-wait actions uniformly; waiting is a fallback."
+    )
     st.dataframe(mean_frame, use_container_width=True, hide_index=True)
 
     chart_frame = frame.melt(
@@ -430,31 +430,37 @@ def compare_baseline_optimized(benchmark):
     st.altair_chart(chart, use_container_width=True)
 
 
-# Simuliert einen lokalen weight set mit allen Seeds und sammelt globale Kennzahlen.
+# Sammelt Kennzahlen für Gewichte oder eine Policy auf den angegebenen Seeds.
 def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
     # Zustands-Dictionary des Streamlit-Webservers für Fortschritt und Ergebnisse.
     state,
     # Optimierer mit Simulationsrunner und globaler Kostenberechnung.
     optimizer,
-    # Complete local weight set with all individual heuristic weights.
+    # Lokale Gewichte; bei einer eigenen policy_factory nicht verwendet.
     weights,
     # Gibt an, ob die Referenzwerte aus dieser Baseline berechnet werden.
     calculate_reference_values=False,
+    *,
+    seeds=None,
+    phase_name=None,
+    policy_factory=None,
 ):
+    if seeds is None:
+        seeds = SEEDS
+    if phase_name is None:
+        phase_name = "Baseline" if calculate_reference_values else "Optimized weights"
     metrics_by_seed = []
-    for seed_index, seed in enumerate(SEEDS, start=1):
+    for seed_index, seed in enumerate(seeds, start=1):
         # Legt nur die Statusmeldung im Streamlit-Webserver 
         # für den aktuellen Lauf fest.
-        if calculate_reference_values:
-            phase_name = "Baseline"
-        else:
-            phase_name = "Optimized weights"
         state["phase"] = (
-            f"{phase_name}: Seed {seed_index}/{len(SEEDS)}"
+            f"{phase_name}: Seed {seed_index}/{len(seeds)}"
         )
-        # Führt die Simulation mit dem lokalen weight set und diesem Seed aus.
-        # metrics enthält danach die globalen Kennzahlen dieses Simulationslaufs.
-        metrics = optimizer.simulation_runner(weights, seed)
+        # Erzeugt pro Lauf eine frische Policy und sammelt dieselben Kennzahlen.
+        if policy_factory is None:
+            metrics = optimizer.simulation_runner(weights, seed)
+        else:
+            metrics = optimizer.simulation_runner.run_policy(policy_factory(seed), seed)
         metrics_by_seed.append((seed, metrics))
 
     # Berechnet nur bei der Baseline, Referenzwerte zur relativen Skalierung der
@@ -499,6 +505,27 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
         }
         rows.append(row)
     return rows
+
+
+def _benchmark_policies(state, optimizer, optimized_weights):
+    # Alle drei Steuerungen nutzen dieselben Test-Seeds und feste Referenzwerte.
+    benchmark = {}
+    for label, weights, policy_factory in (
+        ("Random", None, RandomPolicy),
+        ("Heuristic (default)", HeuristicWeights(), None),
+        ("Heuristic (optimized)", optimized_weights, None),
+    ):
+        benchmark[label] = (
+            _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
+                state,
+                optimizer,
+                weights,
+                seeds=BENCHMARK_SEEDS,
+                phase_name=label,
+                policy_factory=policy_factory,
+            )
+        )
+    return benchmark
 
 
 # Bereitet einen neuen Optimierungslauf vor und startet anschließend den Worker-Thread.
@@ -597,7 +624,7 @@ def _start_optimization(state, optimizer):
             state["phase"] = "Calculating baseline with original weights ..."
         
             # hier liefert die Methode eine Zeile mit globalen Kennzahlen pro Seed.
-            baseline_rows = _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
+            _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
                 # Übergibt den Streamlit-Webserver-Zustand für angezeigten Fortschritt,
                 # Phase, Kennzahlen und Fehlermeldungen.
                 state,
@@ -638,17 +665,12 @@ def _start_optimization(state, optimizer):
                 progress_callback=progress,
             )
 
-            # Simuliert den besten lokalen weight set mit allen Seeds und sammelt
-            # pro Seed globale Kennzahlen sowie deren weighted relative Summe.
-            optimized_rows = _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
+            # Vergleicht alle Steuerungen auf Seeds außerhalb der Gewichtssuche.
+            state["benchmark"] = _benchmark_policies(
                 state,
                 optimizer,
                 state["result"].best_weights,
             )
-            state["benchmark"] = {
-                "Baseline": baseline_rows,
-                "Optimized": optimized_rows,
-            }
         except Exception as error:
             state["error"] = str(error)
         finally:
@@ -681,6 +703,7 @@ if __name__ == "__main__" and not st.runtime.exists():
         main()
         raise SystemExit
 
+from SpineML.Control.GeneralControl import RandomPolicy
 from SpineML.Control.HeuristicControl import (
     GlobalSimulationEvaluation,
     GlobalSimulationWeights,

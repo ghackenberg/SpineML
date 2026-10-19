@@ -17,6 +17,11 @@ class BaselineActionSelector(ActionSelector):
     SCORE_TOLERANCE = 0.05
     # Wahrscheinlichkeit, gelegentlich eine fast gleich gute Alternative zu testen.
     EXPLORATION_EPSILON = 0.10
+
+    def __init__(self, rng: random.Random | None = None):
+        # Ein eigener Generator trennt Policy-Zufall von Simulationszufall.
+        self.random = rng if rng is not None else random
+
     # Bereitet alle Kandidaten vor, bewertet sie und gibt die ausgewählte Aktion zurück.
     def select_action(
         self,
@@ -67,7 +72,7 @@ class BaselineActionSelector(ActionSelector):
                 near_best_actions.append(action)
 
         # Exploration: Mit kleiner Wahrscheinlichkeit wird eine produktive Alternative getestet.
-        if near_best_actions and random.random() < self.EXPLORATION_EPSILON:
+        if near_best_actions and self.random.random() < self.EXPLORATION_EPSILON:
             exploratory_actions = []
             # Entfernt die exakt besten Aktionen, damit nur echte Alternativen erkundet werden.
             for action in near_best_actions:
@@ -82,10 +87,10 @@ class BaselineActionSelector(ActionSelector):
             if productive_alternatives:
                 exploratory_actions = productive_alternatives
             # Wählt eine erkundete Alternative; falls keine existiert, eine exakt beste Aktion.
-            selected_action = random.choice(exploratory_actions or best_actions)
+            selected_action = self.random.choice(exploratory_actions or best_actions)
         else:
             # Wenn keine Exploration stattfindet, wird zufällig eine exakt beste Aktion gewählt.
-            selected_action = random.choice(best_actions)
+            selected_action = self.random.choice(best_actions)
         # Verpackt die Auswahl als PolicyDecision für das Zielobjekt.
         return PolicyDecision.with_single_selected_action(
             selected_action,

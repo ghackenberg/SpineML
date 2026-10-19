@@ -748,9 +748,11 @@ Jede Komponente erhält nur die für sie ausgewählte Aktion.
 ## GeneralControl
 
 Die Klassen unter [Control/GeneralControl](sources/SpineML/Control/GeneralControl)
-verbinden Aktionsgenerierung, Bewertung und Auswahl. Dieser Ablauf wird bei
-normaler Simulation und Optimierung verwendet; bei der Optimierung ändern
-sich die Gewichte der Bewertung.
+verbinden Aktionsgenerierung, Bewertung und Auswahl. Standardmäßig wird die
+heuristische `GeneratorSelectorPolicy` verwendet; bei der Optimierung ändern
+sich ihre Bewertungsgewichte. Als einfache Vergleichssteuerung steht außerdem
+die [RandomPolicy](#randompolicy-zufällige-vergleichssteuerung) ohne heuristische
+Bewertung zur Verfügung.
 
 ### Ablauf der GeneralControl
 
@@ -1049,6 +1051,51 @@ Objekts. Er erzeugt keine neuen Aktionen, sondern lässt jeden Kandidaten vom
 
 Die ausgewählte Aktion wird anschließend als `PolicyDecision` für das
 Zielobjekt an die `GeneratorSelectorPolicy` zurückgegeben.
+
+### RandomPolicy: zufällige Vergleichssteuerung
+
+[`RandomPolicy`](sources/SpineML/Control/GeneralControl/RandomPolicy.py) verwendet
+denselben `SpineActionGenerator` und dieselbe `SimulationBridge` wie die
+heuristische Steuerung. Sie nutzt jedoch keinen Evaluator, keine Scores,
+keine Gewichte und keine EDD-Priorität.
+
+`make_decision()` wählt für jedes wartende Objekt:
+
+1. Der Generator liefert die technisch möglichen Aktionskandidaten.
+2. Picks für einen in dieser Entscheidung bereits ausgewählten Job werden
+   ausgeschlossen, damit derselbe Job nicht gleichzeitig zweimal gepickt wird.
+3. Gibt es Nicht-Warteaktionen, wird **gleichverteilt unter diesen Kandidaten**
+   gewählt. Jeder verbleibende Kandidat hat die Wahrscheinlichkeit `1 / n`.
+4. Nur wenn keine Nicht-Warteaktion verfügbar ist, wird eine angebotene
+   `wait_*`-Aktion gewählt. Ohne Kandidaten wird keine Aktion zurückgegeben.
+
+„Produktiv“ bedeutet hier Nicht-Warteaktion, also beispielsweise Freigabe,
+Pick, Ablegen, Verarbeitung oder eine technisch mögliche Defektbehandlung.
+Die Auswahl erfolgt pro Kandidat, nicht pro Aktionsart: Drei verschiedene
+Routenkandidaten sind drei Auswahlmöglichkeiten. Bei Picks setzt die Policy
+`queue_priority = 0.0`; sie priorisiert Jobs also nicht nach ihrer Deadline.
+Die vorhandene Store-Reihenfolge bei gleicher Priorität bleibt bestehen.
+
+Damit ist sie eine **Zufallsreferenz mit Warten als Fallback**, keine Steuerung
+ohne technische Regeln. Der Generator prüft weiterhin die technische
+Zulässigkeit. Die Heuristik bleibt die Standardsteuerung; die Zufallspolicy
+wird als Alternative eingesetzt.
+
+Ein Headless-Lauf mit dieser Policy:
+
+```python
+from SpineML.Control.GeneralControl import RandomPolicy
+from SpineML.Control.HeuristicControl import SpineMLSimulationRunner
+
+runner = SpineMLSimulationRunner(layout, scenario)
+metrics = runner.run_policy(RandomPolicy(seed=101), seed=101)
+```
+
+Für jeden Lauf wird eine neue Policy erzeugt. Ihr eigener Zufallszahlengenerator
+steuert nur die Aktionsauswahl; der Runner setzt zusätzlich den Simulations-Seed.
+Im Headless-Runner verwendet auch der heuristische Selector einen eigenen
+Zufallszahlengenerator. Dadurch verbrauchen Policy-Entscheidungen keine
+Zufallszahlen des Simulationskerns.
 
 ## HeuristicControl
 
@@ -2001,7 +2048,7 @@ flowchart TD
     H --> A
     G -- Nein --> I[Besten lokalen<br/>Gewichtssatz auswählen]
     I --> J[Besten getesteten<br/>Gewichtssatz wiederverwenden]
-    J --> K[Finale Läufe und Vergleich<br/>Baseline/Optimiert anzeigen]
+    J --> K[Finaler Vergleich auf separaten Test-Seeds:<br/>Zufall / Standardheuristik / optimierte Heuristik]
 ```
 
 #### UML-Sequenzdiagramm des Optimierungsablaufs
@@ -2061,9 +2108,9 @@ flowchart TD
     R --> S{Weitere Optimierungsrunde?}
     S -- Ja --> G
     S -- Nein --> T[Suche abgeschlossen]
-    T --> U[Besten lokalen Gewichtssatz mit allen Seeds<br/>für den Abschlussvergleich erneut ausführen]
-    U --> W[Baseline- und Optimiert-Ergebnisse speichern]
-    W --> X[Interface zeigt den abschließenden<br/>Baseline/Optimiert-Vergleich]
+    T --> U[Alle drei Steuerungen auf separaten<br/>BENCHMARK_SEEDS ausführen]
+    U --> W[Ergebnisse von Zufall / Standardheuristik /<br/>optimierter Heuristik speichern]
+    W --> X[Interface zeigt den abschließenden<br/>Dreifachvergleich]
 ```
 
 #### Ablauf und beteiligte Dateien
@@ -2094,10 +2141,9 @@ zu jeder Datei.
    `simulate(...)`-Aufruf. Danach wählt `_find_layout_and_scenario()` das im
    Aufruf angegebene Layout-Szenario-Paar aus.
 3. `create_optimizer()` erstellt den
-   `SpineMLSimulationRunner` und verbindet ihn über die Funktion
-   `run_simulation(weights, seed)` mit dem
-   `LocalHeuristicWeightOptimizer`. Zusätzlich wird die
-   `GlobalSimulationEvaluation` mit dem
+   `SpineMLSimulationRunner` und übergibt ihn als aufrufbares Objekt
+   (`runner(weights, seed)`) an den `LocalHeuristicWeightOptimizer`. Zusätzlich
+   wird die `GlobalSimulationEvaluation` mit dem
    `LocalHeuristicWeightOptimizer` verbunden, damit die Ergebnisse jedes
    Simulationslaufs global bewertet werden können.
 4. Beim Klick auf den Optimierungsbutton setzt `_start_optimization()` den
@@ -2105,8 +2151,8 @@ zu jeder Datei.
    Dadurch bleibt das Streamlit-Interface während der laufenden Simulation
    bedienbar.
 5. Zuerst wird mit den unveränderten lokalen `HeuristicWeights` die Baseline
-   für alle Seeds berechnet. Die gemittelten globalen Kennzahlen dienen als
-   Referenz für die später getesteten lokalen Gewichtssätze.
+   für alle Optimierungs-Seeds (`SEEDS`) berechnet. Die gemittelten globalen
+   Kennzahlen dienen als Referenz für die später getesteten lokalen Gewichtssätze.
 6. Danach startet `LocalHeuristicWeightOptimizer` die Suche nach einem besseren
    lokalen `HeuristicWeights`-Satz in einem Worker-Thread. Während der Worker
    die Gewichtssätze simuliert, bleibt das Streamlit-Interface aktiv. Der
@@ -2116,25 +2162,36 @@ zu jeder Datei.
    Fortschrittsbalken und Zwischen-Diagramme in den gemeinsamen Zustand; das
    Interface liest diesen Zustand parallel aus. „Kandidat“ bezeichnet hier
    jeweils einen lokal getesteten Gewichtssatz.
-7. Erst wenn die Gewichtssuche beendet ist, wird der beste lokale
-   `HeuristicWeights`-Satz noch einmal vollständig mit jedem Seed ausgeführt.
-   Dieser zusätzliche Lauf dient nur dem abschließenden Vergleich mit der
-   Baseline. Danach werden die finalen globalen Kennzahlen als `Baseline` und
-   `Optimiert` im Streamlit-Interface angezeigt.
+7. Nach der Gewichtssuche führt `_benchmark_policies()` drei Steuerungen auf
+   denselben separaten `BENCHMARK_SEEDS` aus: `Random`, `Heuristic (default)`
+   und `Heuristic (optimized)`. Diese Test-Seeds werden nicht zur Gewichtssuche
+   verwendet. Das Interface zeigt ihre mittleren Kennzahlen und die Ergebnisse
+   je Seed. Die zuvor berechneten Baseline-Referenzwerte und die globalen
+   Gewichte bleiben dabei für alle drei Steuerungen gleich.
+
+Der Vergleich beantwortet zwei unterschiedliche Fragen: Schlägt die
+heuristische Steuerung die Zufallsreferenz, und verbessert die Gewichtssuche
+die Standardheuristik? Eine Verbesserung ist erst durch die Ergebnisse
+belegt, nicht bereits durch die Verwendung von Heuristiken. Die aktuell fünf
+Test-Seeds (`101` bis `105`) sind ein Einstieg; für belastbare Aussagen sollten
+mehr Seeds und unterschiedliche Layouts und Szenarien verglichen werden.
+„Baseline“ bezeichnet bei der Kostenskalierung weiterhin die Standardheuristik
+auf den Optimierungs-Seeds, nicht die Zufallspolicy.
 
 #### SpineMLSimulationRunner
 
-1. Der Runner erhält genau einen vollständigen `HeuristicWeights`-Satz und
-   einen Seed.
+1. `runner(weights, seed)` erstellt die heuristische Policy mit dem übergebenen
+   vollständigen `HeuristicWeights`-Satz. Alternativ führt
+   `run_policy(policy, seed)` eine andere Policy aus, etwa die `RandomPolicy`.
 2. Er setzt Python-Zufall und `SimMachine.QUALITY_SEED`, damit der Lauf mit
    gleicher Konfiguration und gleichem Seed reproduzierbar bleibt.
-3. Für den lokalen Gewichtssatz wird eine neue Salabim-Umgebung erstellt.
-   Anschließend werden Evaluator, `GeneratorSelectorPolicy`, `SimulationBridge`, Layout,
-   Maschinen, Roboter, Stores und Jobs aufgebaut.
+3. Für jeden Lauf werden eine neue Salabim-Umgebung, die `SimulationBridge`,
+   Layout, Maschinen, Roboter, Stores und Jobs aufgebaut. Beide Policy-Varianten
+   verwenden denselben Simulationskern und dieselbe Kennzahlenerfassung.
 4. `env.run(...)` führt die diskrete Simulation aus. Die Bridge verbindet die
-   Simulationszustände mit der Policy. Der Evaluator bewertet die Kandidaten
-   mit dem getesteten lokalen Gewichtssatz; die Bridge verteilt die
-   ausgewählten Aktionen an die Simulationskomponenten.
+   Simulationszustände mit der Policy. Diese wählt ihre Aktionen heuristisch
+   oder zufällig; die Bridge verteilt die ausgewählten Aktionen an die
+   Simulationskomponenten.
 5. Erkennt `SimCompletionWatcher`, dass alle vorhandenen Jobs beendet sind,
    kann der Lauf kontrolliert vor der maximalen Endzeit beendet werden.
 6. `collect_global_metrics()` sammelt danach die globalen Kennzahlen.
@@ -2356,9 +2413,10 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 4. Danach werden die lokalen Gewichtssätze iterativ geprüft. Währenddessen
    zeigt das Interface live die aktuelle Runde, den getesteten Gewichtssatz
    (`Kandidat x/y`), den Fortschrittsbalken und die Diagramme an.
-5. Nach dem Ende der Suche wird der beste lokale Gewichtssatz nochmals mit
-   allen Seeds ausgeführt. Anschließend zeigt das Interface den abschließenden
-   Vergleich zwischen `Baseline` und `Optimized`.
+5. Nach der Suche werden Zufallspolicy, Standardheuristik und optimierte
+   Heuristik auf denselben separaten Test-Seeds ausgeführt. Anschließend zeigt
+   das Interface den Vergleich `Random` / `Heuristic (default)` /
+   `Heuristic (optimized)`.
 
 Ein anderes Beispiel kann vor dem Start in PowerShell gewählt werden:
 
@@ -2374,9 +2432,11 @@ python sources/examples/optimization/example-0-optimize.py
 ```
 
 Die Suchparameter stehen oben in `sources/optimization.py`:
-`SEEDS`, `ITERATIONS`, `INITIAL_WEIGHT_STEP`,
+`SEEDS`, `BENCHMARK_SEEDS`, `ITERATIONS`, `INITIAL_WEIGHT_STEP`,
 `EXPLORATION_CANDIDATES`, `RESTART_AFTER_NO_IMPROVEMENT` und
-`STOP_AFTER_NO_IMPROVEMENT`. Sie steuern die simulierten Seeds, die maximale
+`STOP_AFTER_NO_IMPROVEMENT`. `SEEDS` dient der Gewichtssuche;
+`BENCHMARK_SEEDS` enthält davon getrennte Test-Seeds für den Abschlussvergleich.
+Die übrigen Parameter steuern die maximale
 Rundenzahl, die Änderungsschrittweite, zusätzliche Zufallskandidaten sowie
 Neustart und Abbruch bei ausbleibender Verbesserung.
 

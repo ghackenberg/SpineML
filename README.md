@@ -2050,32 +2050,50 @@ flowchart TD
 
 ### 1. Produktion mit Standardgewichten simulieren
 
-Zuerst wird die heuristische Steuerung mit den unveränderten
-Standardgewichten `HeuristicWeights()` simuliert. Diese Läufe bilden die
-**Baseline (Vergleichsbasis)**. Gemeint ist hier die Standardheuristik,
-nicht die Zufallspolicy.
+Zuerst wird gemessen, **wie die Produktion mit den bisherigen
+Standardgewichten `HeuristicWeights()` läuft**. Dazu wird die heuristische
+Steuerung mehrfach simuliert. Diese Läufe bilden die **Baseline
+(Vergleichsbasis)** und liefern feste Bezugspunkte für spätere Läufe mit
+anderen Gewichtungen.
 
-Für diese Läufe und die anschließende Gewichtssuche wird dieselbe Liste
-`SEEDS` verwendet. Ein **Seed (Startwert für die Zufallszahlengeneratoren)**
+**Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer (`makespan`)
+im Durchschnitt **10 Stunden**. Diese `10` werden als Referenz gespeichert.
+Ein späterer Lauf mit anderen Gewichten benötigt:
+
+- **8 Stunden:** `8 / 10 = 0.8` → kürzere Produktionsdauer als die
+  durchschnittliche Baseline-Dauer.
+- **12 Stunden:** `12 / 10 = 1.2` → längere Produktionsdauer als die
+  durchschnittliche Baseline-Dauer.
+
+Die Referenz bleibt bei beiden Vergleichen **10**; sie wird nicht für jede
+neue Gewichtung neu berechnet. Solche Verhältniswerte gehen anschließend
+in die globale Bewertung ein. Für Gesamtverspätung, Transport-,
+Werkzeugwechsel- und Blockierzeit werden jeweils eigene Referenzwerte bestimmt.
+
+**Ergebnis dieses Schritts:** feste Vergleichsmaßstäbe für die Zeitkennzahlen
+aller folgenden Läufe, einschließlich des Abschlussvergleichs.
+
+<details>
+<summary>Technische Umsetzung: Seeds, Referenzberechnung und Nullfälle</summary>
+
+Für die Baseline-Läufe und die anschließende Gewichtssuche wird dieselbe
+Liste `SEEDS` verwendet. Ein **Seed (Startwert für die Zufallszahlengeneratoren)**
 macht einen Lauf bei gleicher Konfiguration und gleicher Policy
 reproduzierbar. Mehrere Seeds berücksichtigen unterschiedliche Zufallsverläufe.
 Ein Seed ist kein Simulationszustand; unterschiedliche Policies können mit
 demselben Seed unterschiedliche Zustände durchlaufen.
 
-Aus den Baseline-Läufen berechnet
-`GlobalSimulationEvaluation.calculate_baseline_reference_values()` feste
-Referenzwerte für Makespan, Gesamtverspätung, Transport-, Werkzeugwechsel-
-und Blockierzeit. Dazu wird für jede Zeitkennzahl der Mittelwert über die
-Baseline-Seeds gebildet. Diese Referenzwerte bleiben für alle späteren
-Gewichtssätze und den Abschlussvergleich unverändert.
+`GlobalSimulationEvaluation.calculate_baseline_reference_values()` berechnet
+für jede Zeitkennzahl den Mittelwert über die Baseline-Läufe und speichert
+daraus die Referenzwerte. Die Baseline verwendet die Standardheuristik,
+nicht die Zufallspolicy.
 
 Der Code verwendet als Makespan-Referenz mindestens `1.0`. Ist der
 Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die
 Makespan-Referenz verwendet. Dadurch wird bei der späteren Bewertung nicht
 durch null geteilt.
 
-**Ergebnis dieses Schritts:** feste Bezugsgrößen, mit denen die Zeitkennzahlen
-der folgenden Simulationsläufe vergleichbar gemacht werden.
+</details>
 
 ### 2. Varianten der lokalen Gewichte erstellen
 
@@ -2180,8 +2198,8 @@ Die Berechnung erfolgt in zwei Schritten:
    So entstehen dimensionslose Verhältniswerte. Bei einer positiven
    Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert
    eine kürzere Zeit und ein größerer Wert eine längere Zeit.
-   Beispiel: Bei einer Makespan-Referenz von `10` Stunden ergeben
-   `8` Stunden den Verhältniswert `0.8`, `12` Stunden den Wert `1.2`.
+   Das [10-Stunden-Beispiel aus Schritt 1](#1-produktion-mit-standardgewichten-simulieren)
+   zeigt diese Umrechnung.
    Qualitäts- und Fertigstellungsraten gehen dagegen direkt ein:
    `rework_rate`, `scrap_rate`, `defect_rate`, `unfinished_rate`,
    `downgrade_rate` und `1 − intact_rate` als `non_intact_rate`.

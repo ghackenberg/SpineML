@@ -2094,9 +2094,12 @@ Direkt zu den Details:
 
 Zuerst wird gemessen, **wie die Produktion mit den bisherigen
 Standardgewichten `HeuristicWeights()` läuft**. Dazu wird die heuristische
-Steuerung mehrfach simuliert. Diese Läufe bilden die **Baseline
-(Vergleichsbasis)** und liefern feste Bezugspunkte für spätere Läufe mit
-anderen Gewichtungen.
+Steuerung einmal pro [Seed aus `SEEDS`](#baseline-technik) vollständig
+simuliert: aktuell einmal mit Seed `1` und einmal mit Seed `2`, jeweils mit
+den Standardgewichten. **Dieselbe Seed-Liste wird anschließend für jeden
+anderen Gewichtssatz verwendet.** Diese Läufe mit Standardgewichten bilden
+die **Baseline (Vergleichsbasis)** und liefern feste Bezugspunkte für spätere
+Läufe mit anderen Gewichtungen.
 
 **Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer ([`makespan`](#produktionskennzahlen))
 im Durchschnitt **10 Stunden**. Diese `10` werden als Referenz gespeichert.

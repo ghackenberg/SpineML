@@ -7,6 +7,21 @@ from SpineML.Control.HeuristicControl import (
 )
 
 
+TIME_METRICS = (
+    "makespan",
+    "total_tardiness",
+    "total_transport_time",
+    "tool_change_time",
+    "blocking_time",
+)
+
+
+def make_metrics(**overrides):
+    values = {name: 1.0 for name in TIME_METRICS}
+    values.update(overrides)
+    return GlobalSimulationMetrics(**values)
+
+
 def make_evaluation():
     return GlobalSimulationEvaluation(
         GlobalSimulationWeights(
@@ -25,7 +40,7 @@ def make_evaluation():
 @pytest.mark.parametrize("makespan", [0.001, 0.5, 1.0, 10.0])
 def test_positive_baseline_makespan_is_used_unchanged(makespan):
     evaluation = make_evaluation()
-    metrics = GlobalSimulationMetrics(makespan=makespan, total_tardiness=0.0)
+    metrics = make_metrics(makespan=makespan)
 
     references = evaluation.calculate_baseline_reference_values([metrics])
 
@@ -36,39 +51,60 @@ def test_positive_baseline_makespan_is_used_unchanged(makespan):
 def test_makespan_reference_is_the_mean_across_baseline_seeds():
     evaluation = make_evaluation()
     baseline_metrics = [
-        GlobalSimulationMetrics(makespan=0.2, total_tardiness=0.0),
-        GlobalSimulationMetrics(makespan=0.8, total_tardiness=0.0),
+        make_metrics(makespan=0.2),
+        make_metrics(makespan=0.8),
     ]
 
     references = evaluation.calculate_baseline_reference_values(baseline_metrics)
-    candidate = GlobalSimulationMetrics(makespan=0.4, total_tardiness=0.0)
+    candidate = make_metrics(makespan=0.4)
 
     assert references["makespan"] == pytest.approx(0.5)
     assert evaluation.metrics_relative_to_baseline(candidate)["makespan"] == pytest.approx(0.8)
 
 
-@pytest.mark.parametrize("makespans", [[0.0], [0.0, 0.0]])
-def test_zero_baseline_mean_makespan_raises_value_error(makespans):
+@pytest.mark.parametrize("metric_name", TIME_METRICS)
+def test_zero_baseline_mean_of_any_time_metric_raises_value_error(metric_name):
     evaluation = make_evaluation()
     baseline_metrics = [
-        GlobalSimulationMetrics(makespan=value, total_tardiness=0.0)
-        for value in makespans
+        make_metrics(**{metric_name: 0.0}),
+        make_metrics(**{metric_name: 0.0}),
     ]
 
-    with pytest.raises(ValueError, match="baseline mean makespan must not be zero"):
+    with pytest.raises(ValueError, match=f"baseline mean {metric_name} must not be zero"):
         evaluation.calculate_baseline_reference_values(baseline_metrics)
 
     assert evaluation.baseline_reference_values is None
 
 
-def test_other_zero_time_references_use_the_unchanged_makespan_mean():
+@pytest.mark.parametrize("metric_name", TIME_METRICS)
+def test_individual_zero_value_is_allowed_when_the_baseline_mean_is_positive(metric_name):
+    evaluation = make_evaluation()
+    baseline_metrics = [
+        make_metrics(**{metric_name: 0.0}),
+        make_metrics(**{metric_name: 0.6}),
+    ]
+
+    references = evaluation.calculate_baseline_reference_values(baseline_metrics)
+
+    assert references[metric_name] == pytest.approx(0.3)
+
+
+def test_each_time_reference_is_its_own_unchanged_baseline_mean():
     evaluation = make_evaluation()
     baseline_metrics = [
         GlobalSimulationMetrics(
-            makespan=0.4, total_tardiness=0.0, total_transport_time=0.2,
+            makespan=0.4,
+            total_tardiness=0.02,
+            total_transport_time=0.2,
+            tool_change_time=0.01,
+            blocking_time=0.03,
         ),
         GlobalSimulationMetrics(
-            makespan=0.6, total_tardiness=0.0, total_transport_time=0.4,
+            makespan=0.6,
+            total_tardiness=0.04,
+            total_transport_time=0.4,
+            tool_change_time=0.03,
+            blocking_time=0.07,
         ),
     ]
 
@@ -76,11 +112,21 @@ def test_other_zero_time_references_use_the_unchanged_makespan_mean():
 
     assert references == pytest.approx({
         "makespan": 0.5,
-        "total_tardiness": 0.5,
+        "total_tardiness": 0.03,
         "total_transport_time": 0.3,
-        "tool_change_time": 0.5,
-        "blocking_time": 0.5,
+        "tool_change_time": 0.02,
+        "blocking_time": 0.05,
     })
+
+
+def test_zero_mean_error_does_not_replace_existing_references():
+    evaluation = make_evaluation()
+    original_references = evaluation.calculate_baseline_reference_values([make_metrics()])
+
+    with pytest.raises(ValueError, match="baseline mean blocking_time must not be zero"):
+        evaluation.calculate_baseline_reference_values([make_metrics(blocking_time=0.0)])
+
+    assert evaluation.baseline_reference_values == original_references
 
 
 def test_empty_baseline_still_raises_value_error():

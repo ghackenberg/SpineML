@@ -2153,14 +2153,15 @@ für jede Zeitkennzahl den Mittelwert über die Baseline-Läufe und speichert
 daraus die Referenzwerte. Die Baseline verwendet die Standardheuristik,
 nicht die Zufallspolicy.
 
-Der mittlere Baseline-Makespan wird unverändert als Referenz verwendet.
-Ist dieser Mittelwert `0`, wird ein
-`ValueError` ausgelöst, weil durch `0` nicht geteilt werden kann.
+Für jede Zeitkennzahl wird ausschließlich ihr eigener Baseline-Mittelwert
+unverändert als Referenz verwendet.
+Ist einer dieser Mittelwerte `0`, löst die Methode einen `ValueError` mit
+dem Namen der betroffenen Kennzahl aus. Die Optimierung bricht dann ab,
+weil diese Referenz bei der [späteren Bewertung](#globale-bewertungszahl)
+nicht als Divisor verwendet werden kann.
 
-Ist der Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die
-Makespan-Referenz verwendet. Dadurch wird bei der
-[späteren Bewertung](#globale-bewertungszahl) nicht
-durch null geteilt.
+Das gilt auch bei gültigen Produktionsergebnissen ohne Verspätung,
+Werkzeugwechsel oder Blockierung, wenn die entsprechende Baseline-Zeit `0` ist.
 
 ### 2. Varianten der lokalen Gewichte erstellen
 

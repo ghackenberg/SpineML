@@ -107,37 +107,28 @@ class GlobalSimulationEvaluation:
                 "values."
             )
 
-        # Berechnet den Mittelwert eines ausgewählten globalen Kennzahlenfelds
-        # über alle Baseline-Simulationsläufe.
+        # Verwendet den eigenen Baseline-Mittelwert als Referenz; null ist
+        # als Divisor nicht zulässig.
         def mean_value(attribute_name: str) -> float:
             total_value = 0.0
             for metrics in baseline_metrics:
                 metric_value = getattr(metrics, attribute_name)
                 total_value += float(metric_value)
 
-            return total_value / len(baseline_metrics)
-
-        # Verwendet den mittleren Baseline-Makespan unverändert als Referenz.
-        baseline_makespan_reference_value = mean_value("makespan")
-        if baseline_makespan_reference_value == 0.0:
-            raise ValueError("The baseline mean makespan must not be zero.")
-
-        # Liefert den Baseline-Mittelwert eines Zeitwerts; bei null wird der
-        # Fallback verwendet, damit später nicht durch null geteilt wird.
-        def time_scale(attribute_name: str) -> float:
-            baseline_mean = mean_value(attribute_name)
-            if baseline_mean > 0.0:
-                return baseline_mean
-            return baseline_makespan_reference_value
+            baseline_mean = total_value / len(baseline_metrics)
+            if baseline_mean == 0.0:
+                raise ValueError(
+                    f"The baseline mean {attribute_name} must not be zero."
+                )
+            return baseline_mean
 
         # Speichert für jede globale Zeitkennzahl ihren Referenzwert aus der Baseline.
         self.baseline_reference_values = {
-            # Mittlerer Baseline-Makespan.
-            "makespan": baseline_makespan_reference_value,
-            "total_tardiness": time_scale("total_tardiness"),
-            "total_transport_time": time_scale("total_transport_time"),
-            "tool_change_time": time_scale("tool_change_time"),
-            "blocking_time": time_scale("blocking_time"),
+            "makespan": mean_value("makespan"),
+            "total_tardiness": mean_value("total_tardiness"),
+            "total_transport_time": mean_value("total_transport_time"),
+            "tool_change_time": mean_value("tool_change_time"),
+            "blocking_time": mean_value("blocking_time"),
         }
         # Gibt eine Kopie der berechneten Baseline-Referenzwerte zurück.
         return dict(self.baseline_reference_values)

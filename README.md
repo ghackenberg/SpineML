@@ -2178,10 +2178,22 @@ lokalen Gewichte**, auch wenn nur eines davon geändert wird.
    Alle anderen Gewichte werden unverändert übernommen. Die veränderten
    Werte bleiben zwischen `0.000001` und `1.0`.
 
-   **Beispiel:** Bei Schrittweite `0.4` wird das Transportzeitgewicht
-   `pick_short_transport_time_weight` von `0.3` auf `0.7` erhöht.
-   Daraus entsteht ein neuer vollständiger Gewichtssatz; nur dieses eine
-   Gewicht unterscheidet sich vom Ausgangssatz.
+   **Beispiel mit der anfänglichen Schrittweite `0.4`:** Die Tabelle zeigt
+   das Transportzeitgewicht `pick_short_transport_time_weight` und das
+   Kapazitätsgewicht `target_store_free_capacity_weight`. Die übrigen
+   **23 Gewichte bleiben in diesen Beispielsätzen unverändert**.
+
+   | Gewichtssatz | Transportzeitgewicht | Kapazitätsgewicht |
+   |---|---|---|
+   | Ausgangssatz | `0.3` | `0.2` |
+   | Nur Transportzeitgewicht verringern | `0.000001` | `0.2` |
+   | Nur Transportzeitgewicht erhöhen | `0.7` | `0.2` |
+   | Nur Kapazitätsgewicht verringern | `0.3` | `0.000001` |
+   | Nur Kapazitätsgewicht erhöhen | `0.3` | `0.6` |
+
+   `0.3 − 0.4` und `0.2 − 0.4` liegen unter der Untergrenze. Deshalb
+   verwendet der Code für diese beiden Varianten `0.000001`.
+   Dasselbe Vorgehen wird auch für die übrigen Gewichte durchgeführt.
 
 2. **Weitere Gewichtssätze zufällig zusammenstellen: `random_local_weight_candidates()`**
 
@@ -2190,6 +2202,29 @@ lokalen Gewichte**, auch wenn nur eines davon geändert wird.
    vom Ausgangssatz abweichen können. Der Zufallsbereich reicht von
    `0.000001` bis `1.0`; nur für `wait_action_weight` verwendet diese Methode
    den kleineren Bereich von `0.000001` bis `0.1`.
+
+   **Beispiel aus der ersten Suchrunde:** `EXPLORATION_CANDIDATES = 3`
+   erzeugt drei zusätzliche Zufallssätze. Gezeigt sind drei ihrer jeweils
+   25 Gewichte, auf vier Nachkommastellen gerundet. Auch die übrigen
+   22 Gewichte werden für jeden Satz neu gezogen.
+
+   | Zufallssatz | Transportzeitgewicht | Kapazitätsgewicht | `wait_action_weight` |
+   |---|---|---|---|
+   | 1 | `0.5113` | `0.4766` | `0.0758` |
+   | 2 | `0.9666` | `0.8050` | `0.0434` |
+   | 3 | `0.5079` | `0.7066` | `0.0448` |
+
+**Wie viele Gewichtssätze entstehen insgesamt?**
+
+`HeuristicWeights` enthält aktuell **25 Gewichte**. Pro Suchrunde ergibt sich:
+
+`1 Ausgangssatz + 2 × 25 Einzelvarianten + 3 Zufallssätze = 54 Gewichtssätze`
+
+Bei `ITERATIONS = 2` sind damit bis zu **108 Gewichtssatz-Prüfungen** vorgesehen.
+Gleiche Sätze werden nicht aussortiert: Die 54 Sätze der ersten Suchrunde
+enthalten mit den aktuellen Standardgewichten 53 unterschiedliche Sätze.
+Das liegt daran, dass `complete_job_weight` bereits `1.0` ist; seine nach
+oben begrenzte Plus-Variante ist identisch zum Ausgangssatz.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
 [simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) werden.

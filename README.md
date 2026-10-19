@@ -2260,10 +2260,7 @@ Diese Ergebnisse heißen **Produktionskennzahlen**.
 Der Runner gibt die Kennzahlen als `GlobalSimulationMetrics` zurück.
 Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
 
-<a id="produktionskennzahlen"></a>
-
-<details>
-<summary>Welche Produktionskennzahlen werden erfasst?</summary>
+##### Produktionskennzahlen
 
 - `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
   `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
@@ -2288,8 +2285,6 @@ Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
 - `downgraded_job_count`: Zahl herabgestufter Jobs.
 
 Die zugehörigen Raten entstehen durch Division durch `total_jobs`.
-
-</details>
 
 #### Globale Bewertungszahl
 

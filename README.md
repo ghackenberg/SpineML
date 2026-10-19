@@ -2013,68 +2013,228 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ## Optimierungsvorgang
 
-### Ziel und Überblick
+### Gesamtablauf der Optimierung
 
-Die Optimierung sucht einen **lokalen Gewichtssatz (`HeuristicWeights`), mit
-dem die heuristische Steuerung insgesamt bessere Produktionsergebnisse
-erzielt**. Ein Gewichtssatz bestimmt die Gewichtung der Teilwerte einer Aktion
-und die Höhe der Deadline-Strafen. Andere Gewichte können dadurch über viele
-Entscheidungen hinweg andere Jobs, Ablageziele oder Defektstrategien bevorzugen.
+Die Optimierung testet verschiedene Gewichtssätze in vollständigen
+Simulationsläufen und vergleicht deren Produktionsergebnisse. Gesucht wird
+ein Gewichtssatz, mit dem die heuristische Steuerung im Mittel bessere
+Ergebnisse erzielt.
 
-Dabei sind zwei Ebenen zu unterscheiden:
-
-- **Innerhalb eines Simulationslaufs** bewertet der Evaluator die erzeugten
-  Aktionskandidaten mit einem festen lokalen Gewichtssatz. Der Selector
-  bevorzugt einen **hohen Aktionsscore**.
-- **Zwischen vollständigen Simulationsläufen** verändert der
-  `LocalHeuristicWeightOptimizer` die lokalen Gewichte und vergleicht die
-  Produktionsergebnisse. Er sucht eine **niedrige globale Bewertungszahl**,
-  etwa durch kürzere Durchlaufzeiten oder weniger Ausschuss.
-
-Die Formeln der Aktionsbewertung, der Simulationskern, das Layout und das
-Szenario bleiben während dieser Gewichtssuche gleich. Auch die
-[globalen Gewichte](#globale-gewichte-in-optimizationpy), die festlegen, woran
-ein guter Produktionslauf gemessen wird, werden nicht mitoptimiert.
-
-### 1. Gesamtablauf: Referenz, Gewichtssuche und Testvergleich
-
-Die drei Phasen haben unterschiedliche Aufgaben:
-
-1. **Referenz bestimmen:** Die Standardheuristik läuft mit den
-   Optimierungs-Seeds `SEEDS`. Aus ihren Kennzahlen entstehen feste
-   [Baseline-Referenzwerte](#baseline-als-referenz) für die globale Bewertung.
-   „Baseline“ bezeichnet hier die Standardheuristik, nicht die Zufallspolicy.
-2. **Gewichte suchen:** Verschiedene Gewichtssätze werden auf denselben
-   `SEEDS` getestet. Für jeden Satz wird der Mittelwert seiner globalen
-   Bewertungszahlen berechnet (`mean_global_cost`). Der kleinste Mittelwert
-   ist besser. Die Suche wiederholt dies über mehrere Runden.
-3. **Unabhängig vergleichen:** Erst nach der Suche werden Zufallspolicy,
-   Standardheuristik und die Heuristik mit dem ausgewählten Gewichtssatz auf
-   separaten `BENCHMARK_SEEDS` verglichen. Diese Seeds gehen nicht in die
-   Gewichtsauswahl ein.
+Das Diagramm zeigt den gesamten Ablauf. Die anschließenden Abschnitte
+erklären seine Schritte **in derselben Reihenfolge**.
 
 ```mermaid
 flowchart TD
-    A["1. Referenz bestimmen<br/>Standardheuristik + SEEDS<br/>Referenzwerte festhalten"]
-    A --> B["2. Gewichtssuche<br/>Sätze auf SEEDS testen<br/>Mittelwerte vergleichen"]
-    B --> C{"Neue Runde?"}
-    C -- Ja --> B
-    C -- Nein --> D["3. Testvergleich<br/>Drei Policies vergleichen<br/>auf BENCHMARK_SEEDS"]
+    A["1. Referenzwerte<br/>bestimmen"]
+    A --> B["2. Gewichtssätze<br/>erzeugen"]
+    B --> C["3. Jeden Satz bewerten<br/>Simulationen auf SEEDS<br/>Mittelwert berechnen"]
+    C --> D["4. Besten Satz<br/>auswählen"]
+    D --> E{"Neue Runde?"}
+    E -- Ja --> B
+    E -- Nein --> F["5. Abschlussvergleich<br/>Drei Policies auf<br/>BENCHMARK_SEEDS"]
 ```
 
-Ein **Seed** ist ein fester Startwert für die Zufallszahlengeneratoren, kein
-Simulationszustand. Gleiche Konfiguration, gleiche Policy und gleicher Seed
-machen einen Lauf reproduzierbar. Unterschiedliche Seeds beziehen mehrere
-Zufallsverläufe ein. Andere Entscheidungen können den Verlauf trotzdem
-verändern; derselbe Seed bedeutet also nicht, dass unterschiedliche Policies
-dieselben Zustände durchlaufen.
+Optimiert werden die **lokalen Gewichte (`HeuristicWeights`)** für die
+Aktionsbewertung und die Deadline-Strafen. Layout, Szenario, Simulationskern
+und Bewertungsformeln bleiben während der Suche gleich. Auch die
+[globalen Gewichte](#globale-gewichte-in-optimizationpy), mit denen ganze
+Produktionsläufe beurteilt werden, bleiben fest.
 
-### 2. Wie ein Gewichtssatz bewertet wird
+### 1. Referenzwerte bestimmen
 
-Das folgende Sequenzdiagramm vergrößert **einen Schritt der Gewichtssuche**:
-Ein Gewichtssatz bleibt fest und wird nacheinander mit jedem Seed simuliert.
-`evaluate_local_weights_across_seeds()` sammelt die globalen Kennzahlen,
-lässt jeden Lauf bewerten und bildet danach den Mittelwert.
+Zuerst wird die heuristische Steuerung mit den unveränderten
+Standardgewichten `HeuristicWeights()` simuliert. Diese Läufe bilden die
+**Baseline (Vergleichsbasis)**. Gemeint ist hier die Standardheuristik,
+nicht die Zufallspolicy.
+
+Für diese Läufe und die anschließende Gewichtssuche wird dieselbe Liste
+`SEEDS` verwendet. Ein **Seed (Startwert für die Zufallszahlengeneratoren)**
+macht einen Lauf bei gleicher Konfiguration und gleicher Policy
+reproduzierbar. Mehrere Seeds berücksichtigen unterschiedliche Zufallsverläufe.
+Ein Seed ist kein Simulationszustand; unterschiedliche Policies können mit
+demselben Seed unterschiedliche Zustände durchlaufen.
+
+Aus den Baseline-Läufen berechnet
+`GlobalSimulationEvaluation.calculate_baseline_reference_values()` feste
+Referenzwerte für Makespan, Gesamtverspätung, Transport-, Werkzeugwechsel-
+und Blockierzeit. Dazu wird für jede Zeitkennzahl der Mittelwert über die
+Baseline-Seeds gebildet. Diese Referenzwerte bleiben für alle späteren
+Gewichtssätze und den Abschlussvergleich unverändert.
+
+Der Code verwendet als Makespan-Referenz mindestens `1.0`. Ist der
+Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die
+Makespan-Referenz verwendet. Dadurch wird bei der späteren Bewertung nicht
+durch null geteilt.
+
+**Ergebnis dieses Schritts:** feste Bezugsgrößen, mit denen die Zeitkennzahlen
+der folgenden Simulationsläufe vergleichbar gemacht werden.
+
+### 2. Gewichtssätze erzeugen
+
+`LocalHeuristicWeightOptimizer.optimize_iteratively()` beginnt mit den
+Standardgewichten. Für eine Suchrunde werden daraus mehrere
+**Kandidaten (vollständige Gewichtssätze)** erzeugt. „Kandidat“ bezeichnet
+hier keinen einzelnen Aktionskandidaten der Simulation.
+
+- `neighboring_weights()` übernimmt den aktuellen Satz unverändert und
+  erzeugt für jedes Gewicht eine kleinere und eine größere Variante:
+  `Gewicht − Schrittweite` beziehungsweise `Gewicht + Schrittweite`.
+  Die Werte bleiben im erlaubten Bereich `(0, 1]`.
+- `random_local_weight_candidates()` ergänzt reproduzierbare zufällige
+  Gewichtssätze. Das allgemeine Wartegewicht `wait_action_weight` beträgt
+  dabei höchstens `0.1`.
+
+Diese Suche verändert Gewichte, nicht die Bewertungsformeln. Ein anderer
+Gewichtssatz kann beispielsweise dazu führen, dass andere Jobs, Ablageziele
+oder Defektstrategien bevorzugt werden.
+
+Die zufälligen Gewichtssätze dienen der Erkundung weiterer Gewichtungen.
+Das ist von der Exploration des `ActionSelector` zu unterscheiden: Dieser
+kann **während eines Laufs** eine fast gleich gut bewertete Aktion wählen,
+verändert dabei aber keine Gewichte.
+
+**Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die in der
+aktuellen Runde geprüft werden.
+
+### 3. Jeden Gewichtssatz simulieren und bewerten
+
+`select_best_local_weight_set_across_seeds()` lässt jeden Kandidaten durch
+`evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
+werden nacheinander alle Seeds aus `SEEDS` verwendet.
+
+Pro Seed wird ein vollständiger Simulationslauf ausgeführt und global
+bewertet. Erst nach allen Seeds wird der Mittelwert für diesen Gewichtssatz
+gebildet. Anschließend wird der nächste Gewichtssatz genauso geprüft.
+
+#### Simulationslauf und Produktionskennzahlen
+
+`runner(weights, seed)` ruft `SpineMLSimulationRunner.__call__()` auf.
+Für jeden Lauf entstehen eine neue Salabim-Umgebung, die heuristische Policy,
+die `SimulationBridge`, Layout, Maschinen, Roboter, Stores und Jobs. Der
+Runner setzt den Seed für Python-Zufall, Salabim und `SimMachine.QUALITY_SEED`.
+
+Während dieses Laufs bleibt der Gewichtssatz fest. Bei neuen Beobachtungen
+bewertet der Evaluator die erzeugten Aktionskandidaten; der Selector bevorzugt
+einen hohen Aktionsscore. Die Bridge übergibt die ausgewählten Aktionen an die
+Simulationskomponenten.
+
+`env.run()` führt die Simulation aus. Erkennt `SimCompletionWatcher`, dass
+alle Jobs beendet sind, kann der Lauf vor der maximalen Endzeit stoppen.
+Anschließend sammelt `collect_global_metrics()` die Produktionsergebnisse
+in einem `GlobalSimulationMetrics`-Objekt. Ein Lauf mit unfertigen Jobs wird
+vom Runner als Fehler zurückgewiesen und nicht als gültiges
+Optimierungsergebnis verwendet.
+
+<details>
+<summary>Welche Produktionskennzahlen werden erfasst?</summary>
+
+- `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
+  `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
+  nicht der spätere Zeitpunkt, zu dem der Watcher die Simulation stoppt.
+- `total_tardiness`: Summe der positiven Verspätungen vollständig
+  abgeschlossener Aufträge. Jeder Auftrag zählt einmal mit seinem letzten
+  Jobabschluss relativ zu seiner eigenen `latest_end_time`.
+- `total_transport_time`: Summe der Bewegungszeiten für X, Y und Z aller
+  Roboter. Ein- und Auslagerungswartezeiten zählen nicht als Bewegung.
+- `tool_change_time`: Summe der Maschinenzeiten in den Zuständen
+  `mounting` und `unmounting`.
+- `blocking_time`: Summe der Maschinenzeiten im Zustand `blocked`.
+- `total_jobs`, `completed_jobs` und `unfinished_jobs`: Gesamtzahl,
+  abgeschlossene und noch nicht abgeschlossene Jobs.
+- `rework_job_count`: Zahl abgeschlossener Jobs mit mindestens einer
+  Nacharbeit; mehrere Nacharbeiten desselben Jobs erhöhen diesen Wert nicht
+  mehrfach.
+- `scrap_job_count`: Summe der Ausschussentscheidungen abgeschlossener Jobs.
+- `defect_jobs`: Zahl der Jobs, bei denen mindestens ein Defekt erkannt
+  wurde, auch wenn sie später erfolgreich nachgearbeitet wurden.
+- `intact_jobs`: Zahl abgeschlossener Jobs mit `general_state="intact"`.
+  Dazu können auch herabgestufte Jobs gehören, weil deren geringere Qualität
+  getrennt durch `downgraded=True` markiert wird.
+- `downgraded_job_count`: Zahl herabgestufter Jobs.
+
+Die zugehörigen Raten entstehen durch Division durch `total_jobs`.
+Ein Job kann beispielsweise sowohl zur historischen Defektquote als auch
+zur abschließenden Intaktquote zählen.
+
+</details>
+
+#### Globale Bewertungszahl
+
+`GlobalSimulationEvaluation` macht aus den Kennzahlen eines vollständigen
+Laufs eine globale Bewertungszahl. **Hier ist ein niedriger Wert besser**,
+anders als beim Aktionsscore.
+
+Die Berechnung erfolgt in zwei Schritten:
+
+1. `metrics_relative_to_baseline()` teilt die Zeitkennzahlen durch die
+   festen Referenzwerte aus [Schritt 1](#1-referenzwerte-bestimmen).
+   So entstehen dimensionslose Verhältniswerte. Bei einer positiven
+   Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert
+   eine kürzere Zeit und ein größerer Wert eine längere Zeit.
+   Beispiel: Bei einer Makespan-Referenz von `10` Stunden ergeben
+   `8` Stunden den Verhältniswert `0.8`, `12` Stunden den Wert `1.2`.
+   Qualitäts- und Fertigstellungsraten gehen dagegen direkt ein:
+   `rework_rate`, `scrap_rate`, `defect_rate`, `unfinished_rate`,
+   `downgrade_rate` und `1 − intact_rate` als `non_intact_rate`.
+   Beispielsweise bleibt eine Ausschussrate von `0.10` gleich `0.10`;
+   sie wird nicht durch eine Baseline-Rate geteilt. Eine Rate von `0.05`
+   erhält entsprechend den kleineren Strafwert.
+2. `calculate_weighted_sum_of_metrics_relative_to_baseline()`
+   multipliziert diese Beiträge mit den festen globalen Gewichten und
+   addiert sie:
+
+`Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
+
+Hier wird **nicht durch die Gewichtssumme geteilt**. Alle Kandidaten werden
+mit denselben globalen Gewichten und Referenzwerten beurteilt.
+
+##### Globale Gewichte in `optimization.py`
+
+- **Makespan:** `makespan=5.0`.
+- **Gesamtverspätung und Ausschussquote:**
+  `total_tardiness=4.0` und `scrap_job_penalty=4.0`.
+- **Nacharbeit, historische Defekte, nicht intakte Jobs und Herabstufungen:**
+  `rework_job_penalty`, `defect_job_penalty`, `non_intact_penalty`
+  und `downgrade_job_penalty` jeweils `3.0`.
+- **Transport-, Werkzeugwechsel- und Blockierzeit:**
+  `total_transport_time`, `tool_change_time` und `blocking_time`
+  jeweils `1.0`.
+- **Unfertige Jobs:** `unfinished_jobs=20.0`. Der Runner weist unvollständige
+  Läufe bereits als Fehler zurück; in regulär zurückgegebenen Läufen ist
+  die Unfertigquote daher `0`.
+
+Ein höheres globales Gewicht erhöht den Einfluss des zugehörigen Beitrags.
+Die tatsächliche Wirkung hängt aber auch von dessen Größe ab. Die Gewichte
+legen keine garantierte Rangfolge der Produktionsziele fest.
+
+#### Mittelwert über die Seeds
+
+Die globalen Bewertungszahlen eines Gewichtssatzes werden in
+`objective_values` gespeichert, die Rohkennzahlen in `metrics_by_seed`.
+`evaluate_local_weights_across_seeds()` bildet aus den Bewertungszahlen
+den Mittelwert `mean_global_cost`:
+
+`mean_global_cost = Summe(globale Bewertungszahl je Seed) / Anzahl der Seeds`
+
+**Beispiel:** Gewichtssatz A erreicht bei zwei Seeds die globalen
+Bewertungszahlen `10` und `14`, Gewichtssatz B die Werte `11` und `11`.
+Dann ist `mean_global_cost(A) = 12` und `mean_global_cost(B) = 11`.
+B wird bevorzugt, obwohl A bei einem Seed besser war. Dies sind Bewertungen
+vollständiger Produktionsläufe, keine einzelnen Aktionsscores.
+
+Das `WeightEvaluation`-Objekt bündelt den Gewichtssatz, seine Kennzahlen
+und seine Bewertung.
+
+**Ergebnis dieses Schritts:** ein `mean_global_cost` pro geprüftem
+Gewichtssatz.
+
+<details>
+<summary>Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)</summary>
+
+Dieses Diagramm zeigt ausschließlich die Prüfung **eines festen
+Gewichtssatzes** aus Schritt 3 des Gesamtablaufs: ein Lauf pro Seed,
+eine globale Bewertungszahl pro Lauf und anschließend der Mittelwert.
+Es zeigt keine zusätzliche Optimierung.
 
 ```mermaid
 sequenceDiagram
@@ -2090,284 +2250,105 @@ sequenceDiagram
         Note over Sim: Kandidaten wiederholt bewerten und Aktionen ausführen
         Sim-->>Runner: Simulationslauf beendet
         Runner->>Runner: collect_global_metrics()
-        Runner-->>Optimizer: Kennzahlen des Laufs
+        Runner-->>Optimizer: GlobalSimulationMetrics
         Optimizer->>Evaluation: Lauf global bewerten
         Evaluation-->>Optimizer: objective_value_seed
     end
     Optimizer->>Optimizer: mean_global_cost berechnen<br/>aus allen Seed-Ergebnissen
 ```
 
-Die Bewertung verwendet die festen Baseline-Referenzwerte und globalen
-Gewichte. Die genaue [Berechnung der globalen Bewertungszahl](#globale-bewertungszahl)
-steht unten bei `GlobalSimulationEvaluation`. Für einen Gewichtssatz gilt:
+</details>
 
-`mean_global_cost = Summe(globale Bewertungszahl je Seed) / Anzahl der Seeds`
+### 4. Besten Satz auswählen und Suche fortsetzen oder beenden
 
-**Beispiel:** Gewichtssatz A liefert bei zwei Seeds die globalen
-Bewertungszahlen `10` und `14`, Gewichtssatz B die Werte `11` und `11`.
-Dann ist `mean_global_cost(A) = 12` und `mean_global_cost(B) = 11`.
-Der Optimierer bevorzugt B, obwohl A in einem einzelnen Lauf besser war.
-Verglichen werden vollständige Produktionsergebnisse, nicht einzelne
-Aktionsscores.
+`select_best_local_weight_set_across_seeds()` vergleicht die
+`mean_global_cost`-Werte aller Gewichtssätze der Runde und wählt den
+kleinsten. `optimize_iteratively()` legt anschließend fest, wie es weitergeht:
 
-### 3. Was der Abschlussvergleich zeigt
+- **Verbesserung:** Ist dies der bisher beste Satz, wird er gespeichert und
+  zum Ausgangspunkt der nächsten Runde. Die Schrittweite wird halbiert.
+  Die erste Runde legt erstmals einen besten Satz fest.
+- **Keine Verbesserung:** Der zuletzt verbesserte Satz bleibt Ausgangspunkt;
+  die erfolglosen Runden werden gezählt.
+- **Neustart:** Nach `restart_after_no_improvement` erfolglosen Runden
+  beginnt die Suche erneut am zuletzt verbesserten Satz. Die Schrittweite
+  wird auf ihren Anfangswert zurückgesetzt.
+- **Ende:** Die Suche endet spätestens nach `iterations` Runden oder nach
+  `stop_after_no_improvement` erfolglosen Runden seit der letzten
+  Verbesserung. Ein Neustart setzt diesen Abbruchzähler nicht zurück.
 
-`_benchmark_policies()` vergleicht nach der Suche drei Steuerungen:
+Bei einer weiteren Runde geht der Ablauf zu [Schritt 2](#2-gewichtssätze-erzeugen)
+zurück. Nach dem Ende liefert `WeightOptimizationResult` unter anderem
+`best_weights`, `best_mean_global_cost` und `best_evaluation`.
+In `evaluations` speichert `optimize_iteratively()` die jeweils
+verbesserten Lösungen, nicht jeden getesteten Kandidaten.
 
-- **`Random`:** Zufällige Auswahl unter Nicht-Warteaktionen; Warten nur als
-  Fallback. Diese [Zufallsreferenz](#randompolicy-zufällige-vergleichssteuerung)
-  nutzt keine heuristischen Scores.
-- **`Heuristic (default)`:** Heuristische Bewertung mit den unveränderten
-  Standardgewichten.
-- **`Heuristic (optimized)`:** Dieselbe Heuristik mit dem besten während der
-  Gewichtssuche gefundenen Gewichtssatz.
+### 5. Abschlussvergleich auf separaten Test-Seeds
 
-Alle drei verwenden dasselbe Layout, dasselbe Szenario und dieselben
-`BENCHMARK_SEEDS`. Auch die globalen Gewichte und die zuvor auf `SEEDS`
-berechneten Referenzwerte bleiben gleich. Das Interface zeigt sowohl die
-Kennzahlen je Test-Seed als auch ihre Mittelwerte.
+Erst nach der Gewichtssuche vergleicht `_benchmark_policies()` drei
+Steuerungen auf denselben separaten `BENCHMARK_SEEDS`:
 
-Damit werden zwei Fragen getrennt geprüft: Ist die Heuristik besser als die
+- **`Random`:** Die [Zufallspolicy](#randompolicy-zufällige-vergleichssteuerung)
+  wählt gleichverteilt unter Nicht-Warteaktionen und wartet nur als Fallback.
+  Sie verwendet keine heuristischen Scores.
+- **`Heuristic (default)`:** Die Heuristik verwendet die unveränderten
+  Standardgewichte.
+- **`Heuristic (optimized)`:** Dieselbe Heuristik verwendet den besten
+  während der Suche gefundenen Gewichtssatz.
+
+Diese Test-Seeds gehen nicht in die Gewichtsauswahl ein. Alle drei
+Steuerungen verwenden dasselbe Layout, dasselbe Szenario und dieselben
+globalen Gewichte und Referenzwerte. Für die Zufallspolicy führt der Runner
+`run_policy(RandomPolicy(seed), seed)` aus; für die Heuristiken
+`runner(weights, seed)`. Simulationskern und Kennzahlenerfassung sind gleich.
+
+Das Interface zeigt die Kennzahlen je Test-Seed und ihre Mittelwerte.
+Damit werden zwei Fragen geprüft: Ist die Heuristik besser als die
 Zufallsreferenz, und verbessert die Gewichtssuche die Standardheuristik?
-Der Name „optimized“ bezeichnet den ausgewählten Gewichtssatz, **keinen
-garantierten Vorteil auf neuen Seeds und kein nachgewiesenes globales Optimum**.
-Die aktuell fünf Test-Seeds (`101` bis `105`) sind ein Einstieg; für belastbare
-Aussagen sollten mehr Seeds und unterschiedliche Layouts und Szenarien
-verglichen werden.
 
-### 4. Umsetzung im Code
+„Optimized“ bezeichnet den ausgewählten Gewichtssatz, **keinen garantierten
+Vorteil auf neuen Seeds und kein nachgewiesenes globales Optimum**.
+Die aktuell fünf Test-Seeds (`101` bis `105`) sind ein Einstieg.
+Für belastbare Aussagen sollten mehr Seeds sowie unterschiedliche Layouts
+und Szenarien verglichen werden.
 
-Die folgenden Abschnitte ordnen die Schritte den beteiligten Dateien zu:
+### Beteiligte Dateien
 
-- [`optimization.py`](sources/optimization.py): Modell laden, Referenzläufe,
-  Gewichtssuche und Testvergleich koordinieren; Fortschritt anzeigen.
-- [`SpineMLSimulationRunner`](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py):
-  Einen vollständigen Headless-Lauf ausführen und seine Kennzahlen sammeln.
-- [`LocalHeuristicWeightOptimizer`](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py):
-  Gewichtssätze erzeugen, bewerten und den besten getesteten Satz auswählen.
-- [`GlobalSimulationEvaluation`](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py):
-  Aus den Kennzahlen eines Laufs die globale Bewertungszahl berechnen.
-- [`HeuristicWeights`](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py):
-  Die veränderbaren lokalen Gewichte definieren und prüfen.
+- [optimization.py](sources/optimization.py): koordiniert die fünf Schritte
+  und zeigt Fortschritt und Ergebnisse im Streamlit-Interface.
+- [HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py):
+  definiert und prüft die veränderbaren lokalen Gewichte.
+- [LocalHeuristicWeightOptimizer.py](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py):
+  erzeugt und vergleicht Gewichtssätze und steuert die Suchrunden.
+- [SpineMLSimulationRunner.py](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py):
+  führt die einzelnen Simulationen aus und erfasst ihre Kennzahlen.
+- [GlobalSimulationEvaluation.py](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py):
+  berechnet Referenzwerte und die globale Bewertungszahl eines Laufs.
 
-#### optimization.py – Streamlit-Webserver
+<details>
+<summary>Technische Einbindung: Modellladen, Worker-Thread und Fortschrittsanzeige</summary>
 
-1. Die Datei startet den Streamlit-Webserver und lädt über
-   `SPINEML_MODEL_FILE` das ausgewählte Beispielmodell.
-2. Das Modell kann mehrere Layouts und Szenarien enthalten. Beim Einlesen
-   unterdrückt `_suppress_model_visualization()` den direkten
-   `simulate(...)`-Aufruf. Danach wählt `_find_layout_and_scenario()` das im
-   Aufruf angegebene Layout-Szenario-Paar aus.
-3. `create_optimizer()` erstellt den
-   `SpineMLSimulationRunner` und übergibt ihn als aufrufbares Objekt
-   (`runner(weights, seed)`) an den `LocalHeuristicWeightOptimizer`. Zusätzlich
-   wird die `GlobalSimulationEvaluation` mit dem
-   `LocalHeuristicWeightOptimizer` verbunden, damit die Ergebnisse jedes
-   Simulationslaufs global bewertet werden können.
-4. Beim Klick auf den Optimierungsbutton setzt `_start_optimization()` den
-   Streamlit-Zustand zurück und startet die Optimierung in einem Worker-Thread.
-   Dadurch bleibt das Streamlit-Interface während der laufenden Simulation
-   bedienbar.
-5. Zuerst wird mit den unveränderten lokalen `HeuristicWeights` die Baseline
-   für alle Optimierungs-Seeds (`SEEDS`) berechnet. Die gemittelten globalen
-   Kennzahlen dienen als Referenz für die später getesteten lokalen Gewichtssätze.
-6. Danach startet `LocalHeuristicWeightOptimizer` die Suche nach einem besseren
-   lokalen `HeuristicWeights`-Satz in einem Worker-Thread. Während der Worker
-   die Gewichtssätze simuliert, bleibt das Streamlit-Interface aktiv. Der
-   `progress`-Callback schreibt nach jeder Bewertung die aktuelle
-   Optimierungsiteration (Runde), die Nummer des getesteten lokalen
-   Gewichtssatzes innerhalb dieser Runde (`Kandidat x/y`), Status,
-   Fortschrittsbalken und Zwischen-Diagramme in den gemeinsamen Zustand; das
-   Interface liest diesen Zustand parallel aus. „Kandidat“ bezeichnet hier
-   jeweils einen lokal getesteten Gewichtssatz.
-7. Nach der Gewichtssuche führt `_benchmark_policies()` drei Steuerungen auf
-   denselben separaten `BENCHMARK_SEEDS` aus: `Random`, `Heuristic (default)`
-   und `Heuristic (optimized)`. Diese Test-Seeds werden nicht zur Gewichtssuche
-   verwendet. Das Interface zeigt ihre mittleren Kennzahlen und die Ergebnisse
-   je Seed. Die zuvor berechneten Baseline-Referenzwerte und die globalen
-   Gewichte bleiben dabei für alle drei Steuerungen gleich.
+`optimization.py` liest das über `SPINEML_MODEL_FILE` ausgewählte Modell.
+`_suppress_model_visualization()` unterdrückt dabei dessen direkten
+`simulate(...)`-Aufruf. `_find_layout_and_scenario()` wählt das dort
+angegebene Layout-Szenario-Paar aus, auch wenn das Modell mehrere enthält.
 
-#### SpineMLSimulationRunner
+`create_optimizer()` erstellt den Runner und übergibt ihn als aufrufbares
+Objekt (`runner(weights, seed)`) an den Optimierer. Außerdem wird die
+globale Bewertung mit dem Optimierer verbunden.
 
-1. `runner(weights, seed)` erstellt die heuristische Policy mit dem übergebenen
-   vollständigen `HeuristicWeights`-Satz. Alternativ führt
-   `run_policy(policy, seed)` eine andere Policy aus, etwa die `RandomPolicy`.
-2. Er setzt Python-Zufall und `SimMachine.QUALITY_SEED`, damit der Lauf mit
-   gleicher Konfiguration und gleichem Seed reproduzierbar bleibt.
-3. Für jeden Lauf werden eine neue Salabim-Umgebung, die `SimulationBridge`,
-   Layout, Maschinen, Roboter, Stores und Jobs aufgebaut. Beide Policy-Varianten
-   verwenden denselben Simulationskern und dieselbe Kennzahlenerfassung.
-4. `env.run(...)` führt die diskrete Simulation aus. Die Bridge verbindet die
-   Simulationszustände mit der Policy. Diese wählt ihre Aktionen heuristisch
-   oder zufällig; die Bridge verteilt die ausgewählten Aktionen an die
-   Simulationskomponenten.
-5. Erkennt `SimCompletionWatcher`, dass alle vorhandenen Jobs beendet sind,
-   kann der Lauf kontrolliert vor der maximalen Endzeit beendet werden.
-6. `collect_global_metrics()` sammelt danach die globalen Kennzahlen.
-   Enthält der Lauf noch unfertige Jobs, bricht der Runner mit einer
-   Fehlermeldung ab und liefert kein gültiges Optimierungsergebnis.
+Beim Klick auf **Start optimization** setzt `_start_optimization()`
+den vorherigen Ergebniszustand zurück und startet einen Worker-Thread.
+Dieser führt Referenzläufe, Gewichtssuche und Abschlussvergleich aus.
 
-Die wichtigsten Kennzahlen sind:
+Der `progress`-Callback meldet die aktuelle Runde, den geprüften
+Gewichtssatz (`Kandidat x/y`) und dessen fertige Bewertung. Das
+Streamlit-Interface liest diesen Zustand und aktualisiert Status,
+Fortschrittsbalken und Zwischen-Diagramme. Die Kostenkurve verwendet die
+Bewertungen **aller** geprüften Kandidaten, nicht nur die im
+Optimierungsergebnis gespeicherten Verbesserungen.
 
-- `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
-  `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
-  nicht der spätere Zeitpunkt, zu dem der Watcher die Simulation stoppt.
-- `total_tardiness`: Summe der positiven Verspätungen vollständig
-  abgeschlossener Aufträge. Jeder Auftrag zählt einmal mit seinem letzten
-  Jobabschluss relativ zu seiner eigenen `latest_end_time`.
-- `total_transport_time`: Summe der Bewegungszeiten für X, Y und Z aller
-  Roboter. Ein- und Auslagerungswartezeiten werden hier nicht als Bewegung
-  gezählt.
-- `tool_change_time`: Summe der Maschinenzustände `mounting` und
-  `unmounting` im tatsächlich ausgeführten Lauf.
-- `blocking_time`: Summe der Maschinenzeiten im Zustand `blocked`.
-- `total_jobs`, `completed_jobs` und `unfinished_jobs`: Gesamtzahl,
-  abgeschlossene und noch nicht abgeschlossene Jobs.
-- `rework_job_count`: Zahl abgeschlossener Jobs mit mindestens einer
-  Nacharbeit; mehrere Nacharbeiten desselben Jobs erhöhen diesen Wert nicht
-  mehrfach.
-- `scrap_job_count`: Summe der Ausschussentscheidungen abgeschlossener Jobs.
-- `defect_jobs`: Zahl der Jobs, bei denen mindestens ein Defekt erkannt
-  wurde, auch wenn sie später erfolgreich nachgearbeitet wurden.
-- `intact_jobs`: Zahl abgeschlossener Jobs mit `general_state="intact"`.
-  Dazu können auch herabgestufte Jobs gehören, weil deren geringere Qualität
-  getrennt durch `downgraded=True` markiert wird.
-- `downgraded_job_count`: Zahl herabgestufter Jobs.
-
-Die zugehörigen Raten entstehen jeweils durch Division durch
-`total_jobs`. Ein Job kann beispielsweise sowohl zur historischen
-Defektquote als auch zur abschließenden Intaktquote zählen.
-
-#### LocalHeuristicWeightOptimizer
-
-`LocalHeuristicWeightOptimizer` führt mit seiner Methode
-`optimize_iteratively()` die Suche nach einem guten lokalen Gewichtssatz
-durch. Der Ablauf ist:
-
-1. **Startpunkt festlegen:** In der ersten Optimierungsrunde übernimmt die
-   Methode den initialen lokalen `HeuristicWeights`-Satz und die für alle
-   lokalen Gewichtssätze verwendeten Seeds. Für jede folgende Runde verwendet
-   sie den besten bisher gefundenen lokalen Gewichtssatz als neuen
-   Ausgangspunkt. Das ist normalerweise der beste Gewichtssatz der vorherigen
-   Runde; ohne Verbesserung bleibt der zuletzt verbesserte Satz erhalten.
-2. **Lokale Gewichtssätze für eine Optimierungsrunde erzeugen:**
-   `neighboring_weights()` erzeugt den unveränderten Satz sowie für jedes
-   Gewicht eine Variante mit `Gewicht − Schrittweite` und eine mit
-   `Gewicht + Schrittweite`. Die Werte bleiben dabei im erlaubten Bereich.
-   `random_local_weight_candidates()` ergänzt reproduzierbare Zufallssätze
-   über den Gewichtsbereich; das Wartegewicht wird dabei höchstens `0.1`.
-   Diese zufälligen Gewichtssätze sind die Exploration des
-   `LocalHeuristicWeightOptimizer` und sind von der
-   Aktions-Exploration des `ActionSelector` getrennt.
-   Dadurch wird keine einzelne Aktion direkt verbessert. Es werden lokale
-   Teilwertgewichte getestet, die für bestimmte Aktionsarten gelten. Führt ein
-   Gewichtssatz zum Beispiel dazu, dass Nacharbeit auf der Defektmaschine
-   gegenüber der Nacharbeit auf einer Alternativmaschine häufiger zu besseren
-   globalen Ergebnissen führt, kann dieser Gewichtssatz ausgewählt werden.
-3. **Jeden lokalen Gewichtssatz über alle Seeds ausführen:**
-   `select_best_local_weight_set_across_seeds()` ruft für jeden lokalen
-   Gewichtssatz `evaluate_local_weights_across_seeds()` auf. Diese Methode
-   übergibt denselben lokalen Gewichtssatz nacheinander mit jedem Seed an den
-   `SpineMLSimulationRunner`. Dessen `GlobalSimulationMetrics`-Ergebnisse werden
-   unverändert in `metrics_by_seed` gesammelt. Die enthaltenen Kennzahlen sind
-   [beim Runner](#spinemlsimulationrunner) erklärt.
-4. **Läufe bewerten und Mittelwert bilden:**
-   `GlobalSimulationEvaluation.calculate_weighted_sum_of_metrics_relative_to_baseline()`
-   berechnet pro Seed eine globale Bewertungszahl. Diese Zahlen stehen in
-   `objective_values`; ihr Mittelwert ist `mean_global_cost`.
-   Das `WeightEvaluation`-Objekt bündelt den Gewichtssatz, seine Rohkennzahlen
-   und seine Bewertung. Dies entspricht dem oben gezeigten
-   [Detailablauf für einen Gewichtssatz](#2-wie-ein-gewichtssatz-bewertet-wird).
-5. **Besten lokalen Gewichtssatz der aktuellen Optimierungsrunde bestimmen:**
-   `select_best_local_weight_set_across_seeds()` vergleicht die Vergleichszahlen
-   beziehungsweise `mean_global_cost` aller lokalen Gewichtssätze und gibt den
-   lokalen Gewichtssatz mit dem niedrigsten Mittelwert zurück.
-6. **Nächste Runde festlegen:** Verbessert der beste Satz dieser Runde das
-   bisherige Ergebnis, wird er zum neuen Ausgangspunkt und die Schrittweite
-   wird halbiert. Die erste Runde legt erstmals ein bestes Ergebnis fest.
-   Ohne Verbesserung werden die erfolglosen Runden gezählt.
-7. **Neustart oder Ende:** Nach der konfigurierten Zahl erfolgloser Runden
-   startet die Suche am letzten verbesserten Gewichtssatz erneut und setzt
-   die Schrittweite auf den Anfangswert zurück. Die Suche endet spätestens
-   nach `iterations` Runden oder nach `stop_after_no_improvement`
-   erfolglosen Runden seit der letzten Verbesserung.
-
-Das Ergebnis enthält `best_weights`, `best_mean_global_cost` und
-`best_evaluation`. In `evaluations` speichert
-`optimize_iteratively()` die jeweils verbesserten Lösungen. Die
-Streamlit-Kostenkurve verwendet dagegen die Fortschrittsmeldungen zu allen
-geprüften Kandidaten.
-
-#### GlobalSimulationEvaluation
-
-[GlobalSimulationEvaluation.py](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py)
-berechnet aus den Kennzahlen eines Simulationslaufs eine globale
-Bewertungszahl. Eine kleinere Zahl ist besser. Der Ablauf unterscheidet sich
-von der lokalen Aktionsbewertung: Hier werden ganze Läufe verglichen.
-
-##### Baseline als Referenz
-
-Die Baseline besteht aus Läufen mit den ursprünglichen `HeuristicWeights`
-und denselben Seeds wie die späteren Kandidaten.
-`calculate_baseline_reference_values()` berechnet daraus Referenzwerte
-für Makespan, Gesamtverspätung, Transport-, Werkzeugwechsel- und Blockierzeit.
-
-Für jede Zeitkennzahl wird der Mittelwert über die Baseline-Seeds verwendet.
-Der Makespan-Referenzwert ist mindestens `1.0`. Hat eine andere Zeitkennzahl
-den Baseline-Mittelwert `0`, verwendet der Code dafür den
-Makespan-Referenzwert. So bleibt die spätere Division definiert.
-
-`metrics_relative_to_baseline()` teilt die Zeitkennzahlen eines
-Kandidatenlaufs durch diese festen Referenzwerte. So entstehen dimensionslose
-Verhältniswerte. Bei einer positiven
-Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert eine
-kürzere Zeit und ein größerer Wert eine längere Zeit.
-
-Beispiel: Bei einem Referenz-Makespan von zehn Stunden ergibt ein Lauf mit
-acht Stunden den Verhältniswert `0.8`; zwölf Stunden ergeben `1.2`.
-
-Qualitäts- und Fertigstellungsraten gehen direkt ein:
-`rework_rate`, `scrap_rate`, `defect_rate`, `unfinished_rate`,
-`downgrade_rate` und `1 − intact_rate` als `non_intact_rate`.
-Sie werden nicht noch einmal durch eine Baseline-Rate geteilt.
-Beispielsweise bleibt eine Ausschussrate von `0.10` gleich `0.10`; eine
-geringere Ausschussrate von `0.05` erhält den kleineren Strafwert.
-
-##### Globale Bewertungszahl
-
-`calculate_weighted_sum_of_metrics_relative_to_baseline()` multipliziert
-die relativen Zeitwerte und die Raten mit ihren festen globalen Gewichten
-und addiert die Beiträge:
-
-`Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
-
-Hier wird nicht durch die Gewichtssumme geteilt. Die Optimierung verwendet
-für alle Kandidaten dieselben globalen Gewichte und Referenzwerte.
-`evaluate_local_weights_across_seeds()` bildet anschließend aus den
-Bewertungszahlen aller Seeds den Mittelwert `mean_global_cost`.
-
-##### Globale Gewichte in `optimization.py`
-
-- **Unfertige Jobs:** `unfinished_jobs=20.0`. Der Runner weist einen
-  unvollständigen Lauf bereits als Fehler zurück; in regulär
-  zurückgegebenen Optimierungsläufen ist die Unfertigquote daher `0`.
-- **Makespan:** `makespan=5.0`.
-- **Gesamtverspätung und Ausschussquote:**
-  `total_tardiness=4.0` und `scrap_job_penalty=4.0`.
-- **Nacharbeit, historische Defekte, nicht intakte Jobs und Herabstufungen:**
-  `rework_job_penalty`, `defect_job_penalty`, `non_intact_penalty`
-  und `downgrade_job_penalty` jeweils `3.0`.
-- **Transport-, Werkzeugwechsel- und Blockierzeit:**
-  `total_transport_time`, `tool_change_time` und `blocking_time`
-  jeweils `1.0`.
-
-Ein höheres globales Gewicht erhöht den Einfluss des zugehörigen Beitrags
-auf die globale Bewertungszahl. Die tatsächliche Wirkung hängt auch von der
-Größe des relativen Zeitwerts oder der Rate ab. Die Gewichte bilden keine
-feste Rangfolge und keine Garantie, dass ein Ziel immer Vorrang hat.
-
-Die Optimierung verändert die lokalen `HeuristicWeights`, während diese
-globalen Gewichte festlegen, woran ein guter Simulationslauf gemessen wird.
+</details>
 
 ## Optimierung starten
 

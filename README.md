@@ -2071,16 +2071,27 @@ erklären alle Schritte **in derselben Reihenfolge**.
 config:
   flowchart:
     wrappingWidth: 400
-    rankSpacing: 30
+    rankSpacing: 50
+    subGraphTitleMargin:
+      top: 10
+      bottom: 20
 ---
 flowchart TD
     A["1. Produktion mit Standardgewichten simulieren<br/>Vergleichsmaßstab aus Ergebnissen berechnen"]
-    A --> B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
-    B --> C["3. Produktion mit jedem Gewichtssatz mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
-    C --> D["4. Gewichtssatz mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
-    D --> E{"Weitere Suchrunde?"}
+
+    subgraph Iteration["Eine Iteration<br/>(Suchrunde)"]
+        direction TB
+        B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
+        B --> C["3. Produktion mit jedem Gewichtssatz mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
+        C --> D["4. Gewichtssatz mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
+    end
+
+    A --> B
+    D --> E{"Weitere Iteration?"}
     E -- Ja --> B
     E -- Nein --> F["5. Gefundenen Gewichtssatz überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
+
+    style Iteration fill:transparent,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
 ```
 
 Direkt zu den Details:

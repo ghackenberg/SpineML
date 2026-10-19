@@ -2063,8 +2063,7 @@ einzelner Aktionen.
 
 #### Gesamter Optimierungsablauf
 
-Das folgende Diagramm zeigt die gesamte Gewichtssuche. Der oben erklärte
-Vergleich gehört zu den Schritten 3 und 4. Die anschließenden Abschnitte
+Das folgende Diagramm zeigt die gesamte Gewichtssuche. Die anschließenden Abschnitte
 erklären alle Schritte **in derselben Reihenfolge**.
 
 ```mermaid

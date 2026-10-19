@@ -2048,12 +2048,6 @@ flowchart TD
     E -- Nein --> F["5. Gefundene Gewichtung überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
 ```
 
-Optimiert werden die **lokalen Gewichte (`HeuristicWeights`)** für die
-Aktionsbewertung und die Deadline-Strafen. Layout, Szenario, Simulationskern
-und Bewertungsformeln bleiben während der Suche gleich. Auch die
-[globalen Gewichte](#globale-gewichte-in-optimizationpy), mit denen ganze
-Produktionsläufe beurteilt werden, bleiben fest.
-
 ### 1. Produktion mit Standardgewichten simulieren
 
 Zuerst wird die heuristische Steuerung mit den unveränderten

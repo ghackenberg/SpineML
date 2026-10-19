@@ -2142,10 +2142,6 @@ und Folgezustände erzeugen. Verglichen wird, welche dieser Aktionsfolgen
 insgesamt bessere [Produktionsergebnisse](#produktionskennzahlen) liefert,
 etwa eine kürzere Produktionsdauer oder weniger Verspätung.
 
-Derselbe Seed garantiert dabei nicht, dass jeder einzelne Vorgang in beiden
-Läufen denselben Zufallswert erhält: Bei einer anderen Ereignisreihenfolge
-können Zufallswerte anderen Vorgängen zugeordnet werden.
-
 ##### Warum werden dieselben Seeds für verschiedene Gewichtssätze verwendet?
 
 Für die Baseline-Läufe und die anschließende

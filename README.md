@@ -2024,7 +2024,7 @@ Eine andere Gewichtung kann deshalb zu einer anderen Aktionsauswahl führen.
 Welche Gewichtung für die gesamte Produktion günstig ist, lässt sich im
 Voraus nicht einfach festlegen. Deshalb wird die Produktion mit
 unterschiedlichen lokalen Gewichtungen mehrfach simuliert. Die Ergebnisse
-werden anhand derselben festgelegten Produktionsziele verglichen.
+werden anhand derselben [festgelegten Produktionsziele](#globale-gewichte-in-optimizationpy) verglichen.
 **Ziel ist eine Gewichtung, mit der die heuristische Steuerung im Mittel
 bessere Produktionsergebnisse erzielt.**
 
@@ -2048,6 +2048,13 @@ flowchart TD
     E -- Nein --> F["5. Gefundene Gewichtung überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
 ```
 
+Direkt zu den Details:
+[1. Standardgewichte simulieren](#1-produktion-mit-standardgewichten-simulieren) ·
+[2. Gewichte variieren](#2-varianten-der-lokalen-gewichte-erstellen) ·
+[3. Varianten simulieren und bewerten](#3-produktion-mit-jeder-gewichtung-mehrfach-simulieren-und-bewerten) ·
+[4. Gewichtung auswählen](#4-gewichtung-anhand-der-mittleren-produktionsergebnisse-auswählen) ·
+[5. Steuerungen vergleichen](#5-gefundene-gewichtung-mit-standardheuristik-und-zufall-vergleichen).
+
 ### 1. Produktion mit Standardgewichten simulieren
 
 Zuerst wird gemessen, **wie die Produktion mit den bisherigen
@@ -2056,7 +2063,7 @@ Steuerung mehrfach simuliert. Diese Läufe bilden die **Baseline
 (Vergleichsbasis)** und liefern feste Bezugspunkte für spätere Läufe mit
 anderen Gewichtungen.
 
-**Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer (`makespan`)
+**Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer ([`makespan`](#produktionskennzahlen))
 im Durchschnitt **10 Stunden**. Diese `10` werden als Referenz gespeichert.
 Ein späterer Lauf mit anderen Gewichten benötigt:
 
@@ -2067,16 +2074,21 @@ Ein späterer Lauf mit anderen Gewichten benötigt:
 
 Die Referenz bleibt bei beiden Vergleichen **10**; sie wird nicht für jede
 neue Gewichtung neu berechnet. Solche Verhältniswerte gehen anschließend
-in die globale Bewertung ein. Für Gesamtverspätung, Transport-,
-Werkzeugwechsel- und Blockierzeit werden jeweils eigene Referenzwerte bestimmt.
+in die [globale Bewertung](#globale-bewertungszahl) ein. Für die anderen
+[Zeitkennzahlen](#produktionskennzahlen) — Gesamtverspätung, Transport-,
+Werkzeugwechsel- und Blockierzeit — werden jeweils eigene Referenzwerte bestimmt.
 
 **Ergebnis dieses Schritts:** feste Vergleichsmaßstäbe für die Zeitkennzahlen
-aller folgenden Läufe, einschließlich des Abschlussvergleichs.
+aller folgenden Läufe, einschließlich des
+[Abschlussvergleichs](#5-gefundene-gewichtung-mit-standardheuristik-und-zufall-vergleichen).
+
+<a id="baseline-technik"></a>
 
 <details>
 <summary>Technische Umsetzung: Seeds, Referenzberechnung und Nullfälle</summary>
 
-Für die Baseline-Läufe und die anschließende Gewichtssuche wird dieselbe
+Für die Baseline-Läufe und die anschließende
+[Gewichtssuche](#2-varianten-der-lokalen-gewichte-erstellen) wird dieselbe
 Liste `SEEDS` verwendet. Ein **Seed (Startwert für die Zufallszahlengeneratoren)**
 macht einen Lauf bei gleicher Konfiguration und gleicher Policy
 reproduzierbar. Mehrere Seeds berücksichtigen unterschiedliche Zufallsverläufe.
@@ -2090,7 +2102,8 @@ nicht die Zufallspolicy.
 
 Der Code verwendet als Makespan-Referenz mindestens `1.0`. Ist der
 Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die
-Makespan-Referenz verwendet. Dadurch wird bei der späteren Bewertung nicht
+Makespan-Referenz verwendet. Dadurch wird bei der
+[späteren Bewertung](#globale-bewertungszahl) nicht
 durch null geteilt.
 
 </details>
@@ -2116,22 +2129,23 @@ Gewichtssatz kann beispielsweise dazu führen, dass andere Jobs, Ablageziele
 oder Defektstrategien bevorzugt werden.
 
 Die zufälligen Gewichtssätze dienen der Erkundung weiterer Gewichtungen.
-Das ist von der Exploration des `ActionSelector` zu unterscheiden: Dieser
+Das ist von der [Exploration des `ActionSelector`](#actionselector) zu unterscheiden: Dieser
 kann **während eines Laufs** eine fast gleich gut bewertete Aktion wählen,
 verändert dabei aber keine Gewichte.
 
-**Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die in der
-aktuellen Runde geprüft werden.
+**Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
+[simuliert und bewertet](#3-produktion-mit-jeder-gewichtung-mehrfach-simulieren-und-bewerten) werden.
 
 ### 3. Produktion mit jeder Gewichtung mehrfach simulieren und bewerten
 
 `select_best_local_weight_set_across_seeds()` lässt jeden Kandidaten durch
 `evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
-werden nacheinander alle Seeds aus `SEEDS` verwendet.
+werden nacheinander alle [Seeds aus `SEEDS`](#baseline-technik) verwendet.
 
-Pro Seed wird ein vollständiger Simulationslauf ausgeführt und global
-bewertet. Erst nach allen Seeds wird der Mittelwert für diesen Gewichtssatz
-gebildet. Anschließend wird der nächste Gewichtssatz genauso geprüft.
+Pro Seed wird ein vollständiger Simulationslauf ausgeführt und
+[global bewertet](#globale-bewertungszahl). Erst nach allen Seeds wird der
+[Mittelwert für diesen Gewichtssatz](#mittelwert-über-die-seeds) gebildet.
+Anschließend wird der nächste Gewichtssatz genauso geprüft.
 
 #### Simulationslauf und Produktionskennzahlen
 
@@ -2148,9 +2162,11 @@ Simulationskomponenten.
 `env.run()` führt die Simulation aus. Erkennt `SimCompletionWatcher`, dass
 alle Jobs beendet sind, kann der Lauf vor der maximalen Endzeit stoppen.
 Anschließend sammelt `collect_global_metrics()` die Produktionsergebnisse
-in einem `GlobalSimulationMetrics`-Objekt. Ein Lauf mit unfertigen Jobs wird
+in einem [`GlobalSimulationMetrics`-Objekt](#produktionskennzahlen). Ein Lauf mit unfertigen Jobs wird
 vom Runner als Fehler zurückgewiesen und nicht als gültiges
 Optimierungsergebnis verwendet.
+
+<a id="produktionskennzahlen"></a>
 
 <details>
 <summary>Welche Produktionskennzahlen werden erfasst?</summary>
@@ -2207,7 +2223,7 @@ Die Berechnung erfolgt in zwei Schritten:
    sie wird nicht durch eine Baseline-Rate geteilt. Eine Rate von `0.05`
    erhält entsprechend den kleineren Strafwert.
 2. `calculate_weighted_sum_of_metrics_relative_to_baseline()`
-   multipliziert diese Beiträge mit den festen globalen Gewichten und
+   multipliziert diese Beiträge mit den festen [globalen Gewichten](#globale-gewichte-in-optimizationpy) und
    addiert sie:
 
 `Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
@@ -2253,7 +2269,8 @@ Das `WeightEvaluation`-Objekt bündelt den Gewichtssatz, seine Kennzahlen
 und seine Bewertung.
 
 **Ergebnis dieses Schritts:** ein `mean_global_cost` pro geprüftem
-Gewichtssatz.
+Gewichtssatz als Grundlage für die
+[Auswahl einer Gewichtung](#4-gewichtung-anhand-der-mittleren-produktionsergebnisse-auswählen).
 
 <details>
 <summary>Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)</summary>
@@ -2289,7 +2306,7 @@ sequenceDiagram
 ### 4. Gewichtung anhand der mittleren Produktionsergebnisse auswählen
 
 `select_best_local_weight_set_across_seeds()` vergleicht die
-`mean_global_cost`-Werte aller Gewichtssätze der Runde und wählt den
+[`mean_global_cost`-Werte](#mittelwert-über-die-seeds) aller Gewichtssätze der Runde und wählt den
 kleinsten. `optimize_iteratively()` legt anschließend fest, wie es weitergeht:
 
 - **Verbesserung:** Ist dies der bisher beste Satz, wird er gespeichert und
@@ -2371,7 +2388,8 @@ Dieser führt Referenzläufe, Gewichtssuche und Abschlussvergleich aus.
 Der `progress`-Callback meldet die aktuelle Runde, den geprüften
 Gewichtssatz (`Kandidat x/y`) und dessen fertige Bewertung. Das
 Streamlit-Interface liest diesen Zustand und aktualisiert Status,
-Fortschrittsbalken und Zwischen-Diagramme. Die Kostenkurve verwendet die
+Fortschrittsbalken und Zwischen-Diagramme. Die
+[Kostenkurve](#bedeutung-der-kostenkurve) verwendet die
 Bewertungen **aller** geprüften Kandidaten, nicht nur die im
 Optimierungsergebnis gespeicherten Verbesserungen.
 

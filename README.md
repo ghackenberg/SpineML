@@ -2013,7 +2013,9 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ## Optimierungsvorgang
 
-### Gesamtablauf der Optimierung
+<a id="gesamtablauf-der-optimierung"></a>
+
+### Ziel der Optimierung
 
 Die lokalen Gewichte bestimmen, wie stark die einzelnen Teilwerte im
 Aktionsscore zählen. Ein naher Puffer kann beispielsweise wenig freien
@@ -2024,47 +2026,11 @@ Ablageziel bevorzugen.
 **Ziel der Optimierung ist es, die lokalen Gewichte so zu wählen, dass die
 heuristische Steuerung im Mittel bessere Produktionsergebnisse erzielt.**
 
-#### Gewichtssätze mit denselben Seeds vergleichen
-
-Für jeden Gewichtssatz wird die Produktion einmal pro [Seed](#baseline-technik)
-vollständig simuliert. **Alle Gewichtssätze werden mit derselben Seed-Liste
-getestet.** Aus den Ergebnissen jedes Laufs wird anhand derselben
-[Produktionsziele](#globale-gewichte-in-optimizationpy) eine
-[globale Bewertungszahl](#globale-bewertungszahl) berechnet. Anschließend
-wird für jeden Gewichtssatz der [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds)
-gebildet.
-
-Das folgende Beispiel zeigt zwei Gewichtssätze und zwei Seeds. Jeder Zweig
-steht für einen eigenen vollständigen Simulationslauf:
-
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 220
-    nodeSpacing: 25
-    rankSpacing: 30
----
-flowchart LR
-    W1["Gewichtssatz 1"] --> A1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
-    W1 --> A2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
-    A1 --> M1["Mittelwert der Bewertungen<br/>für Gewichtssatz 1"]
-    A2 --> M1
-
-    W2["Gewichtssatz 2"] --> B1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
-    W2 --> B2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
-    B1 --> M2["Mittelwert der Bewertungen<br/>für Gewichtssatz 2"]
-    B2 --> M2
-```
-
-**Der Gewichtssatz mit dem kleineren Mittelwert wird bevorzugt.** Verglichen
-werden die Bewertungen vollständiger Produktionsläufe, nicht die Scores
-einzelner Aktionen.
-
 #### Gesamter Optimierungsablauf
 
-Das folgende Diagramm zeigt die gesamte Gewichtssuche. Die anschließenden Abschnitte
-erklären alle Schritte **in derselben Reihenfolge**.
+Das Diagramm zeigt die fünf Schritte der Optimierung. Eine **Iteration
+(Suchrunde)** umfasst die Schritte 2 bis 4. Die anschließenden Abschnitte
+erklären die Schritte in derselben Reihenfolge.
 
 ```mermaid
 ---
@@ -2077,63 +2043,86 @@ config:
       bottom: 20
 ---
 flowchart TD
-    A["1. Produktion mit Standardgewichten simulieren<br/>Vergleichsmaßstab aus Ergebnissen berechnen"]
+    A["1. Produktion mit dem Standardgewichtssatz simulieren<br/>Baseline-Referenzwerte berechnen"]
 
     subgraph Iteration["Eine Iteration<br/>(Suchrunde)"]
         direction TB
         B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
-        B --> C["3. Produktion mit jedem Gewichtssatz mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
-        C --> D["4. Gewichtssatz mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
+        B --> C["3. Produktion mit jedem Gewichtssatz<br/>einmal pro Seed aus SEEDS vollständig simulieren<br/>und die Produktionsergebnisse bewerten"]
+        C --> D["4. Gewichtssatz mit der kleinsten<br/>mittleren globalen Bewertungszahl auswählen"]
     end
 
     A --> B
     D --> E{"Weitere Iteration?"}
     E -- Ja --> B
-    E -- Nein --> F["5. Gefundenen Gewichtssatz überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
+    E -- Nein --> F["5. Gefundenen Gewichtssatz mit<br/>Standardheuristik und Zufallspolicy vergleichen<br/>Separate Test-Seeds verwenden"]
 
     style Iteration fill:transparent,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
 ```
 
 Direkt zu den Details:
-[1. Standardgewichte simulieren](#1-produktion-mit-standardgewichten-simulieren) ·
-[2. Gewichte variieren](#2-varianten-der-lokalen-gewichte-erstellen) ·
-[3. Varianten simulieren und bewerten](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) ·
+[1. Standardgewichtssatz simulieren](#1-produktion-mit-dem-standardgewichtssatz-simulieren) ·
+[2. Gewichtssätze erstellen](#2-varianten-des-lokalen-gewichtssatzes-erstellen) ·
+[3. Gewichtssätze simulieren und bewerten](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten) ·
 [4. Gewichtssatz auswählen](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen) ·
 [5. Steuerungen vergleichen](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
-### 1. Produktion mit Standardgewichten simulieren
+#### Gewichtssätze mit denselben Seeds vergleichen
 
-Zuerst wird gemessen, **wie die Produktion mit den bisherigen
-Standardgewichten `HeuristicWeights()` läuft**. Dazu wird die heuristische
-Steuerung einmal pro [Seed aus `SEEDS`](#baseline-technik) vollständig
-simuliert: aktuell einmal mit Seed `1` und einmal mit Seed `2`, jeweils mit
-den Standardgewichten. **Dieselbe Seed-Liste wird anschließend für jeden
-anderen Gewichtssatz verwendet.** Diese Läufe mit Standardgewichten bilden
-die **Baseline (Vergleichsbasis)**.
+In [Schritt 3](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten)
+wird jeder Gewichtssatz mit **derselben Liste von [Seeds](#baseline-technik)**
+getestet. Jeder Zweig im Diagramm steht für einen vollständigen
+Produktionslauf und dessen [globale Bewertungszahl](#globale-bewertungszahl).
+Der [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds)
+fasst das Ergebnis eines Gewichtssatzes zusammen:
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 220
+    nodeSpacing: 25
+    rankSpacing: 30
+---
+flowchart LR
+    W1["Gewichtssatz 1"] --> A1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
+    W1 --> A2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
+    A1 --> M1["Mittlere globale Bewertungszahl<br/>für Gewichtssatz 1"]
+    A2 --> M1
+
+    W2["Gewichtssatz 2"] --> B1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
+    W2 --> B2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
+    B1 --> M2["Mittlere globale Bewertungszahl<br/>für Gewichtssatz 2"]
+    B2 --> M2
+```
+
+<a id="1-produktion-mit-standardgewichten-simulieren"></a>
+
+### 1. Produktion mit dem Standardgewichtssatz simulieren
+
+Zuerst wird die heuristische Steuerung mit dem **Standardgewichtssatz
+`HeuristicWeights()`** einmal pro Seed aus `SEEDS` simuliert, aktuell mit
+Seed `1` und Seed `2`. Diese Läufe bilden die **Baseline (Vergleichsbasis)**.
 
 Für jede [Zeitkennzahl](#produktionskennzahlen) wird anschließend der
 **Mittelwert (Durchschnitt) über die Baseline-Läufe mit allen Seeds** berechnet.
 Daraus werden feste Referenzwerte für den Vergleich mit anderen
 Gewichtssätzen bestimmt.
 
-**Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer ([`makespan`](#produktionskennzahlen))
-im Durchschnitt **10 Stunden**. Diese `10` werden als Referenz gespeichert.
-Ein späterer Lauf mit anderen Gewichten benötigt:
+**Beispiel:** Angenommen, der Standardgewichtssatz erreicht eine
+Produktionsdauer ([`makespan`](#produktionskennzahlen)) von `9` Stunden mit
+Seed `1` und `11` Stunden mit Seed `2`. Als Referenz wird ihr Mittelwert
+`(9 + 11) / 2 = 10` Stunden gespeichert. Wie diese Referenz in die Bewertung
+eines späteren Laufs eingeht, zeigt das
+[Rechenbeispiel in Schritt 3](#globale-gewichte-in-optimizationpy).
 
-- **8 Stunden:** `8 / 10 = 0.8` → kürzere Produktionsdauer als die
-  durchschnittliche Baseline-Dauer.
-- **12 Stunden:** `12 / 10 = 1.2` → längere Produktionsdauer als die
-  durchschnittliche Baseline-Dauer.
-
-**Ergebnis dieses Schritts:** feste Vergleichsmaßstäbe für die Zeitkennzahlen
+**Ergebnis dieses Schritts:** feste Baseline-Referenzwerte für die Zeitkennzahlen
 aller folgenden Läufe, einschließlich des
 [Abschlussvergleichs](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
 <a id="baseline-technik"></a>
 
 #### Technische Umsetzung: Seeds
-
-##### Rolle des Seeds im Simulationsablauf
 
 Während eines Simulationslaufs wiederholt sich dieser Ablauf:
 
@@ -2157,7 +2146,9 @@ und Folgezustände erzeugen. Verglichen wird, welche dieser Aktionsfolgen
 insgesamt bessere [Produktionsergebnisse](#produktionskennzahlen) liefert,
 etwa eine kürzere Produktionsdauer oder weniger Verspätung.
 
-### 2. Varianten der lokalen Gewichte erstellen
+<a id="2-varianten-der-lokalen-gewichte-erstellen"></a>
+
+### 2. Varianten des lokalen Gewichtssatzes erstellen
 
 Die Suche startet in `optimization.py` mit dem Standardgewichtssatz
 `HeuristicWeights()`. In jeder Suchrunde stellt
@@ -2219,45 +2210,32 @@ zunächst folgende Sätze erzeugt:
 **Vor der Simulation werden innerhalb jeder Suchrunde identische
 Gewichtssätze entfernt.** Stimmen alle Gewichte zweier Sätze überein,
 bleibt nur der erste Satz erhalten.
-Mit den aktuellen Standardgewichten bleiben in der ersten Suchrunde
+Mit dem aktuellen Standardgewichtssatz bleiben in der ersten Suchrunde
 **53 unterschiedliche Gewichtssätze**, die jeweils mit allen Seeds geprüft werden.
 
-Eine **Iteration (Suchrunde der Optimierung)** beginnt mit dem Erstellen
-von Gewichtssätzen. Diese werden mit allen vorgesehenen Seeds simuliert
-und bewertet. Anschließend wird der beste geprüfte Gewichtssatz ausgewählt.
-
-`ITERATIONS = 2` bedeutet höchstens zwei solcher Suchrunden. Die zweite
-Suchrunde geht vom besten Gewichtssatz der ersten Runde aus. Mit den
-aktuellen Einstellungen sind damit höchstens **107 Gewichtssatz-Prüfungen**
-möglich: 53 in der ersten und höchstens 54 in der zweiten Runde.
+Bei den aktuell zwei Suchrunden sind höchstens **107 Gewichtssatz-Prüfungen**
+möglich: 53 in der ersten und höchstens 54 in der zweiten Runde. Wie der
+Ausgangssatz für die nächste Runde ausgewählt wird, erklärt
+[Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
 Die Zahl entfernter Doppelungen kann sich zwischen den Runden ändern;
 die Fortschrittsanzeige verwendet jeweils die bereinigte Anzahl.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
-[simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) werden.
+[simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten) werden.
 
-### 3. Produktion mit jedem Gewichtssatz mehrfach simulieren und bewerten
+<a id="3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten"></a>
 
-Jetzt wird geprüft, welche Produktionsergebnisse die in
-[Schritt 2](#2-varianten-der-lokalen-gewichte-erstellen) erstellten
-Gewichtssätze erreichen. Die Prüfung erfolgt für jeden Gewichtssatz in
-derselben Reihenfolge:
+### 3. Produktion mit jedem Gewichtssatz einmal pro Seed simulieren und bewerten
 
-1. Die Produktion einmal pro [Seed aus `SEEDS`](#baseline-technik)
-   vollständig simulieren.
-2. Aus den Produktionskennzahlen jedes Laufs eine
-   [globale Bewertungszahl](#globale-bewertungszahl) berechnen.
-3. Aus diesen Bewertungszahlen den
-   [Mittelwert für den Gewichtssatz](#mittelwert-über-die-seeds) bilden.
-
-Erst danach wird der nächste Gewichtssatz geprüft. Identische Gewichtssätze
-werden innerhalb einer Suchrunde nur einmal berücksichtigt.
+Die in [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
+erstellten Gewichtssätze werden nacheinander geprüft. Für jeden Satz werden
+zuerst alle Produktionsläufe mit den Seeds aus `SEEDS` ausgeführt und
+bewertet. Danach wird sein [Mittelwert](#mittelwert-über-die-seeds) gebildet.
 
 #### Simulationslauf und Produktionskennzahlen
 
-Für jeden Seed beginnt ein neuer Produktionslauf mit derselben Layout- und
-Szenariokonfiguration. Die Simulationsumgebung und ihre Komponenten werden
-neu aufgebaut; der Seed legt den Startwert für die Zufallszahlengeneratoren fest.
+Für jeden Lauf werden die Simulationsumgebung und ihre Komponenten mit
+derselben Layout- und Szenariokonfiguration neu aufgebaut.
 
 Der getestete Gewichtssatz bleibt während des gesamten Laufs unverändert.
 Die Steuerung trifft damit wiederholt Entscheidungen, bis die Produktion
@@ -2315,7 +2293,7 @@ Bewertungszahl pro Lauf** zusammen. Anders als beim Aktionsscore gilt hier:
 Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 
 - **Zeiten:** Jede Zeitkennzahl wird durch ihren eigenen
-  [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-standardgewichten-simulieren)
+  [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren)
   geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
   Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
   gleich der Referenz, ein kleinerer Wert eine kürzere Zeit.
@@ -2422,16 +2400,16 @@ sequenceDiagram
     participant Sim as Simulationskern<br/>mit heuristischer Policy
     participant Evaluation as GlobalSimulation<br/>Evaluation
 
-    Note over Optimizer,Evaluation: Ein fester lokaler Gewichtssatz und feste globale Maßstäbe
+    Note over Optimizer,Evaluation: Gewichtssatz, globale Gewichte und Baseline-Referenzwerte bleiben fest
     loop Jeder Seed aus SEEDS
         Optimizer->>Runner: runner(weights, seed)
         Runner->>Sim: Lauf neu aufbauen und env.run() starten
-        Note over Sim: Kandidaten wiederholt bewerten und Aktionen ausführen
+        Note over Sim: Aktionskandidaten wiederholt bewerten und Aktionen ausführen
         Sim-->>Runner: Simulationslauf beendet
         Runner->>Runner: collect_global_metrics()
         Runner-->>Optimizer: GlobalSimulationMetrics
         Optimizer->>Evaluation: Lauf global bewerten
-        Evaluation-->>Optimizer: objective_value_seed
+        Evaluation-->>Optimizer: Globale Bewertungszahl dieses Laufs
     end
     Optimizer->>Optimizer: mean_global_cost berechnen<br/>aus allen Seed-Ergebnissen
 ```
@@ -2440,56 +2418,96 @@ sequenceDiagram
 
 ### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
-`select_best_local_weight_set_across_seeds()` vergleicht die
-[`mean_global_cost`-Werte](#mittelwert-über-die-seeds) aller Gewichtssätze der Runde und wählt den
-kleinsten. `optimize_iteratively()` legt anschließend fest, wie es weitergeht:
+Aus den Ergebnissen von [Schritt 3](#mittelwert-über-die-seeds) wird der
+Gewichtssatz mit dem kleinsten `mean_global_cost` ausgewählt. In der ersten
+Suchrunde wird dieser Satz als bisher bester gespeichert. In späteren
+Runden wird geprüft, ob der Rundenbeste besser ist als der bisher beste Satz:
 
-- **Verbesserung:** Ist dies der bisher beste Satz, wird er gespeichert und
-  zum Ausgangspunkt der nächsten Runde. Die Schrittweite wird halbiert.
-  Die erste Runde legt erstmals einen besten Satz fest.
-- **Keine Verbesserung:** Der zuletzt verbesserte Satz bleibt Ausgangspunkt;
-  die erfolglosen Runden werden gezählt.
-- **Neustart:** Nach `restart_after_no_improvement` erfolglosen Runden
-  beginnt die Suche erneut am zuletzt verbesserten Satz. Die Schrittweite
-  wird auf ihren Anfangswert zurückgesetzt.
-- **Ende:** Die Suche endet spätestens nach `iterations` Runden oder nach
-  `stop_after_no_improvement` erfolglosen Runden seit der letzten
-  Verbesserung. Ein Neustart setzt diesen Abbruchzähler nicht zurück.
+- **Kleinerer Mittelwert:** Der neue Satz wird übernommen und ist der
+  Ausgangspunkt für die nächste Suchrunde. Die Schrittweite wird halbiert,
+  damit die nächsten Einzelvarianten näher an diesem Satz liegen.
+- **Gleicher oder größerer Mittelwert:** Der bisher beste Satz bleibt
+  erhalten. Auch die Schrittweite bleibt zunächst unverändert.
 
-Bei einer weiteren Runde geht der Ablauf zu [Schritt 2](#2-varianten-der-lokalen-gewichte-erstellen)
-zurück. Nach dem Ende liefert `WeightOptimizationResult` unter anderem
+**Fortsetzung des Rechenbeispiels:** In Runde 1 wird Gewichtssatz B mit
+`mean_global_cost = 10.7` ausgewählt. Die anfängliche Schrittweite `0.4`
+wird auf `0.2` halbiert. In Runde 2 werden Varianten von B und neue
+Zufallssätze geprüft. Erreicht dabei beispielsweise ein Satz C den
+Mittelwert `10.5`, ersetzt C den Satz B. Erreicht kein Satz einen Wert unter
+`10.7`, bleibt B der beste Satz.
+
+Mit der aktuellen Einstellung `ITERATIONS = 2` endet die Suche nach diesen
+beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
+[Schritt 5](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)
+überprüft.
+
+<details>
+<summary>Weitere Suchrunden: Neustart, vorzeitiges Ende und Rückgabewerte im Code</summary>
+
+`select_best_local_weight_set_across_seeds()` ermittelt den besten Satz
+einer Runde. `optimize_iteratively()` speichert den bisher besten Satz und
+steuert die nächsten Runden. Bei einer Verbesserung werden die Schrittweite
+halbiert und die Zähler erfolgloser Runden zurückgesetzt. Das geschieht
+auch nach der ersten Runde, die erstmals einen besten Satz festlegt.
+
+Bei mehr Suchrunden können zusätzlich diese Regeln greifen:
+
+- **Neustart:** Nach `RESTART_AFTER_NO_IMPROVEMENT = 2` aufeinanderfolgenden
+  Runden ohne Verbesserung wird die Schrittweite auf ihren Anfangswert
+  zurückgesetzt. Ausgangspunkt bleibt der bisher beste Gewichtssatz; die
+  Suche beginnt nicht wieder mit dem Standardgewichtssatz. Der Zähler bis
+  zum nächsten Neustart beginnt erneut bei `0`.
+- **Vorzeitiges Ende:** Nach `STOP_AFTER_NO_IMPROVEMENT = 4` Runden ohne
+  Verbesserung seit der letzten Verbesserung endet die Suche. Ein Neustart
+  setzt diesen Abbruchzähler nicht zurück. Diese Prüfung erfolgt vor der
+  Neustartprüfung.
+- **Maximale Rundenzahl:** Unabhängig davon endet die Suche spätestens nach
+  der in `ITERATIONS` eingestellten Anzahl von Runden.
+
+Bei den aktuell zwei Runden können Neustart und vorzeitiges Ende noch nicht
+ausgelöst werden: Die erste Runde legt den besten Satz fest, danach bleibt
+nur eine weitere Runde.
+
+Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
 `best_weights`, `best_mean_global_cost` und `best_evaluation`.
-In `evaluations` speichert `optimize_iteratively()` die jeweils
-verbesserten Lösungen, nicht jeden getesteten Kandidaten.
+`optimize_iteratively()` speichert in `evaluations` die erste ausgewählte
+Lösung und spätere Verbesserungen. Die
+[Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen alle
+abgeschlossenen Gewichtssatz-Prüfungen.
+
+</details>
 
 ### 5. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
-Erst nach der Gewichtssuche vergleicht `_benchmark_policies()` drei
-Steuerungen auf denselben separaten `BENCHMARK_SEEDS`:
+Jetzt wird geprüft, ob der gefundene Gewichtssatz auch bei **bisher nicht
+für die Gewichtssuche verwendeten Seeds** bessere Produktionsergebnisse
+erzielt. Dafür werden die separaten `BENCHMARK_SEEDS` verwendet, aktuell
+`[101, 102, 103, 104, 105]`. Auf jedem dieser Test-Seeds werden drei
+Steuerungen ausgeführt:
 
-- **`Random`:** Die [Zufallspolicy](#randompolicy-zufällige-vergleichssteuerung)
-  wählt gleichverteilt unter Nicht-Warteaktionen und wartet nur als Fallback.
-  Sie verwendet keine heuristischen Scores.
-- **`Heuristic (default)`:** Die Heuristik verwendet die unveränderten
-  Standardgewichte.
-- **`Heuristic (optimized)`:** Dieselbe Heuristik verwendet den besten
-  während der Suche gefundenen Gewichtssatz.
+| Anzeige im Interface | Verwendete Steuerung |
+| --- | --- |
+| `Random` | Die [Zufallspolicy](#randompolicy-zufällige-vergleichssteuerung) wählt ohne heuristische Scores gleichverteilt unter den verfügbaren Nicht-Warteaktionen. Warten wird nur gewählt, wenn keine solche Aktion verfügbar ist. |
+| `Heuristic (default)` | Die heuristische Steuerung mit dem Standardgewichtssatz `HeuristicWeights()`. |
+| `Heuristic (optimized)` | Dieselbe heuristische Steuerung mit dem besten Gewichtssatz aus der Suche. |
 
-Diese Test-Seeds gehen nicht in die Gewichtsauswahl ein. Alle drei
-Steuerungen verwenden dasselbe Layout, dasselbe Szenario und dieselben
-globalen Gewichte und Referenzwerte. Für die Zufallspolicy führt der Runner
-`run_policy(RandomPolicy(seed), seed)` aus; für die Heuristiken
-`runner(weights, seed)`. Simulationskern und Kennzahlenerfassung sind gleich.
+Alle drei Steuerungen verwenden dasselbe Layout, dasselbe Szenario,
+dieselben Test-Seeds sowie dieselben globalen Gewichte und
+Baseline-Referenzwerte. Die Test-Ergebnisse ändern den ausgewählten
+Gewichtssatz nicht mehr.
 
-Das Interface zeigt die Kennzahlen je Test-Seed und ihre Mittelwerte.
-Damit werden zwei Fragen geprüft: Ist die Heuristik besser als die
-Zufallsreferenz, und verbessert die Gewichtssuche die Standardheuristik?
+Im Interface zeigt eine **Tabelle die Mittelwerte** der Produktionskennzahlen
+und der globalen Bewertungszahl je Steuerung. Die zugehörigen Diagramme
+zeigen die Ergebnisse **für jeden einzelnen Test-Seed**. Damit lässt sich
+prüfen, ob die Heuristik die Zufallspolicy übertrifft und ob der gefundene
+Gewichtssatz die Standardheuristik verbessert.
 
-„Optimized“ bezeichnet den ausgewählten Gewichtssatz, **keinen garantierten
-Vorteil auf neuen Seeds und kein nachgewiesenes globales Optimum**.
-Die aktuell fünf Test-Seeds (`101` bis `105`) sind ein Einstieg.
-Für belastbare Aussagen sollten mehr Seeds sowie unterschiedliche Layouts
-und Szenarien verglichen werden.
+Der Name `Heuristic (optimized)` bezeichnet den während der Suche ausgewählten
+Gewichtssatz. Ob er auf den Test-Seeds tatsächlich besser ist, zeigen erst
+die Ergebnisse; ein Vorteil oder ein globales Optimum ist nicht garantiert.
+
+**Ergebnis dieses Schritts:** ein Vergleich der drei Steuerungen auf
+separaten Testläufen.
 
 ### Beteiligte Dateien
 
@@ -2517,16 +2535,17 @@ Objekt (`runner(weights, seed)`) an den Optimierer. Außerdem wird die
 globale Bewertung mit dem Optimierer verbunden.
 
 Beim Klick auf **Start optimization** setzt `_start_optimization()`
-den vorherigen Ergebniszustand zurück und startet einen Worker-Thread.
-Dieser führt Referenzläufe, Gewichtssuche und Abschlussvergleich aus.
+den vorherigen Ergebniszustand zurück. Ein Worker-Thread
+(Hintergrundausführung) führt den
+[beschriebenen Ablauf](#gesamter-optimierungsablauf) aus. Der
+`progress`-Callback (Rückmeldefunktion) überträgt den Fortschritt und die
+fertigen Bewertungen an das Streamlit-Interface.
 
-Der `progress`-Callback meldet die aktuelle Runde, den geprüften
-Gewichtssatz (`Kandidat x/y`) und dessen fertige Bewertung. Das
-Streamlit-Interface liest diesen Zustand und aktualisiert Status,
-Fortschrittsbalken und Zwischen-Diagramme. Die
-[Kostenkurve](#bedeutung-der-kostenkurve) verwendet die
-Bewertungen **aller** geprüften Kandidaten, nicht nur die im
-Optimierungsergebnis gespeicherten Verbesserungen.
+Für den Abschlussvergleich ruft `_benchmark_policies()` für jede
+Steuerung und jeden Test-Seed den Runner auf: bei der Zufallspolicy über
+`run_policy(RandomPolicy(seed), seed)`, bei den Heuristiken über
+`runner(weights, seed)`. `compare_baseline_optimized()` bildet die
+Mittelwerte für die Ergebnistabelle und zeichnet die Kennzahlen je Test-Seed.
 
 </details>
 
@@ -2543,15 +2562,9 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 2. Ohne gesetzte Umgebungsvariable `SPINEML_MODEL_FILE` verwendet die
    Anwendung `example-1.py`. Oben im Interface steht der tatsächlich geladene
    Dateiname, zum Beispiel `Example: example-1.py`.
-3. Auf **Start optimization** klicken. Zuerst wird die Baseline mit den
-   unveränderten lokalen `HeuristicWeights` für alle Seeds berechnet.
-4. Danach werden die lokalen Gewichtssätze iterativ geprüft. Währenddessen
-   zeigt das Interface live die aktuelle Runde, den getesteten Gewichtssatz
-   (`Kandidat x/y`), den Fortschrittsbalken und die Diagramme an.
-5. Nach der Suche werden Zufallspolicy, Standardheuristik und optimierte
-   Heuristik auf denselben separaten Test-Seeds ausgeführt. Anschließend zeigt
-   das Interface den Vergleich `Random` / `Heuristic (default)` /
-   `Heuristic (optimized)`.
+3. Auf **Start optimization** klicken. Das Interface führt den
+   [gesamten Optimierungsablauf](#gesamter-optimierungsablauf) aus und zeigt
+   den [Fortschritt und die Ergebnisse](#fortschritt-und-ergebnisdiagramme).
 
 Ein anderes Beispiel kann vor dem Start in PowerShell gewählt werden:
 
@@ -2566,35 +2579,76 @@ Alternativ startet ein vorbereiteter Einstieg ein bestimmtes Beispiel:
 python sources/examples/optimization/example-0-optimize.py
 ```
 
-Die Suchparameter stehen oben in `sources/optimization.py`:
-`SEEDS`, `BENCHMARK_SEEDS`, `ITERATIONS`, `INITIAL_WEIGHT_STEP`,
-`EXPLORATION_CANDIDATES`, `RESTART_AFTER_NO_IMPROVEMENT` und
-`STOP_AFTER_NO_IMPROVEMENT`. `SEEDS` dient der Gewichtssuche;
-`BENCHMARK_SEEDS` enthält davon getrennte Test-Seeds für den Abschlussvergleich.
-Die übrigen Parameter steuern die maximale
-Rundenzahl, die Änderungsschrittweite, zusätzliche Zufallskandidaten sowie
-Neustart und Abbruch bei ausbleibender Verbesserung.
+### Suchparameter
 
-### Bedeutung der Kostenkurve
+Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
+
+| Parameter | Bedeutung |
+| --- | --- |
+| `SEEDS` | Gemeinsame Seeds für die [Baseline](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und die Gewichtssuche. |
+| `BENCHMARK_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
+| `ITERATIONS` | Maximale Anzahl der Suchrunden. |
+| `INITIAL_WEIGHT_STEP` | Anfängliche Schrittweite für das [Erhöhen und Verringern einzelner Gewichte](#2-varianten-des-lokalen-gewichtssatzes-erstellen). |
+| `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Suchrunde. |
+| `RESTART_AFTER_NO_IMPROVEMENT` | Anzahl erfolgloser Runden bis zum [Zurücksetzen der Schrittweite](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen). |
+| `STOP_AFTER_NO_IMPROVEMENT` | Anzahl erfolgloser Runden seit der letzten Verbesserung bis zum vorzeitigen Ende. |
+
+### Fortschritt und Ergebnisdiagramme
+
+Während der Suche steht oberhalb der Diagramme beispielsweise
+`Optimization: round 1, candidate 9/53`. Das bedeutet: In Suchrunde `1`
+wird gerade der neunte von `53` Gewichtssätzen geprüft. Die Fortschrittsanzeige
+bezieht sich auf die **aktuelle Suchrunde**, nicht auf die gesamte Optimierung.
+
+Die drei folgenden Darstellungen verwenden dagegen eine fortlaufende
+X-Achse `Candidate`: Sie nummeriert alle abgeschlossenen Gewichtssatz-Prüfungen
+über die Suchrunden hinweg. Ein neuer Punkt erscheint, wenn die Läufe mit
+allen Seeds für diesen Gewichtssatz ausgewertet sind. Die Verbindungslinien
+zeigen nur die Prüfreihenfolge.
+
+#### Bedeutung der Kostenkurve
 
 Die Kurve **Mean global cost** (mittlere globale Bewertungszahl) zeigt die
-Bewertung der bisher geprüften lokalen Gewichtssätze. „Kosten“ bezeichnet
-hier die berechnete Vergleichszahl, keinen Geldbetrag.
+[Gesamtbewertung](#mittelwert-über-die-seeds) jedes geprüften Gewichtssatzes.
+Die Y-Achse enthält seinen `mean_global_cost`; **kleiner ist besser**.
+„Kosten“ meint hier die berechnete Bewertungszahl, keinen Geldbetrag.
 
-- Die **X-Achse** (`Candidate`) gibt die Reihenfolge der geprüften lokalen
-  Gewichtssätze an. Die Nummerierung läuft über die bisher bewerteten Sätze und
-  wird nicht bei jeder Runde zurückgesetzt.
-- Die **Y-Achse** (`Mean global cost`) zeigt den jeweiligen
-  `mean_global_cost`. Dieser Wert ist der Mittelwert der globalen
-  Bewertungszahlen über alle Seeds für genau diesen lokalen Gewichtssatz.
-- Jeder Punkt entsteht erst, nachdem dieser lokale Gewichtssatz mit allen
-  Seeds simuliert und bewertet wurde.
-- Ein niedriger Punkt ist besser, weil die globale Bewertungszahl minimiert
-  wird. Ein hoher Punkt bedeutet, dass dieser lokale Gewichtssatz im Mittel
-  schlechtere globale Simulationsergebnisse liefert.
-- Die Linie verbindet die Punkte nur in ihrer Prüf-Reihenfolge. Sie stellt
-  keine zusätzliche Berechnung zwischen den Gewichtssätzen dar.
+Die Kurve muss nicht stetig sinken: Sie zeigt alle geprüften Gewichtssätze,
+nicht nur Verbesserungen. Ein schlechterer Versuch ersetzt den bisher
+besten Satz nicht automatisch.
 
-Die aktuelle Runde und der Fortschritt innerhalb dieser Runde stehen zusätzlich
-oberhalb der Diagramme, zum Beispiel
-`Optimization: round 1, candidate 9/53`.
+#### Einzelne Produktionskennzahlen
+
+**Mean metrics per candidate** zeigt für jede dargestellte
+[Produktionskennzahl](#produktionskennzahlen) ein eigenes Diagramm. Auf der
+Y-Achse steht jeweils ihr Mittelwert über die Seeds, beispielsweise die
+mittlere Produktionsdauer oder die mittlere Ausschussquote.
+
+Die Zeitkennzahlen stehen in Stunden, die Jobanzahlen als Anzahl und die
+Quoten in Prozent. Jedes Diagramm hat eine eigene Y-Skala. Dadurch lässt
+sich erkennen, bei welchen Zielen sich Gewichtssätze unterscheiden.
+Beispielsweise kann ein Satz kürzere Produktionszeiten, aber eine höhere
+Ausschussquote erreichen. Wie diese Ziele gemeinsam bewertet werden,
+bestimmt die [globale Bewertungszahl](#globale-bewertungszahl).
+
+#### Abweichung gegenüber dem ersten Gewichtssatz
+
+**Metric deviation from candidate 1** zeigt, wie stark sich die einzelnen
+Kennzahlmittelwerte gegenüber dem **ersten geprüften Gewichtssatz** verändern.
+In der aktuellen Suche ist das der Standardgewichtssatz.
+
+Für einen Ausgangswert ungleich `0` gilt:
+
+`Abweichung (%) = (Kennzahlmittelwert − Ausgangswert) / |Ausgangswert| × 100`
+
+**Beispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8` Stunden,
+ist die Abweichung `(8 − 10) / 10 × 100 = −20 %`. Ein negativer Wert bedeutet
+eine Verringerung, ein positiver Wert eine Erhöhung. Ob das vorteilhaft ist,
+hängt von der Kennzahl ab: Weniger Verspätung ist günstig, eine geringere
+Intaktquote dagegen nicht.
+
+**Darstellungsgrenze bei Ausgangswert `0`:** Dafür ist keine prozentuale
+Abweichung berechenbar. Der aktuelle Code zeichnet für diese Kennzahl
+durchgehend `0 %`, auch wenn spätere Gewichtssätze andere Werte erreichen.
+Für diesen Fall sind die Werte im
+[Kennzahlendiagramm](#einzelne-produktionskennzahlen) maßgeblich.

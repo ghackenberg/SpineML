@@ -2015,22 +2015,60 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ### Gesamtablauf der Optimierung
 
-Die lokalen Gewichte beeinflussen, welche Aktion die Steuerung auswählt.
-Beim Ablegen eines Jobs kann beispielsweise ein naher Puffer wenig freien
-Platz haben, ein weiter entfernter dagegen mehr. Die Gewichte legen fest,
-wie wichtig Transportzeit und freie Kapazität im Verhältnis zueinander sind.
-Eine andere Gewichtung kann deshalb zu einer anderen Aktionsauswahl führen.
+Die lokalen Gewichte bestimmen, wie stark die einzelnen Teilwerte im
+Aktionsscore zählen. Ein naher Puffer kann beispielsweise wenig freien
+Platz haben, ein weiter entfernter dagegen mehr. Je nachdem, ob Transportzeit
+oder freie Kapazität stärker gewichtet wird, kann die Steuerung ein anderes
+Ablageziel bevorzugen.
 
-Welche Gewichtung für die gesamte Produktion günstig ist, lässt sich im
-Voraus nicht einfach festlegen. Deshalb wird die Produktion mit jeder
-lokalen Gewichtung einmal pro [Seed](#baseline-technik) vollständig simuliert.
-Für alle Gewichtungen wird dieselbe Liste mit mehreren Seeds verwendet. Die Ergebnisse
-werden anhand derselben [festgelegten Produktionsziele](#globale-gewichte-in-optimizationpy) verglichen.
-**Ziel ist eine Gewichtung, mit der die heuristische Steuerung im Mittel
-bessere Produktionsergebnisse erzielt.**
+**Ziel der Optimierung ist ein Gewichtssatz, mit dem die heuristische
+Steuerung im Mittel bessere Produktionsergebnisse erzielt.** Welche
+Gewichtung dafür günstig ist, lässt sich nicht an einer einzelnen
+Aktionsentscheidung erkennen. Deshalb werden unterschiedliche Gewichtssätze
+anhand vollständiger Produktionsläufe verglichen.
 
-Das Diagramm zeigt den gesamten Ablauf. Die anschließenden Abschnitte
-erklären seine Schritte **in derselben Reihenfolge**.
+#### Gewichtssätze mit denselben Seeds vergleichen
+
+Für jeden Gewichtssatz wird die Produktion einmal pro [Seed](#baseline-technik)
+vollständig simuliert. **Alle Gewichtssätze werden mit derselben Seed-Liste
+getestet.** Aus den Ergebnissen jedes Laufs wird anhand derselben
+[Produktionsziele](#globale-gewichte-in-optimizationpy) eine
+[globale Bewertungszahl](#globale-bewertungszahl) berechnet. Anschließend
+wird für jeden Gewichtssatz der [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds)
+gebildet.
+
+Das folgende Beispiel zeigt zwei Gewichtssätze und zwei Seeds. Jeder Zweig
+steht für einen eigenen vollständigen Simulationslauf:
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 220
+    nodeSpacing: 25
+    rankSpacing: 30
+---
+flowchart LR
+    W1["Gewichtssatz 1"] --> A1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
+    W1 --> A2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
+    A1 --> M1["Mittelwert der Bewertungen<br/>für Gewichtssatz 1"]
+    A2 --> M1
+
+    W2["Gewichtssatz 2"] --> B1["Lauf mit Seed 1<br/>→ globale Bewertungszahl"]
+    W2 --> B2["Lauf mit Seed 2<br/>→ globale Bewertungszahl"]
+    B1 --> M2["Mittelwert der Bewertungen<br/>für Gewichtssatz 2"]
+    B2 --> M2
+```
+
+**Der Gewichtssatz mit dem kleineren Mittelwert wird bevorzugt.** Verglichen
+werden die Bewertungen vollständiger Produktionsläufe, nicht die Scores
+einzelner Aktionen.
+
+#### Gesamter Optimierungsablauf
+
+Das folgende Diagramm zeigt die gesamte Gewichtssuche. Der oben erklärte
+Vergleich gehört zu den Schritten 3 und 4. Die anschließenden Abschnitte
+erklären alle Schritte **in derselben Reihenfolge**.
 
 ```mermaid
 ---

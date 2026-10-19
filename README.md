@@ -2204,7 +2204,14 @@ lokalen Gewichte**, auch wenn nur eines davon geändert wird.
 
 `1 Ausgangssatz + 2 × 25 Einzelvarianten + 3 Zufallssätze = 54 Gewichtssätze`
 
-Bei `ITERATIONS = 2` sind damit bis zu **108 Gewichtssatz-Prüfungen** vorgesehen.
+Eine **Iteration (Suchrunde der Optimierung)** beginnt mit dem Erstellen
+von Gewichtssätzen. Diese werden mit allen vorgesehenen Seeds simuliert
+und bewertet. Anschließend wird der beste geprüfte Gewichtssatz ausgewählt.
+
+`ITERATIONS = 2` bedeutet höchstens zwei solcher Suchrunden. Die zweite
+Suchrunde geht vom besten Gewichtssatz der ersten Runde aus. Damit sind
+bis zu **108 Gewichtssatz-Prüfungen** vorgesehen.
+
 Gleiche Sätze werden nicht aussortiert: Die 54 Sätze der ersten Suchrunde
 enthalten mit den aktuellen Standardgewichten 53 unterschiedliche Sätze.
 Das liegt daran, dass `complete_job_weight` bereits `1.0` ist; seine nach

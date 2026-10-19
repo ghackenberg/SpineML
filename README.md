@@ -2228,9 +2228,12 @@ die Fortschrittsanzeige verwendet jeweils die bereinigte Anzahl.
 ### 3. Produktion mit jedem Gewichtssatz einmal pro Seed simulieren und bewerten
 
 Die in [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
-erstellten Gewichtssätze werden nacheinander geprüft. Für jeden Satz werden
-zuerst alle Produktionsläufe mit den Seeds aus `SEEDS` ausgeführt und
-bewertet. Danach wird sein [Mittelwert](#mittelwert-über-die-seeds) gebildet.
+erstellten Gewichtssätze werden nacheinander geprüft. Jeder Gewichtssatz
+wird einmal pro Seed aus `SEEDS` in einem vollständigen Produktionslauf
+getestet. Für jeden Lauf wird eine
+[globale Bewertungszahl](#globale-bewertungszahl) berechnet. Nach allen
+Läufen wird für diesen Gewichtssatz der
+[Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds) gebildet.
 
 #### Simulationslauf und Produktionskennzahlen
 

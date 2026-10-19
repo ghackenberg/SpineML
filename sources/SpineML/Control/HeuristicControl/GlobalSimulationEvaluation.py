@@ -62,7 +62,7 @@ class GlobalSimulationMetrics:
 
 @dataclass(frozen=True)
 class GlobalSimulationWeights:
-    """Weights of the global objective function to minimize."""
+    """Weights of decision-related time, rework and final-quality objectives."""
 
     makespan: float
     total_tardiness: float
@@ -71,9 +71,6 @@ class GlobalSimulationWeights:
     blocking_time: float
     rework_job_penalty: float
     scrap_job_penalty: float
-    unfinished_jobs: float
-    defect_job_penalty: float = 0.0
-    non_intact_penalty: float = 0.0
     downgrade_job_penalty: float = 0.0
 
 
@@ -138,7 +135,7 @@ class GlobalSimulationEvaluation:
         self,
         metrics: GlobalSimulationMetrics,
     ) -> dict[str, float]:
-        """Scale time values relative to the baseline and keep quality rates direct."""
+        """Prepare only scored time values and rework, scrap and downgrade rates."""
         if self.baseline_reference_values is None:
             raise RuntimeError(
                 "Baseline reference values are missing. Call "
@@ -170,9 +167,6 @@ class GlobalSimulationEvaluation:
             {
                 "rework_rate": max(0.0, metrics.rework_rate),
                 "scrap_rate": max(0.0, metrics.scrap_rate),
-                "defect_rate": max(0.0, metrics.defect_rate),
-                "non_intact_rate": max(0.0, 1.0 - metrics.intact_rate),
-                "unfinished_rate": max(0.0, metrics.unfinished_rate),
                 "downgrade_rate": max(0.0, metrics.downgrade_rate),
             }
         )
@@ -196,9 +190,6 @@ class GlobalSimulationEvaluation:
             * relative_metrics["rework_rate"]
             + self.weights.scrap_job_penalty
             * relative_metrics["scrap_rate"]
-            + self.weights.unfinished_jobs * relative_metrics["unfinished_rate"]
-            + self.weights.defect_job_penalty * relative_metrics["defect_rate"]
-            + self.weights.non_intact_penalty * relative_metrics["non_intact_rate"]
             + self.weights.downgrade_job_penalty
             * relative_metrics["downgrade_rate"]
         )

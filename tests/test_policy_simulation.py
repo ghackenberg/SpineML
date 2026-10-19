@@ -61,3 +61,10 @@ def test_heuristic_runner_remains_reproducible(small_runner):
 
     assert_completed(first)
     assert first == second
+
+
+def test_incomplete_run_is_still_rejected_without_an_unfinished_job_penalty(small_runner):
+    small_runner.till = 0.01
+
+    with pytest.raises(RuntimeError, match=r"job\(s\) were still unfinished"):
+        small_runner(HeuristicWeights(), seed=101)

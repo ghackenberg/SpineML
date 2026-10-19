@@ -31,6 +31,24 @@ EXPLORATION_CANDIDATES = 3
 RESTART_AFTER_NO_IMPROVEMENT = 2
 STOP_AFTER_NO_IMPROVEMENT = 4
 
+# Diese Kennzahlen gehen in die globale Bewertung ein.
+SCORED_METRICS = (
+    "Makespan",
+    "Tardiness",
+    "Transport time",
+    "Tool change time",
+    "Blocking time",
+    "Rework rate (%)",
+    "Scrap rate (%)",
+    "Downgrade rate (%)",
+)
+# Diese Kennzahlen werden nur zur Einordnung und Vollständigkeitsprüfung erfasst.
+INFORMATIONAL_METRICS = (
+    "Unfinished jobs",
+    "Intact rate (%)",
+    "Defect rate (%)",
+)
+
 
 # Sucht die angegebene Beispieldatei in den möglichen Projektordnern und gibt
 # ihren vollständigen Pfad zurück; die Datei wird dabei noch nicht ausgeführt.
@@ -202,12 +220,6 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
             rework_job_penalty=3.0,
             # Strafe für den Anteil der Jobs, die als Scrap endeten.
             scrap_job_penalty=4.0,
-            # Strafe für den Anteil der Jobs, die nicht fertiggestellt wurden.
-            unfinished_jobs=20.0,
-            # Strafe für den Anteil der Jobs, bei denen ein Defect auftrat.
-            defect_job_penalty=3.0,
-            # Penalize the share of jobs that did not finish intact.
-            non_intact_penalty=3.0,
             # Penalize the share of downgraded jobs.
             downgrade_job_penalty=3.0,
         )
@@ -219,7 +231,7 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
 @st.cache_resource
 # Erstellt den Optimierer aus dem ausgewählten Beispielmodell.
 def create_optimizer(model_file: str, model_stamp: int):
-    """Lädt ein Beispiel und erstellt den Optimierer für Layout und Szenario."""
+    """Lädt ein Beispiel und erstellt den Optimierer mit den acht globalen Zielen."""
     del model_stamp
     # Sucht die ausgewählte Beispieldatei und liefert ihren vollständigen Pfad.
     model_path = _resolve_model_path(model_file)
@@ -288,6 +300,7 @@ def mean_metrics_per_candidate(metrics, container=None):
     frame = pd.DataFrame(metrics)
     frame = frame.melt(
         id_vars=["Candidate"],
+        value_vars=SCORED_METRICS,
         var_name="Metric",
         value_name="Value",
     )
@@ -317,20 +330,8 @@ def mean_metrics_per_candidate(metrics, container=None):
 def metric_deviation_from_candidate_1(metrics, container=None):
     if not metrics:
         return
-    frame = pd.DataFrame(metrics)
-    metric_names = [
-        "Makespan",
-        "Tardiness",
-        "Transport time",
-        "Unfinished jobs",
-        "Intact rate (%)",
-        "Defect rate (%)",
-        "Scrap rate (%)",
-        "Rework rate (%)",
-        "Unfinished rate (%)",
-        "Downgrade rate (%)",
-    ]
-    for name in metric_names:
+    frame = pd.DataFrame(metrics)[["Candidate", *SCORED_METRICS]].copy()
+    for name in SCORED_METRICS:
         baseline = float(frame[name].iloc[0])
         if baseline == 0.0:
             frame[name] = 0.0
@@ -380,15 +381,7 @@ def compare_baseline_optimized(benchmark):
 
     frame = pd.DataFrame(rows)
     metric_names = [
-        "Makespan",
-        "Tardiness",
-        "Transport time",
-        "Unfinished jobs",
-        "Intact rate (%)",
-        "Defect rate (%)",
-        "Scrap rate (%)",
-        "Rework rate (%)",
-        "Downgrade rate (%)",
+        *SCORED_METRICS,
         "Weighted sum of metrics relative to baseline",
     ]
     mean_frame = frame.groupby(
@@ -405,6 +398,7 @@ def compare_baseline_optimized(benchmark):
 
     chart_frame = frame.melt(
         id_vars=["Seed", "Control"],
+        value_vars=metric_names,
         var_name="Metric",
         value_name="Value",
     )
@@ -428,6 +422,12 @@ def compare_baseline_optimized(benchmark):
         .interactive()
     )
     st.altair_chart(chart, use_container_width=True)
+
+    with st.expander("Additional information (not part of global cost)"):
+        information_frame = frame.groupby(
+            "Control", as_index=False,
+        )[list(INFORMATIONAL_METRICS)].mean()
+        st.dataframe(information_frame, use_container_width=True, hide_index=True)
 
 
 # Sammelt Kennzahlen für Gewichte oder eine Policy auf den angegebenen Seeds.
@@ -490,6 +490,8 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
             "Makespan": metrics.makespan,
             "Tardiness": metrics.total_tardiness,
             "Transport time": metrics.total_transport_time,
+            "Tool change time": metrics.tool_change_time,
+            "Blocking time": metrics.blocking_time,
             "Unfinished jobs": metrics.unfinished_jobs,
             "Intact rate (%)": metrics.intact_rate * 100.0,
             "Defect rate (%)": metrics.defect_rate * 100.0,
@@ -586,6 +588,14 @@ def _start_optimization(state, optimizer):
                 metrics_by_seed,
                 "total_transport_time",
             ),
+            "Tool change time": _mean_metric(
+                metrics_by_seed,
+                "tool_change_time",
+            ),
+            "Blocking time": _mean_metric(
+                metrics_by_seed,
+                "blocking_time",
+            ),
             "Unfinished jobs": _mean_metric(
                 metrics_by_seed,
                 "unfinished_jobs",
@@ -609,10 +619,6 @@ def _start_optimization(state, optimizer):
             "Downgrade rate (%)": _mean_metric(
                 metrics_by_seed,
                 "downgrade_rate",
-            ) * 100.0,
-            "Unfinished rate (%)": _mean_metric(
-                metrics_by_seed,
-                "unfinished_rate",
             ) * 100.0,
         }
         state["metrics"].append(metric_row)

@@ -2303,6 +2303,12 @@ fasst `GlobalSimulationEvaluation` die Kennzahlen zu **einer globalen
 Bewertungszahl pro Lauf** zusammen. Anders als beim Aktionsscore gilt hier:
 **Je kleiner die Bewertungszahl, desto besser wird das Produktionsergebnis bewertet.**
 
+In die Bewertung gehen **fünf Zeitkennzahlen** sowie **Nacharbeits-,
+Ausschuss- und Herabstufungsquote** ein. Sie erfassen den Zeitaufwand und
+die Folgen der Steuerungsentscheidungen. Defekt- und Intaktquote werden
+weiterhin zur Information erfasst, aber nicht zusätzlich bestraft.
+Unfertige Jobs bleiben eine Vollständigkeitsprüfung, kein Bewertungsbeitrag.
+
 Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 
 - **Zeiten:** Jede Zeitkennzahl wird durch ihren eigenen
@@ -2310,11 +2316,12 @@ Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
   geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
   Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
   gleich der Referenz, ein kleinerer Wert eine kürzere Zeit.
-- **Jobanteile:** Die betreffende Anzahl wird durch die Gesamtzahl der
-  Jobs geteilt. Beispielsweise ergeben `20` Ausschussentscheidungen bei
-  `100` Jobs die Ausschussrate `20 / 100 = 0.2`. Für nicht intakte Jobs
-  verwendet der Code `1 − intact_rate`. Diese Raten werden nicht durch
-  Baseline-Referenzwerte geteilt.
+- **Nacharbeit, Ausschuss und Herabstufung:** Die betreffende Anzahl wird
+  durch die Gesamtzahl der Jobs geteilt. Beispielsweise ergeben `20`
+  Ausschussentscheidungen bei `100` Jobs die Ausschussrate
+  `20 / 100 = 0.2`. Diese drei Raten werden nicht durch
+  Baseline-Referenzwerte geteilt. Nacharbeit wird dabei als zusätzlicher
+  Aufwand neben den Zeitkennzahlen berücksichtigt.
 
 Danach wird jeder Wert mit seinem [globalen Gewicht](#globale-gewichte-in-optimizationpy)
 multipliziert. Die Produkte werden addiert:
@@ -2332,8 +2339,7 @@ Die Laufdaten und Referenzwerte sind für das Rechenbeispiel gewählt, keine
 gemessenen Optimierungsergebnisse. Alle Zeitangaben sind in Stunden.
 
 Von `100` abgeschlossenen Jobs wurden `10` nachgearbeitet, `20` als Ausschuss
-behandelt und `10` herabgestuft. Insgesamt hatten `40` Jobs einen erkannten
-Defekt; am Ende sind `80` Jobs im Zustand `intact`.
+behandelt und `10` herabgestuft.
 
 | Kennzahl | Umrechnung im Beispiel | Globales Gewicht | Beitrag zur Bewertungszahl |
 | --- | --- | --- | --- |
@@ -2344,14 +2350,11 @@ Defekt; am Ende sind `80` Jobs im Zustand `intact`.
 | Blockierzeit | `0 / 1 = 0` | `1.0` | `0` |
 | Nacharbeitsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
 | Ausschussquote | `20 / 100 = 0.2` | `4.0` | `0.8` |
-| Unfertigquote | `0 / 100 = 0` | `20.0` | `0` |
-| Historische Defektquote | `40 / 100 = 0.4` | `3.0` | `1.2` |
-| Anteil nicht intakter Jobs | `1 − 80 / 100 = 0.2` | `3.0` | `0.6` |
 | Herabstufungsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
 
 Die Bewertungszahl dieses Laufs ist die Summe der letzten Spalte:
 
-`4.0 + 2.0 + 0.75 + 0.5 + 0 + 0.3 + 0.8 + 0 + 1.2 + 0.6 + 0.3 = 10.45`
+`4.0 + 2.0 + 0.75 + 0.5 + 0 + 0.3 + 0.8 + 0.3 = 8.65`
 
 Ein höheres globales Gewicht lässt die betreffende Kennzahl stärker in die
 Bewertung eingehen. Steigt beispielsweise die Ausschussrate um `0.1`, erhöht
@@ -2368,13 +2371,13 @@ einen Gewichtssatz durchlaufen, berechnet
 `mean_global_cost = Summe(globale Bewertungszahl je Seed) / Anzahl der Seeds`
 
 **Fortsetzung des Beispiels:** Mit Seed `1` erreicht Gewichtssatz A die oben
-berechnete Bewertungszahl `10.45`. Angenommen, sein Lauf mit Seed `2` erreicht
-`11.55` und Gewichtssatz B erzielt `10.8` beziehungsweise `10.6`:
+berechnete Bewertungszahl `8.65`. Angenommen, sein Lauf mit Seed `2` erreicht
+`9.55` und Gewichtssatz B erzielt `8.9` beziehungsweise `8.7`:
 
 | Gewichtssatz | Bewertungszahl bei Seed `1` | Bewertungszahl bei Seed `2` | Mittelwert `mean_global_cost` |
 | --- | --- | --- | --- |
-| A | `10.45` | `11.55` | `(10.45 + 11.55) / 2 = 11.0` |
-| B | `10.8` | `10.6` | `(10.8 + 10.6) / 2 = 10.7` |
+| A | `8.65` | `9.55` | `(8.65 + 9.55) / 2 = 9.1` |
+| B | `8.9` | `8.7` | `(8.9 + 8.7) / 2 = 8.8` |
 
 Gewichtssatz A ist bei Seed `1` besser, Gewichtssatz B erreicht aber den
 kleineren Mittelwert. Für den anschließenden Vergleich ist deshalb B besser.
@@ -2443,11 +2446,11 @@ Runden wird geprüft, ob der Rundenbeste besser ist als der bisher beste Satz:
   erhalten. Auch die Schrittweite bleibt zunächst unverändert.
 
 **Fortsetzung des Rechenbeispiels:** In Runde 1 wird Gewichtssatz B mit
-`mean_global_cost = 10.7` ausgewählt. Die anfängliche Schrittweite `0.4`
+`mean_global_cost = 8.8` ausgewählt. Die anfängliche Schrittweite `0.4`
 wird auf `0.2` halbiert. In Runde 2 werden Varianten von B und neue
 Zufallssätze geprüft. Erreicht dabei beispielsweise ein Satz C den
-Mittelwert `10.5`, ersetzt C den Satz B. Erreicht kein Satz einen Wert unter
-`10.7`, bleibt B der beste Satz.
+Mittelwert `8.6`, ersetzt C den Satz B. Erreicht kein Satz einen Wert unter
+`8.8`, bleibt B der beste Satz.
 
 Mit der aktuellen Einstellung `ITERATIONS = 2` endet die Suche nach diesen
 beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
@@ -2509,9 +2512,11 @@ dieselben Test-Seeds sowie dieselben globalen Gewichte und
 Baseline-Referenzwerte. Die Test-Ergebnisse ändern den ausgewählten
 Gewichtssatz nicht mehr.
 
-Im Interface zeigt eine **Tabelle die Mittelwerte** der Produktionskennzahlen
-und der globalen Bewertungszahl je Steuerung. Die zugehörigen Diagramme
-zeigen die Ergebnisse **für jeden einzelnen Test-Seed**. Damit lässt sich
+Im Interface zeigt eine **Tabelle die Mittelwerte** der acht bewerteten
+Produktionskennzahlen und der globalen Bewertungszahl je Steuerung. Die
+zugehörigen Diagramme zeigen die Ergebnisse **für jeden einzelnen Test-Seed**.
+Defekt- und Intaktquote sowie die Anzahl unfertiger Jobs stehen getrennt
+unter **Additional information (not part of global cost)**. Damit lässt sich
 prüfen, ob die Heuristik die Zufallspolicy übertrifft und ob der gefundene
 Gewichtssatz die Standardheuristik verbessert.
 
@@ -2632,13 +2637,13 @@ besten Satz nicht automatisch.
 
 #### Einzelne Produktionskennzahlen
 
-**Mean metrics per candidate** zeigt für jede dargestellte
-[Produktionskennzahl](#produktionskennzahlen) ein eigenes Diagramm. Auf der
+**Mean metrics per candidate** zeigt für jede der acht
+[bewerteten Produktionskennzahlen](#globale-bewertungszahl) ein eigenes Diagramm. Auf der
 Y-Achse steht jeweils ihr Mittelwert über die Seeds, beispielsweise die
 mittlere Produktionsdauer oder die mittlere Ausschussquote.
 
-Die Zeitkennzahlen stehen in Stunden, die Jobanzahlen als Anzahl und die
-Quoten in Prozent. Jedes Diagramm hat eine eigene Y-Skala. Dadurch lässt
+Die Zeitkennzahlen stehen in Stunden, die drei Quoten in Prozent.
+Jedes Diagramm hat eine eigene Y-Skala. Dadurch lässt
 sich erkennen, bei welchen Zielen sich Gewichtssätze unterscheiden.
 Beispielsweise kann ein Satz kürzere Produktionszeiten, aber eine höhere
 Ausschussquote erreichen. Wie diese Ziele gemeinsam bewertet werden,
@@ -2657,8 +2662,9 @@ Für einen Ausgangswert ungleich `0` gilt:
 **Beispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8` Stunden,
 ist die Abweichung `(8 − 10) / 10 × 100 = −20 %`. Ein negativer Wert bedeutet
 eine Verringerung, ein positiver Wert eine Erhöhung. Ob das vorteilhaft ist,
-hängt von der Kennzahl ab: Weniger Verspätung ist günstig, eine geringere
-Intaktquote dagegen nicht.
+hängt von der Kennzahl und dem Produktionsziel ab. Weniger Verspätung ist
+günstig; eine niedrigere Nacharbeitsquote allein beweist dagegen noch keine
+bessere Steuerung, wenn dafür mehr Ausschuss oder Herabstufung entsteht.
 
 **Darstellungsgrenze bei Ausgangswert `0`:** Dafür ist keine prozentuale
 Abweichung berechenbar. Der aktuelle Code zeichnet für diese Kennzahl

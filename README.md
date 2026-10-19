@@ -2164,32 +2164,32 @@ durch null geteilt.
 
 ### 2. Varianten der lokalen Gewichte erstellen
 
-Die Suche startet in `optimization.py` mit den Standardgewichten.
-`LocalHeuristicWeightOptimizer.optimize_iteratively()` erstellt in jeder
-Suchrunde weitere Gewichtssätze. **Jeder erzeugte Gewichtssatz enthält alle
-lokalen Gewichte aus `HeuristicWeights`** und wird in vollständigen
-Simulationsläufen getestet. Wird nur ein Gewicht geändert, bleiben die
-übrigen Gewichte im Gewichtssatz unverändert enthalten.
+Die Suche startet in `optimization.py` mit dem Standardgewichtssatz
+`HeuristicWeights()`. In jeder Suchrunde stellt
+`LocalHeuristicWeightOptimizer.optimize_iteratively()` die zu prüfenden
+Gewichtssätze auf zwei Arten zusammen. **Jeder Gewichtssatz enthält alle
+lokalen Gewichte**, auch wenn nur eines davon geändert wird.
 
-- `neighboring_weights()` übernimmt den aktuellen Satz unverändert und
-  erzeugt für jedes Gewicht eine kleinere und eine größere Variante:
-  `Gewicht − Schrittweite` beziehungsweise `Gewicht + Schrittweite`.
-  Die Werte bleiben im erlaubten Bereich `(0, 1]`.
-- `random_local_weight_candidates()` erstellt zusätzliche Gewichtssätze,
-  indem für jedes Gewicht ein neuer Zufallswert gezogen wird. Die Werte
-  liegen zwischen `0.000001` und `1.0`. Für `wait_action_weight` wird nur
-  zwischen `0.000001` und `0.1` gezogen. Dieser kleinere Suchbereich gilt
-  nur für dieses Gewicht in den zusätzlichen Zufallsvarianten; er begrenzt
-  nicht den fertigen Score einer Warteaktion.
+1. **Einzelne Gewichte verändern: `neighboring_weights()`**
 
-Diese Suche verändert Gewichte, nicht die Bewertungsformeln. Ein anderer
-Gewichtssatz kann beispielsweise dazu führen, dass andere Jobs, Ablageziele
-oder Defektstrategien bevorzugt werden.
+   Der aktuelle Gewichtssatz bleibt als Vergleich enthalten. Zusätzlich
+   werden für jedes Gewicht zwei Varianten erstellt: eine mit
+   `Gewicht − Schrittweite` und eine mit `Gewicht + Schrittweite`.
+   Alle anderen Gewichte werden unverändert übernommen. Die veränderten
+   Werte bleiben zwischen `0.000001` und `1.0`.
 
-Mit zufälligen Gewichtssätzen werden weitere Varianten geprüft.
-Das ist von der [Exploration des `ActionSelector`](#actionselector) zu unterscheiden: Dieser
-kann **während eines Laufs** eine fast gleich gut bewertete Aktion wählen,
-verändert dabei aber keine Gewichte.
+   **Beispiel:** Bei Schrittweite `0.4` wird das Transportzeitgewicht
+   `pick_short_transport_time_weight` von `0.3` auf `0.7` erhöht.
+   Daraus entsteht ein neuer vollständiger Gewichtssatz; nur dieses eine
+   Gewicht unterscheidet sich vom Ausgangssatz.
+
+2. **Weitere Gewichtssätze zufällig zusammenstellen: `random_local_weight_candidates()`**
+
+   Hier erhält jedes Gewicht einen neu gezogenen Zufallswert. So entstehen
+   zusätzliche Gewichtssätze, bei denen mehrere Gewichte gleichzeitig
+   vom Ausgangssatz abweichen können. Der Zufallsbereich reicht von
+   `0.000001` bis `1.0`; nur für `wait_action_weight` verwendet diese Methode
+   den kleineren Bereich von `0.000001` bis `0.1`.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
 [simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) werden.

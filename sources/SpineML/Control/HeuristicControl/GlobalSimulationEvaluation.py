@@ -117,10 +117,10 @@ class GlobalSimulationEvaluation:
 
             return total_value / len(baseline_metrics)
 
-        mean_makespan = mean_value("makespan")
-        # Verwendet den mittleren Baseline-Makespan, mindestens jedoch 1.0,
-        # damit die spätere relative Skalierung sicher durch einen positiven Wert teilt.
-        baseline_makespan_reference_value = max(mean_makespan, 1.0)
+        # Verwendet den mittleren Baseline-Makespan unverändert als Referenz.
+        baseline_makespan_reference_value = mean_value("makespan")
+        if baseline_makespan_reference_value == 0.0:
+            raise ValueError("The baseline mean makespan must not be zero.")
 
         # Liefert den Baseline-Mittelwert eines Zeitwerts; bei null wird der
         # Fallback verwendet, damit später nicht durch null geteilt wird.
@@ -132,7 +132,7 @@ class GlobalSimulationEvaluation:
 
         # Speichert für jede globale Zeitkennzahl ihren Referenzwert aus der Baseline.
         self.baseline_reference_values = {
-            # Mittlerer Baseline-Makespan, mindestens 1.0.
+            # Mittlerer Baseline-Makespan.
             "makespan": baseline_makespan_reference_value,
             "total_tardiness": time_scale("total_tardiness"),
             "total_transport_time": time_scale("total_transport_time"),

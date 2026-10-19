@@ -2084,16 +2084,47 @@ aller folgenden Läufe, einschließlich des
 
 <a id="baseline-technik"></a>
 
-<details>
-<summary>Technische Umsetzung: Seeds, Referenzberechnung und Nullfälle</summary>
+#### Technische Umsetzung: Seeds, Referenzberechnung und Nullfälle
+
+##### Rolle des Seeds im Simulationsablauf
+
+Während eines Simulationslaufs wiederholt sich dieser Ablauf:
+
+`Zustand → Policy entscheidet → Simulation führt Aktion aus → neuer Zustand`
+
+Der neue Zustand entsteht nicht allein durch die Entscheidung. Auch
+Zufallseinflüsse können die Ausführung beeinflussen, etwa Schwankungen der
+Robotergeschwindigkeit oder das Auftreten eines Defekts. Schematisch gilt:
+
+`Neuer Zustand = bisheriger Zustand + Auswirkungen der gewählten Aktion + gegebenenfalls Zufallseinflüsse`
+
+Ein **Seed (Startwert für die Zufallszahlengeneratoren)** macht die
+Zufallsziehungen reproduzierbar. `SpineMLSimulationRunner` setzt ihn beim
+Aufbau jedes vollständigen Simulationslaufs, nicht bei jeder Entscheidung
+erneut. Bei gleicher Konfiguration, gleicher Policy und demselben
+Gewichtssatz lässt sich damit derselbe Lauf wiederholen. Der Gewichtssatz
+bleibt während dieses Laufs unverändert.
+
+##### Warum werden dieselben Seeds für verschiedene Gewichtungen verwendet?
 
 Für die Baseline-Läufe und die anschließende
 [Gewichtssuche](#2-varianten-der-lokalen-gewichte-erstellen) wird dieselbe
-Liste `SEEDS` verwendet. Ein **Seed (Startwert für die Zufallszahlengeneratoren)**
-macht einen Lauf bei gleicher Konfiguration und gleicher Policy
-reproduzierbar. Mehrere Seeds berücksichtigen unterschiedliche Zufallsverläufe.
-Ein Seed ist kein Simulationszustand; unterschiedliche Policies können mit
-demselben Seed unterschiedliche Zustände durchlaufen.
+Liste `SEEDS` verwendet, derzeit `[1, 2]`. Jede Gewichtung wird also einmal
+mit Seed `1` und einmal mit Seed `2` in einem vollständigen Produktionslauf
+getestet. So werden die Gewichtungen nicht jeweils mit anderen zufälligen
+Startbedingungen verglichen, etwa unterschiedlich ausgelosten
+Maschinengeschwindigkeiten. Mehrere Seeds prüfen zusätzlich, wie die
+Gewichtungen unter verschiedenen Zufallseinflüssen abschneiden. Für die
+Auswahl zählt der [Mittelwert ihrer globalen Bewertungszahlen](#mittelwert-über-die-seeds).
+
+**Derselbe Seed erzwingt jedoch keine identischen Zustände:** Andere
+Gewichtungen können andere Aktionen bevorzugen und dadurch andere
+Folgezustände erzeugen. Verglichen werden deshalb die Ergebnisse der
+vollständigen Produktionsläufe, nicht dieselben einzelnen Zustände.
+Der Seed verbessert die Gewichte nicht selbst; er macht ihre Tests
+wiederholbar.
+
+##### Referenzberechnung und Nullfälle
 
 `GlobalSimulationEvaluation.calculate_baseline_reference_values()` berechnet
 für jede Zeitkennzahl den Mittelwert über die Baseline-Läufe und speichert
@@ -2105,8 +2136,6 @@ Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die
 Makespan-Referenz verwendet. Dadurch wird bei der
 [späteren Bewertung](#globale-bewertungszahl) nicht
 durch null geteilt.
-
-</details>
 
 ### 2. Varianten der lokalen Gewichte erstellen
 

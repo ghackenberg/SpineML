@@ -2022,8 +2022,9 @@ wie wichtig Transportzeit und freie Kapazität im Verhältnis zueinander sind.
 Eine andere Gewichtung kann deshalb zu einer anderen Aktionsauswahl führen.
 
 Welche Gewichtung für die gesamte Produktion günstig ist, lässt sich im
-Voraus nicht einfach festlegen. Deshalb wird die Produktion mit
-unterschiedlichen lokalen Gewichtungen mehrfach simuliert. Die Ergebnisse
+Voraus nicht einfach festlegen. Deshalb wird die Produktion mit jeder
+lokalen Gewichtung einmal pro [Seed](#baseline-technik) vollständig simuliert.
+Für alle Gewichtungen wird dieselbe Liste mit mehreren Seeds verwendet. Die Ergebnisse
 werden anhand derselben [festgelegten Produktionsziele](#globale-gewichte-in-optimizationpy) verglichen.
 **Ziel ist eine Gewichtung, mit der die heuristische Steuerung im Mittel
 bessere Produktionsergebnisse erzielt.**

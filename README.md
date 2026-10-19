@@ -1963,7 +1963,7 @@ und die Standardgewichte aus `HeuristicWeights`.
    Einlagerzeit, Maschinenwarteschlangenlänge und Operationsdauer ab. Der freie
    Kapazitätsanteil ergibt sich aus `freie Plätze / Gesamtkapazität`. Für alle
    Teilwerte gilt damit dieselbe Vorteilsrichtung: Höher ist vorteilhafter.
-3. **Gewichtung:** Die Tabelle zeigt die tatsächlich verwendeten
+3. **Gewichtssatz:** Die Tabelle zeigt die tatsächlich verwendeten
    Standardgewichte. Die Kapazität bezieht sich auf den **Korridorpuffer**, die
    Warteschlangenlänge dagegen auf den **Eingangspuffer der Zielmaschine**.
 4. **Gesamtscore:** `calculate_action_score()` addiert die gewichteten
@@ -2075,20 +2075,20 @@ config:
 ---
 flowchart TD
     A["1. Produktion mit Standardgewichten simulieren<br/>Vergleichsmaßstab aus Ergebnissen berechnen"]
-    A --> B["2. Andere lokale Gewichtungen erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
-    B --> C["3. Produktion mit jeder Gewichtung mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
-    C --> D["4. Gewichtung mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
+    A --> B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
+    B --> C["3. Produktion mit jedem Gewichtssatz mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
+    C --> D["4. Gewichtssatz mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
     D --> E{"Weitere Suchrunde?"}
     E -- Ja --> B
-    E -- Nein --> F["5. Gefundene Gewichtung überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
+    E -- Nein --> F["5. Gefundenen Gewichtssatz überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
 ```
 
 Direkt zu den Details:
 [1. Standardgewichte simulieren](#1-produktion-mit-standardgewichten-simulieren) ·
 [2. Gewichte variieren](#2-varianten-der-lokalen-gewichte-erstellen) ·
-[3. Varianten simulieren und bewerten](#3-produktion-mit-jeder-gewichtung-mehrfach-simulieren-und-bewerten) ·
-[4. Gewichtung auswählen](#4-gewichtung-anhand-der-mittleren-produktionsergebnisse-auswählen) ·
-[5. Steuerungen vergleichen](#5-gefundene-gewichtung-mit-standardheuristik-und-zufall-vergleichen).
+[3. Varianten simulieren und bewerten](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) ·
+[4. Gewichtssatz auswählen](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen) ·
+[5. Steuerungen vergleichen](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
 ### 1. Produktion mit Standardgewichten simulieren
 
@@ -2099,7 +2099,7 @@ simuliert: aktuell einmal mit Seed `1` und einmal mit Seed `2`, jeweils mit
 den Standardgewichten. **Dieselbe Seed-Liste wird anschließend für jeden
 anderen Gewichtssatz verwendet.** Diese Läufe mit Standardgewichten bilden
 die **Baseline (Vergleichsbasis)** und liefern feste Bezugspunkte für spätere
-Läufe mit anderen Gewichtungen.
+Läufe mit anderen Gewichtssätzen.
 
 **Beispiel:** Mit Standardgewichten beträgt die Produktionsdauer ([`makespan`](#produktionskennzahlen))
 im Durchschnitt **10 Stunden**. Diese `10` werden als Referenz gespeichert.
@@ -2112,7 +2112,7 @@ Ein späterer Lauf mit anderen Gewichten benötigt:
 
 **Ergebnis dieses Schritts:** feste Vergleichsmaßstäbe für die Zeitkennzahlen
 aller folgenden Läufe, einschließlich des
-[Abschlussvergleichs](#5-gefundene-gewichtung-mit-standardheuristik-und-zufall-vergleichen).
+[Abschlussvergleichs](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
 <a id="baseline-technik"></a>
 
@@ -2146,13 +2146,13 @@ Derselbe Seed garantiert dabei nicht, dass jeder einzelne Vorgang in beiden
 Läufen denselben Zufallswert erhält: Bei einer anderen Ereignisreihenfolge
 können Zufallswerte anderen Vorgängen zugeordnet werden.
 
-##### Warum werden dieselben Seeds für verschiedene Gewichtungen verwendet?
+##### Warum werden dieselben Seeds für verschiedene Gewichtssätze verwendet?
 
 Für die Baseline-Läufe und die anschließende
 [Gewichtssuche](#2-varianten-der-lokalen-gewichte-erstellen) wird dieselbe
-Liste `SEEDS` verwendet, derzeit `[1, 2]`. Jede Gewichtung wird also einmal
+Liste `SEEDS` verwendet, derzeit `[1, 2]`. Jeder Gewichtssatz wird also einmal
 mit Seed `1` und einmal mit Seed `2` in einem vollständigen Produktionslauf
-getestet. Mehrere gemeinsame Seeds prüfen, wie die Gewichtungen unter
+getestet. Mehrere gemeinsame Seeds prüfen, wie die Gewichtssätze unter
 verschiedenen Zufallseinflüssen abschneiden. Für die Auswahl zählt der
 [Mittelwert ihrer globalen Bewertungszahlen](#mittelwert-über-die-seeds):
 Der Gewichtssatz mit dem kleineren Mittelwert wird bevorzugt.
@@ -2173,8 +2173,8 @@ durch null geteilt.
 ### 2. Varianten der lokalen Gewichte erstellen
 
 `LocalHeuristicWeightOptimizer.optimize_iteratively()` beginnt mit den
-Standardgewichten. Für eine Suchrunde werden mehrere Varianten der lokalen
-Gewichtung erstellt. Jede Variante ist ein **vollständiger Gewichtssatz
+Standardgewichten. Für eine Suchrunde werden mehrere Varianten des lokalen
+Gewichtssatzes erstellt. Jede Variante ist ein **vollständiger Gewichtssatz
 (`HeuristicWeights`)** und wird hier als Kandidat bezeichnet, nicht als
 einzelner Aktionskandidat der Simulation.
 
@@ -2190,15 +2190,15 @@ Diese Suche verändert Gewichte, nicht die Bewertungsformeln. Ein anderer
 Gewichtssatz kann beispielsweise dazu führen, dass andere Jobs, Ablageziele
 oder Defektstrategien bevorzugt werden.
 
-Die zufälligen Gewichtssätze dienen der Erkundung weiterer Gewichtungen.
+Mit zufälligen Gewichtssätzen werden weitere Varianten geprüft.
 Das ist von der [Exploration des `ActionSelector`](#actionselector) zu unterscheiden: Dieser
 kann **während eines Laufs** eine fast gleich gut bewertete Aktion wählen,
 verändert dabei aber keine Gewichte.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
-[simuliert und bewertet](#3-produktion-mit-jeder-gewichtung-mehrfach-simulieren-und-bewerten) werden.
+[simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) werden.
 
-### 3. Produktion mit jeder Gewichtung mehrfach simulieren und bewerten
+### 3. Produktion mit jedem Gewichtssatz mehrfach simulieren und bewerten
 
 `select_best_local_weight_set_across_seeds()` lässt jeden Kandidaten durch
 `evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
@@ -2332,7 +2332,7 @@ und seine Bewertung.
 
 **Ergebnis dieses Schritts:** ein `mean_global_cost` pro geprüftem
 Gewichtssatz als Grundlage für die
-[Auswahl einer Gewichtung](#4-gewichtung-anhand-der-mittleren-produktionsergebnisse-auswählen).
+[Auswahl eines Gewichtssatzes](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
 
 <details>
 <summary>Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)</summary>
@@ -2365,7 +2365,7 @@ sequenceDiagram
 
 </details>
 
-### 4. Gewichtung anhand der mittleren Produktionsergebnisse auswählen
+### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
 `select_best_local_weight_set_across_seeds()` vergleicht die
 [`mean_global_cost`-Werte](#mittelwert-über-die-seeds) aller Gewichtssätze der Runde und wählt den
@@ -2389,7 +2389,7 @@ zurück. Nach dem Ende liefert `WeightOptimizationResult` unter anderem
 In `evaluations` speichert `optimize_iteratively()` die jeweils
 verbesserten Lösungen, nicht jeden getesteten Kandidaten.
 
-### 5. Gefundene Gewichtung mit Standardheuristik und Zufall vergleichen
+### 5. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
 Erst nach der Gewichtssuche vergleicht `_benchmark_policies()` drei
 Steuerungen auf denselben separaten `BENCHMARK_SEEDS`:

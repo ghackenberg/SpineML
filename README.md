@@ -2120,7 +2120,7 @@ aller folgenden Läufe, einschließlich des
 
 <a id="baseline-technik"></a>
 
-#### Technische Umsetzung: Seeds, Referenzberechnung und Nullfälle
+#### Technische Umsetzung: Seeds
 
 ##### Rolle des Seeds im Simulationsablauf
 
@@ -2145,23 +2145,6 @@ anschließend andere Aktionen bevorzugen und dadurch andere Aktionsfolgen
 und Folgezustände erzeugen. Verglichen wird, welche dieser Aktionsfolgen
 insgesamt bessere [Produktionsergebnisse](#produktionskennzahlen) liefert,
 etwa eine kürzere Produktionsdauer oder weniger Verspätung.
-
-##### Referenzberechnung und Nullfälle
-
-`GlobalSimulationEvaluation.calculate_baseline_reference_values()` berechnet
-für jede Zeitkennzahl den Mittelwert über die Baseline-Läufe und speichert
-daraus die Referenzwerte. Die Baseline verwendet die Standardheuristik,
-nicht die Zufallspolicy.
-
-Für jede Zeitkennzahl wird ausschließlich ihr eigener Baseline-Mittelwert
-unverändert als Referenz verwendet.
-Ist einer dieser Mittelwerte `0`, löst die Methode einen `ValueError` mit
-dem Namen der betroffenen Kennzahl aus. Die Optimierung bricht dann ab,
-weil diese Referenz bei der [späteren Bewertung](#globale-bewertungszahl)
-nicht als Divisor verwendet werden kann.
-
-Das gilt auch bei gültigen Produktionsergebnissen ohne Verspätung,
-Werkzeugwechsel oder Blockierung, wenn die entsprechende Baseline-Zeit `0` ist.
 
 ### 2. Varianten der lokalen Gewichte erstellen
 

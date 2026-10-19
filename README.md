@@ -2134,24 +2134,28 @@ Ein **Seed (Startwert für die Zufallszahlengeneratoren)** macht die
 Zufallsziehungen reproduzierbar. `SpineMLSimulationRunner` setzt ihn beim
 Aufbau jedes vollständigen Simulationslaufs.
 
+**Der Zufall wird dadurch nicht entfernt.** Bei demselben Seed werden
+beispielsweise die anfänglichen Maschinengeschwindigkeiten für zwei
+Gewichtssätze gleich ausgelost. Unterschiedliche Gewichtssätze können
+anschließend andere Aktionen bevorzugen und dadurch andere Aktionsfolgen
+und Folgezustände erzeugen. Verglichen wird, welche dieser Aktionsfolgen
+insgesamt bessere [Produktionsergebnisse](#produktionskennzahlen) liefert,
+etwa eine kürzere Produktionsdauer oder weniger Verspätung.
+
+Derselbe Seed garantiert dabei nicht, dass jeder einzelne Vorgang in beiden
+Läufen denselben Zufallswert erhält: Bei einer anderen Ereignisreihenfolge
+können Zufallswerte anderen Vorgängen zugeordnet werden.
+
 ##### Warum werden dieselben Seeds für verschiedene Gewichtungen verwendet?
 
 Für die Baseline-Läufe und die anschließende
 [Gewichtssuche](#2-varianten-der-lokalen-gewichte-erstellen) wird dieselbe
 Liste `SEEDS` verwendet, derzeit `[1, 2]`. Jede Gewichtung wird also einmal
 mit Seed `1` und einmal mit Seed `2` in einem vollständigen Produktionslauf
-getestet. So werden die Gewichtungen nicht jeweils mit anderen zufälligen
-Startbedingungen verglichen, etwa unterschiedlich ausgelosten
-Maschinengeschwindigkeiten. Mehrere Seeds prüfen zusätzlich, wie die
-Gewichtungen unter verschiedenen Zufallseinflüssen abschneiden. Für die
-Auswahl zählt der [Mittelwert ihrer globalen Bewertungszahlen](#mittelwert-über-die-seeds).
-
-**Derselbe Seed erzwingt jedoch keine identischen Zustände:** Andere
-Gewichtungen können andere Aktionen bevorzugen und dadurch andere
-Folgezustände erzeugen. Verglichen werden deshalb die Ergebnisse der
-vollständigen Produktionsläufe, nicht dieselben einzelnen Zustände.
-Der Seed verbessert die Gewichte nicht selbst; er macht ihre Tests
-wiederholbar.
+getestet. Mehrere gemeinsame Seeds prüfen, wie die Gewichtungen unter
+verschiedenen Zufallseinflüssen abschneiden. Für die Auswahl zählt der
+[Mittelwert ihrer globalen Bewertungszahlen](#mittelwert-über-die-seeds):
+Der Gewichtssatz mit dem kleineren Mittelwert wird bevorzugt.
 
 ##### Referenzberechnung und Nullfälle
 

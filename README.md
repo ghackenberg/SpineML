@@ -2238,34 +2238,36 @@ die Fortschrittsanzeige verwendet jeweils die bereinigte Anzahl.
 
 ### 3. Produktion mit jedem Gewichtssatz mehrfach simulieren und bewerten
 
-`select_best_local_weight_set_across_seeds()` entfernt zuerst identische
-Gewichtssätze und lässt danach jeden verbleibenden Satz durch
-`evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
-werden nacheinander alle [Seeds aus `SEEDS`](#baseline-technik) verwendet.
+Jetzt wird geprüft, welche Produktionsergebnisse die in
+[Schritt 2](#2-varianten-der-lokalen-gewichte-erstellen) erstellten
+Gewichtssätze erreichen. Die Prüfung erfolgt für jeden Gewichtssatz in
+derselben Reihenfolge:
 
-Pro Seed wird ein vollständiger Simulationslauf ausgeführt und
-[global bewertet](#globale-bewertungszahl). Erst nach allen Seeds wird der
-[Mittelwert für diesen Gewichtssatz](#mittelwert-über-die-seeds) gebildet.
-Anschließend wird der nächste Gewichtssatz genauso geprüft.
+1. Die Produktion einmal pro [Seed aus `SEEDS`](#baseline-technik)
+   vollständig simulieren.
+2. Aus den Produktionskennzahlen jedes Laufs eine
+   [globale Bewertungszahl](#globale-bewertungszahl) berechnen.
+3. Aus diesen Bewertungszahlen den
+   [Mittelwert für den Gewichtssatz](#mittelwert-über-die-seeds) bilden.
+
+Erst danach wird der nächste Gewichtssatz geprüft. Identische Gewichtssätze
+werden innerhalb einer Suchrunde nur einmal berücksichtigt.
 
 #### Simulationslauf und Produktionskennzahlen
 
-`runner(weights, seed)` ruft `SpineMLSimulationRunner.__call__()` auf.
-Für jeden Lauf entstehen eine neue Salabim-Umgebung, die heuristische Policy,
-die `SimulationBridge`, Layout, Maschinen, Roboter, Stores und Jobs. Der
-Runner setzt den Seed für Python-Zufall, Salabim und `SimMachine.QUALITY_SEED`.
+Für jeden Seed beginnt ein neuer Produktionslauf mit derselben Layout- und
+Szenariokonfiguration. Die Simulationsumgebung und ihre Komponenten werden
+neu aufgebaut; der Seed legt den Startwert für die Zufallszahlengeneratoren fest.
 
-Während dieses Laufs bleibt der Gewichtssatz fest. Bei neuen Beobachtungen
-bewertet der Evaluator die erzeugten Aktionskandidaten; der Selector bevorzugt
-einen hohen Aktionsscore. Die Bridge übergibt die ausgewählten Aktionen an die
-Simulationskomponenten.
+Der getestete Gewichtssatz bleibt während des gesamten Laufs unverändert.
+Die Steuerung trifft damit wiederholt Entscheidungen, bis die Produktion
+beendet ist. Gemessen werden anschließend die Ergebnisse des **gesamten
+Produktionslaufs**: zum Beispiel Produktionsdauer, Gesamtverspätung,
+Transportzeit sowie Nacharbeits-, Ausschuss- und Herabstufungsquote.
+Diese Ergebnisse heißen **Produktionskennzahlen**.
 
-`env.run()` führt die Simulation aus. Erkennt `SimCompletionWatcher`, dass
-alle Jobs beendet sind, kann der Lauf vor der maximalen Endzeit stoppen.
-Anschließend sammelt `collect_global_metrics()` die Produktionsergebnisse
-in einem [`GlobalSimulationMetrics`-Objekt](#produktionskennzahlen). Ein Lauf mit unfertigen Jobs wird
-vom Runner als Fehler zurückgewiesen und nicht als gültiges
-Optimierungsergebnis verwendet.
+Der Runner gibt die Kennzahlen als `GlobalSimulationMetrics` zurück.
+Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
 
 <a id="produktionskennzahlen"></a>
 
@@ -2304,70 +2306,87 @@ zur abschließenden Intaktquote zählen.
 
 #### Globale Bewertungszahl
 
-`GlobalSimulationEvaluation` macht aus den Kennzahlen eines vollständigen
-Laufs eine globale Bewertungszahl. **Hier ist ein niedriger Wert besser**,
-anders als beim Aktionsscore.
+Ein Lauf kann beispielsweise eine kurze Produktionsdauer, aber viel
+Ausschuss haben. Damit solche Ergebnisse gemeinsam verglichen werden können,
+fasst `GlobalSimulationEvaluation` die Kennzahlen zu **einer globalen
+Bewertungszahl pro Lauf** zusammen. Anders als beim Aktionsscore gilt hier:
+**Je kleiner die Bewertungszahl, desto besser wird das Produktionsergebnis bewertet.**
 
-Die Berechnung erfolgt in zwei Schritten:
+Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 
-1. `metrics_relative_to_baseline()` teilt die Zeitkennzahlen durch die
-   festen Referenzwerte aus [Schritt 1](#1-produktion-mit-standardgewichten-simulieren).
-   So entstehen dimensionslose Verhältniswerte. Bei einer positiven
-   Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert
-   eine kürzere Zeit und ein größerer Wert eine längere Zeit.
-   Das [10-Stunden-Beispiel aus Schritt 1](#1-produktion-mit-standardgewichten-simulieren)
-   zeigt diese Umrechnung.
-   Qualitäts- und Fertigstellungsraten gehen dagegen direkt ein:
-   `rework_rate`, `scrap_rate`, `defect_rate`, `unfinished_rate`,
-   `downgrade_rate` und `1 − intact_rate` als `non_intact_rate`.
-   Beispielsweise bleibt eine Ausschussrate von `0.10` gleich `0.10`;
-   sie wird nicht durch eine Baseline-Rate geteilt. Eine Rate von `0.05`
-   erhält entsprechend den kleineren Strafwert.
-2. `calculate_weighted_sum_of_metrics_relative_to_baseline()`
-   multipliziert diese Beiträge mit den festen [globalen Gewichten](#globale-gewichte-in-optimizationpy) und
-   addiert sie:
+- **Zeiten:** Jede Zeitkennzahl wird durch ihren eigenen
+  [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-standardgewichten-simulieren)
+  geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
+  Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
+  gleich der Referenz, ein kleinerer Wert eine kürzere Zeit.
+- **Jobanteile:** Die betreffende Anzahl wird durch die Gesamtzahl der
+  Jobs geteilt. Beispielsweise ergeben `20` Ausschussentscheidungen bei
+  `100` Jobs die Ausschussrate `20 / 100 = 0.2`. Für nicht intakte Jobs
+  verwendet der Code `1 − intact_rate`. Diese Raten werden nicht durch
+  Baseline-Referenzwerte geteilt.
+
+Danach wird jeder Wert mit seinem [globalen Gewicht](#globale-gewichte-in-optimizationpy)
+multipliziert. Die Produkte werden addiert:
 
 `Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
 
-Hier wird **nicht durch die Gewichtssumme geteilt**. Alle Kandidaten werden
-mit denselben globalen Gewichten und Referenzwerten beurteilt.
+Es wird **nicht durch die Gewichtssumme geteilt**. Alle Gewichtssätze werden
+mit denselben globalen Gewichten und Baseline-Referenzwerten beurteilt.
 
 ##### Globale Gewichte in `optimization.py`
 
-- **Makespan:** `makespan=5.0`.
-- **Gesamtverspätung und Ausschussquote:**
-  `total_tardiness=4.0` und `scrap_job_penalty=4.0`.
-- **Nacharbeit, historische Defekte, nicht intakte Jobs und Herabstufungen:**
-  `rework_job_penalty`, `defect_job_penalty`, `non_intact_penalty`
-  und `downgrade_job_penalty` jeweils `3.0`.
-- **Transport-, Werkzeugwechsel- und Blockierzeit:**
-  `total_transport_time`, `tool_change_time` und `blocking_time`
-  jeweils `1.0`.
-- **Unfertige Jobs:** `unfinished_jobs=20.0`. Der Runner weist unvollständige
-  Läufe bereits als Fehler zurück; in regulär zurückgegebenen Läufen ist
-  die Unfertigquote daher `0`.
+Die Tabelle zeigt die im Code festgelegten globalen Gewichte und ihre
+Anwendung auf **einen beispielhaften Lauf mit Gewichtssatz A und Seed `1`**.
+Die Laufdaten und Referenzwerte sind für das Rechenbeispiel gewählt, keine
+gemessenen Optimierungsergebnisse. Alle Zeitangaben sind in Stunden.
 
-Ein höheres globales Gewicht erhöht den Einfluss des zugehörigen Beitrags.
-Die tatsächliche Wirkung hängt aber auch von dessen Größe ab. Die Gewichte
-legen keine garantierte Rangfolge der Produktionsziele fest.
+Von `100` abgeschlossenen Jobs wurden `10` nachgearbeitet, `20` als Ausschuss
+behandelt und `10` herabgestuft. Insgesamt hatten `40` Jobs einen erkannten
+Defekt; am Ende sind `80` Jobs im Zustand `intact`.
+
+| Kennzahl | Umrechnung im Beispiel | Globales Gewicht | Beitrag zur Bewertungszahl |
+| --- | --- | --- | --- |
+| Produktionsdauer (`makespan`) | `8 / 10 = 0.8` | `5.0` | `4.0` |
+| Gesamtverspätung | `2 / 4 = 0.5` | `4.0` | `2.0` |
+| Transportzeit | `6 / 8 = 0.75` | `1.0` | `0.75` |
+| Werkzeugwechselzeit | `1 / 2 = 0.5` | `1.0` | `0.5` |
+| Blockierzeit | `0 / 1 = 0` | `1.0` | `0` |
+| Nacharbeitsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
+| Ausschussquote | `20 / 100 = 0.2` | `4.0` | `0.8` |
+| Unfertigquote | `0 / 100 = 0` | `20.0` | `0` |
+| Historische Defektquote | `40 / 100 = 0.4` | `3.0` | `1.2` |
+| Anteil nicht intakter Jobs | `1 − 80 / 100 = 0.2` | `3.0` | `0.6` |
+| Herabstufungsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
+
+Die Bewertungszahl dieses Laufs ist die Summe der letzten Spalte:
+
+`4.0 + 2.0 + 0.75 + 0.5 + 0 + 0.3 + 0.8 + 0 + 1.2 + 0.6 + 0.3 = 10.45`
+
+Ein höheres globales Gewicht lässt die betreffende Kennzahl stärker in die
+Bewertung eingehen. Steigt beispielsweise die Ausschussrate um `0.1`, erhöht
+sich die Bewertungszahl bei Gewicht `4.0` um `0.4`, wenn die anderen Beiträge
+gleich bleiben.
 
 #### Mittelwert über die Seeds
 
-Die globalen Bewertungszahlen eines Gewichtssatzes werden in
-`objective_values` gespeichert, die Rohkennzahlen in `metrics_by_seed`.
-`evaluate_local_weights_across_seeds()` bildet aus den Bewertungszahlen
-den Mittelwert `mean_global_cost`:
+Nach jedem Lauf liegt eine globale Bewertungszahl vor. Sind alle Seeds für
+einen Gewichtssatz durchlaufen, berechnet
+`evaluate_local_weights_across_seeds()` daraus den Mittelwert
+`mean_global_cost`:
 
 `mean_global_cost = Summe(globale Bewertungszahl je Seed) / Anzahl der Seeds`
 
-**Beispiel:** Gewichtssatz A erreicht bei zwei Seeds die globalen
-Bewertungszahlen `10` und `14`, Gewichtssatz B die Werte `11` und `11`.
-Dann ist `mean_global_cost(A) = 12` und `mean_global_cost(B) = 11`.
-B wird bevorzugt, obwohl A bei einem Seed besser war. Dies sind Bewertungen
-vollständiger Produktionsläufe, keine einzelnen Aktionsscores.
+**Fortsetzung des Beispiels:** Mit Seed `1` erreicht Gewichtssatz A die oben
+berechnete Bewertungszahl `10.45`. Angenommen, sein Lauf mit Seed `2` erreicht
+`11.55` und Gewichtssatz B erzielt `10.8` beziehungsweise `10.6`:
 
-Das `WeightEvaluation`-Objekt bündelt den Gewichtssatz, seine Kennzahlen
-und seine Bewertung.
+| Gewichtssatz | Bewertungszahl bei Seed `1` | Bewertungszahl bei Seed `2` | Mittelwert `mean_global_cost` |
+| --- | --- | --- | --- |
+| A | `10.45` | `11.55` | `(10.45 + 11.55) / 2 = 11.0` |
+| B | `10.8` | `10.6` | `(10.8 + 10.6) / 2 = 10.7` |
+
+Gewichtssatz A ist bei Seed `1` besser, Gewichtssatz B erreicht aber den
+kleineren Mittelwert. Für den anschließenden Vergleich ist deshalb B besser.
 
 **Ergebnis dieses Schritts:** ein `mean_global_cost` pro geprüftem
 Gewichtssatz als Grundlage für die
@@ -2376,10 +2395,25 @@ Gewichtssatz als Grundlage für die
 <details>
 <summary>Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)</summary>
 
-Dieses Diagramm zeigt ausschließlich die Prüfung **eines festen
-Gewichtssatzes** aus Schritt 3 des Gesamtablaufs: ein Lauf pro Seed,
-eine globale Bewertungszahl pro Lauf und anschließend der Mittelwert.
-Es zeigt keine zusätzliche Optimierung.
+Die beteiligten Methoden setzen die oben beschriebene Reihenfolge um:
+
+1. `select_best_local_weight_set_across_seeds()` entfernt identische
+   Gewichtssätze und ruft für jeden verbleibenden Satz
+   `evaluate_local_weights_across_seeds()` auf.
+2. Diese Methode startet für jeden Seed `runner(weights, seed)`.
+   `SpineMLSimulationRunner.__call__()` erstellt die heuristische Policy;
+   `run_policy()` setzt die Seeds, baut die Simulation auf und führt sie aus.
+   Danach erfasst `collect_global_metrics()` die Produktionskennzahlen.
+3. `metrics_relative_to_baseline()` berechnet die Verhältniswerte und Raten.
+   `calculate_weighted_sum_of_metrics_relative_to_baseline()` multipliziert
+   sie mit den globalen Gewichten und addiert die Produkte.
+4. Aus den Bewertungszahlen aller Seeds wird `mean_global_cost` gebildet.
+   Das Ergebnisobjekt `WeightEvaluation` enthält den Gewichtssatz unter
+   `weights`, die einzelnen Bewertungszahlen unter `objective_values`,
+   die Kennzahlen je Lauf unter `metrics_by_seed` und den Mittelwert unter
+   `mean_global_cost`.
+
+Das Diagramm zeigt die Prüfung **eines Gewichtssatzes**:
 
 ```mermaid
 sequenceDiagram

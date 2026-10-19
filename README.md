@@ -2110,12 +2110,6 @@ Ein späterer Lauf mit anderen Gewichten benötigt:
 - **12 Stunden:** `12 / 10 = 1.2` → längere Produktionsdauer als die
   durchschnittliche Baseline-Dauer.
 
-Die Referenz bleibt bei beiden Vergleichen **10**; sie wird nicht für jede
-neue Gewichtung neu berechnet. Solche Verhältniswerte gehen anschließend
-in die [globale Bewertung](#globale-bewertungszahl) ein. Für die anderen
-[Zeitkennzahlen](#produktionskennzahlen) — Gesamtverspätung, Transport-,
-Werkzeugwechsel- und Blockierzeit — werden jeweils eigene Referenzwerte bestimmt.
-
 **Ergebnis dieses Schritts:** feste Vergleichsmaßstäbe für die Zeitkennzahlen
 aller folgenden Läufe, einschließlich des
 [Abschlussvergleichs](#5-gefundene-gewichtung-mit-standardheuristik-und-zufall-vergleichen).

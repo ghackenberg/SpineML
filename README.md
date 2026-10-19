@@ -2375,49 +2375,6 @@ kleineren Mittelwert. Für den anschließenden Vergleich ist deshalb B besser.
 Gewichtssatz als Grundlage für die
 [Auswahl eines Gewichtssatzes](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
 
-#### Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)
-
-Die beteiligten Methoden setzen die oben beschriebene Reihenfolge um:
-
-1. `select_best_local_weight_set_across_seeds()` entfernt identische
-   Gewichtssätze und ruft für jeden verbleibenden Satz
-   `evaluate_local_weights_across_seeds()` auf.
-2. Diese Methode startet für jeden Seed `runner(weights, seed)`.
-   `SpineMLSimulationRunner.__call__()` erstellt die heuristische Policy;
-   `run_policy()` setzt die Seeds, baut die Simulation auf und führt sie aus.
-   Danach erfasst `collect_global_metrics()` die Produktionskennzahlen.
-3. `metrics_relative_to_baseline()` berechnet die Verhältniswerte und Raten.
-   `calculate_weighted_sum_of_metrics_relative_to_baseline()` multipliziert
-   sie mit den globalen Gewichten und addiert die Produkte.
-4. Aus den Bewertungszahlen aller Seeds wird `mean_global_cost` gebildet.
-   Das Ergebnisobjekt `WeightEvaluation` enthält den Gewichtssatz unter
-   `weights`, die einzelnen Bewertungszahlen unter `objective_values`,
-   die Kennzahlen je Lauf unter `metrics_by_seed` und den Mittelwert unter
-   `mean_global_cost`.
-
-Das Diagramm zeigt die Prüfung **eines Gewichtssatzes**:
-
-```mermaid
-sequenceDiagram
-    participant Optimizer as LocalHeuristic<br/>WeightOptimizer
-    participant Runner as SpineML<br/>SimulationRunner
-    participant Sim as Simulationskern<br/>mit heuristischer Policy
-    participant Evaluation as GlobalSimulation<br/>Evaluation
-
-    Note over Optimizer,Evaluation: Gewichtssatz, globale Gewichte und Baseline-Referenzwerte bleiben fest
-    loop Jeder Seed aus SEEDS
-        Optimizer->>Runner: runner(weights, seed)
-        Runner->>Sim: Lauf neu aufbauen und env.run() starten
-        Note over Sim: Aktionskandidaten wiederholt bewerten und Aktionen ausführen
-        Sim-->>Runner: Simulationslauf beendet
-        Runner->>Runner: collect_global_metrics()
-        Runner-->>Optimizer: GlobalSimulationMetrics
-        Optimizer->>Evaluation: Lauf global bewerten
-        Evaluation-->>Optimizer: Globale Bewertungszahl dieses Laufs
-    end
-    Optimizer->>Optimizer: mean_global_cost berechnen<br/>aus allen Seed-Ergebnissen
-```
-
 ### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
 Aus den Ergebnissen von [Schritt 3](#mittelwert-über-die-seeds) wird der

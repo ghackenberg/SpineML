@@ -2142,17 +2142,6 @@ und Folgezustände erzeugen. Verglichen wird, welche dieser Aktionsfolgen
 insgesamt bessere [Produktionsergebnisse](#produktionskennzahlen) liefert,
 etwa eine kürzere Produktionsdauer oder weniger Verspätung.
 
-##### Warum werden dieselben Seeds für verschiedene Gewichtssätze verwendet?
-
-Für die Baseline-Läufe und die anschließende
-[Gewichtssuche](#2-varianten-der-lokalen-gewichte-erstellen) wird dieselbe
-Liste `SEEDS` verwendet, derzeit `[1, 2]`. Jeder Gewichtssatz wird also einmal
-mit Seed `1` und einmal mit Seed `2` in einem vollständigen Produktionslauf
-getestet. Mehrere gemeinsame Seeds prüfen, wie die Gewichtssätze unter
-verschiedenen Zufallseinflüssen abschneiden. Für die Auswahl zählt der
-[Mittelwert ihrer globalen Bewertungszahlen](#mittelwert-über-die-seeds):
-Der Gewichtssatz mit dem kleineren Mittelwert wird bevorzugt.
-
 ##### Referenzberechnung und Nullfälle
 
 `GlobalSimulationEvaluation.calculate_baseline_reference_values()` berechnet

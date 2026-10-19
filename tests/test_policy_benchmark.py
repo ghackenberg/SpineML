@@ -56,7 +56,7 @@ def test_comparison_shows_all_three_controls_without_information_metrics(monkeyp
     metrics = {
         "Seed": 101,
         "Makespan": 10.0,
-        "Tardiness": 2.0,
+        "Total job tardiness": 2.0,
         "Transport time": 4.0,
         "Tool change time": 1.0,
         "Blocking time": 0.5,

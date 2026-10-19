@@ -2268,9 +2268,13 @@ Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
 - `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
   `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
   nicht der spätere Zeitpunkt, zu dem der Watcher die Simulation stoppt.
-- `total_tardiness`: Summe der positiven Verspätungen vollständig
-  abgeschlossener Aufträge. Jeder Auftrag zählt einmal mit seinem letzten
-  Jobabschluss relativ zu seiner eigenen `latest_end_time`.
+- `total_tardiness`: Summe der positiven Verspätungen aller abgeschlossenen
+  **Jobs**. Für jeden Job gilt
+  `Jobverspätung = max(0, completed_time − Deadline des zugehörigen Auftrags)`.
+  Mehrere verspätete Jobs desselben Auftrags zählen einzeln. Frühe Abschlüsse
+  verringern die Summe nicht. Beispiel: Bei Deadline `10` und Jobabschlüssen
+  `8`, `12` und `15` ist die Gesamtverspätung `0 + 2 + 5 = 7`.
+  Im Interface heißt diese Kennzahl **Total job tardiness**.
 - `total_transport_time`: Summe der Bewegungszeiten für X, Y und Z aller
   Roboter. Ein- und Auslagerungswartezeiten zählen nicht als Bewegung.
 - `tool_change_time`: Summe der Maschinenzeiten in den Zuständen

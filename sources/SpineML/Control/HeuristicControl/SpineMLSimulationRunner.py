@@ -124,8 +124,6 @@ class SpineMLSimulationRunner:
         downgraded_job_count = 0.0
         intact_jobs = 0
         defect_jobs = 0
-        order_completion_times = {}
-        unfinished_orders = set()
 
         for job in jobs:
             # Prüft, ob dieser Job mindestens einen erkannten Defect hat.
@@ -138,51 +136,28 @@ class SpineMLSimulationRunner:
                 downgraded_job_count += 1.0
             # Prüft, ob der Job noch keinen Abschlusszeitpunkt besitzt.
             if job.completed_time is None:
-                # Count the job as unfinished and remember its order.
+                # Unfertige Jobs haben noch keinen auswertbaren Abschlusszeitpunkt.
                 unfinished_jobs += 1
-                unfinished_orders.add(job.order.name)
                 # Skip completion processing for this unfinished job.
                 continue
-            else:
-                # Speichert die Abschlusszeit eines fertiggestellten Jobs.
-                completed_times.append(float(job.completed_time))
-                # Count the job as intact when its production state is intact.
-                if job.general_state.get() == "intact":
-                    intact_jobs += 1
-                # Übernimmt die Abschlusszeit für die spätere Auftragsauswertung.
-                completion_time = float(job.completed_time)
 
-            # Liest den Namen des Auftrags, zu dem der aktuelle Job gehört.
-            order_name = job.order.name
+            # Speichert die Abschlusszeit dieses Jobs für den Makespan.
+            completion_time = float(job.completed_time)
+            completed_times.append(completion_time)
+            if job.general_state.get() == "intact":
+                intact_jobs += 1
 
-            # Speichert für diesen Auftrag den spätesten Abschlusszeitpunkt
-            # aller bisher verarbeiteten fertigen Jobs.
-            order_completion_times[order_name] = max(
-                # Abschlusszeitpunkt des aktuell verarbeiteten Jobs.
-                completion_time,
-                # Bisher gespeicherter Zeitpunkt; 0.0 gilt beim ersten Job.
-                order_completion_times.get(order_name, 0.0),
+            # Jeder abgeschlossene Job zählt einzeln gegenüber der Deadline
+            # seines Auftrags. Frühe Abschlüsse gleichen keine Verspätung aus.
+            total_tardiness += max(
+                0.0,
+                completion_time - float(job.order.latest_end_time),
             )
 
             rework_job_count += (
                 1.0 if getattr(job, "rework_count", 0) > 0 else 0.0
             )
             scrap_job_count += float(getattr(job, "scrap_count", 0))
-
-        # Berechnet pro vollständig abgeschlossenem Auftrag die Verspätung anhand
-        # seines spätesten Job-Abschlusses und addiert sie zu total_tardiness.
-        for order in {job.order for job in jobs}:
-            if order.name in unfinished_orders:
-                continue
-            completion_time = order_completion_times.get(order.name)
-            if completion_time is None:
-                continue
-            # Berechnet und addiert für jeden vollständig abgeschlossenen Auftrag
-            # genau einmal die positive Verspätung gegenüber latest_end_time.
-            total_tardiness += max(
-                0.0,
-                completion_time - float(order.latest_end_time),
-            )
 
         if jobs:
             production_start_time = min(

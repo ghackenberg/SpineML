@@ -68,3 +68,34 @@ def test_incomplete_run_is_still_rejected_without_an_unfinished_job_penalty(smal
 
     with pytest.raises(RuntimeError, match=r"job\(s\) were still unfinished"):
         small_runner(HeuristicWeights(), seed=101)
+
+
+@pytest.mark.parametrize("use_random_policy", [False, True])
+def test_real_runner_sums_job_tardiness_for_both_controls(
+    small_runner, monkeypatch, use_random_policy,
+):
+    small_runner.scenario.orders[0].latest_end_time = 0
+    completed_jobs = []
+    collect = small_runner.collect_global_metrics
+
+    def capture_completions(layout, scenario, end_time):
+        for order in scenario.sim_orders:
+            completed_jobs.extend(order.sim_jobs)
+        return collect(layout, scenario, end_time)
+
+    monkeypatch.setattr(small_runner, "collect_global_metrics", capture_completions)
+
+    if use_random_policy:
+        metrics = small_runner.run_policy(RandomPolicy(seed=101), seed=101)
+    else:
+        metrics = small_runner(HeuristicWeights(), seed=101)
+
+    assert_completed(metrics)
+    lateness = [
+        max(0.0, job.completed_time - job.order.latest_end_time)
+        for job in completed_jobs
+    ]
+    assert len(lateness) == 2
+    assert all(value > 0.0 for value in lateness)
+    assert metrics.total_tardiness == pytest.approx(sum(lateness))
+    assert metrics.total_tardiness > max(lateness)

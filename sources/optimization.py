@@ -34,7 +34,7 @@ STOP_AFTER_NO_IMPROVEMENT = 4
 # Diese Kennzahlen gehen in die globale Bewertung ein.
 SCORED_METRICS = (
     "Makespan",
-    "Tardiness",
+    "Total job tardiness",
     "Transport time",
     "Tool change time",
     "Blocking time",
@@ -202,7 +202,7 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
         GlobalSimulationWeights(
             # Weight für die gesamte Durchlaufzeit bis zum letzten Abschluss.
             makespan=5.0,
-            # Weight für die aufsummierte Verspätung abgeschlossener Aufträge.
+            # Weight für die aufsummierten positiven Verspätungen einzelner Jobs.
             total_tardiness=4.0,
             # Weight für die gesamte Transportzeit aller Roboter.
             total_transport_time=1.0,
@@ -476,7 +476,7 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
         row = {
             "Seed": seed,
             "Makespan": metrics.makespan,
-            "Tardiness": metrics.total_tardiness,
+            "Total job tardiness": metrics.total_tardiness,
             "Transport time": metrics.total_transport_time,
             "Tool change time": metrics.tool_change_time,
             "Blocking time": metrics.blocking_time,
@@ -565,7 +565,7 @@ def _start_optimization(state, optimizer):
         metric_row = {
             "Candidate": len(state["costs"]),
             "Makespan": _mean_metric(metrics_by_seed, "makespan"),
-            "Tardiness": _mean_metric(
+            "Total job tardiness": _mean_metric(
                 metrics_by_seed,
                 "total_tardiness",
             ),

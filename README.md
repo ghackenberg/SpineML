@@ -2015,10 +2015,17 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ### Gesamtablauf der Optimierung
 
-Die Optimierung testet verschiedene Gewichtssätze in vollständigen
-Simulationsläufen und vergleicht deren Produktionsergebnisse. Gesucht wird
-ein Gewichtssatz, mit dem die heuristische Steuerung im Mittel bessere
-Ergebnisse erzielt.
+Die Gewichte der Teilwerte legen deren **relative Wichtigkeit innerhalb
+einer Aktionsbewertung** fest. Wie stark beispielsweise eine kurze
+Transportzeit gegenüber freier Pufferkapazität zählen sollte, ist im Voraus
+nicht offensichtlich. Eine andere relative Gewichtung kann die Rangfolge
+der Aktionsscores verändern und damit zu einer anderen Entscheidung führen.
+
+Ziel der Optimierung ist deshalb, die **lokalen Gewichte
+(`HeuristicWeights`) systematisch anzupassen**, damit die heuristische
+Steuerung im Mittel bessere Produktionsergebnisse erzielt. Dazu werden
+verschiedene Gewichtssätze in vollständigen Simulationsläufen getestet und
+anhand derselben festgelegten globalen Produktionsziele verglichen.
 
 Das Diagramm zeigt den gesamten Ablauf. Die anschließenden Abschnitte
 erklären seine Schritte **in derselben Reihenfolge**.

@@ -2164,19 +2164,23 @@ durch null geteilt.
 
 ### 2. Varianten der lokalen Gewichte erstellen
 
-`LocalHeuristicWeightOptimizer.optimize_iteratively()` beginnt mit den
-Standardgewichten. Für eine Suchrunde werden mehrere Varianten des lokalen
-Gewichtssatzes erstellt. Jede Variante ist ein **vollständiger Gewichtssatz
-(`HeuristicWeights`)** und wird hier als Kandidat bezeichnet, nicht als
-einzelner Aktionskandidat der Simulation.
+Die Suche startet in `optimization.py` mit den Standardgewichten.
+`LocalHeuristicWeightOptimizer.optimize_iteratively()` erstellt in jeder
+Suchrunde weitere Gewichtssätze. **Jeder erzeugte Gewichtssatz enthält alle
+lokalen Gewichte aus `HeuristicWeights`** und wird in vollständigen
+Simulationsläufen getestet. Wird nur ein Gewicht geändert, bleiben die
+übrigen Gewichte im Gewichtssatz unverändert enthalten.
 
 - `neighboring_weights()` übernimmt den aktuellen Satz unverändert und
   erzeugt für jedes Gewicht eine kleinere und eine größere Variante:
   `Gewicht − Schrittweite` beziehungsweise `Gewicht + Schrittweite`.
   Die Werte bleiben im erlaubten Bereich `(0, 1]`.
-- `random_local_weight_candidates()` ergänzt reproduzierbare zufällige
-  Gewichtssätze. Das allgemeine Wartegewicht `wait_action_weight` beträgt
-  dabei höchstens `0.1`.
+- `random_local_weight_candidates()` erstellt zusätzliche Gewichtssätze,
+  indem für jedes Gewicht ein neuer Zufallswert gezogen wird. Die Werte
+  liegen zwischen `0.000001` und `1.0`. Für `wait_action_weight` wird nur
+  zwischen `0.000001` und `0.1` gezogen. Dieser kleinere Suchbereich gilt
+  nur für dieses Gewicht in den zusätzlichen Zufallsvarianten; er begrenzt
+  nicht den fertigen Score einer Warteaktion.
 
 Diese Suche verändert Gewichte, nicht die Bewertungsformeln. Ein anderer
 Gewichtssatz kann beispielsweise dazu führen, dass andere Jobs, Ablageziele

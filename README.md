@@ -2015,30 +2015,37 @@ Zulässigkeit, sondern vergleicht die vom Generator zugelassenen Möglichkeiten.
 
 ### Gesamtablauf der Optimierung
 
-Die Gewichte der Teilwerte legen deren **relative Wichtigkeit innerhalb
-einer Aktionsbewertung** fest. Wie stark beispielsweise eine kurze
-Transportzeit gegenüber freier Pufferkapazität zählen sollte, ist im Voraus
-nicht offensichtlich. Eine andere relative Gewichtung kann die Rangfolge
-der Aktionsscores verändern und damit zu einer anderen Entscheidung führen.
+Die lokalen Gewichte beeinflussen, welche Aktion die Steuerung auswählt.
+Beim Ablegen eines Jobs kann beispielsweise ein naher Puffer wenig freien
+Platz haben, ein weiter entfernter dagegen mehr. Die Gewichte legen fest,
+wie wichtig Transportzeit und freie Kapazität im Verhältnis zueinander sind.
+Eine andere Gewichtung kann deshalb zu einer anderen Aktionsauswahl führen.
 
-Ziel der Optimierung ist deshalb, die **lokalen Gewichte
-(`HeuristicWeights`) systematisch anzupassen**, damit die heuristische
-Steuerung im Mittel bessere Produktionsergebnisse erzielt. Dazu werden
-verschiedene Gewichtssätze in vollständigen Simulationsläufen getestet und
-anhand derselben festgelegten globalen Produktionsziele verglichen.
+Welche Gewichtung für die gesamte Produktion günstig ist, lässt sich im
+Voraus nicht einfach festlegen. Deshalb wird die Produktion mit
+unterschiedlichen lokalen Gewichtungen mehrfach simuliert. Die Ergebnisse
+werden anhand derselben festgelegten Produktionsziele verglichen.
+**Ziel ist eine Gewichtung, mit der die heuristische Steuerung im Mittel
+bessere Produktionsergebnisse erzielt.**
 
 Das Diagramm zeigt den gesamten Ablauf. Die anschließenden Abschnitte
 erklären seine Schritte **in derselben Reihenfolge**.
 
 ```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    rankSpacing: 30
+---
 flowchart TD
-    A["1. Referenzwerte<br/>bestimmen"]
-    A --> B["2. Gewichtssätze<br/>erzeugen"]
-    B --> C["3. Jeden Satz bewerten<br/>Simulationen auf SEEDS<br/>Mittelwert berechnen"]
-    C --> D["4. Besten Satz<br/>auswählen"]
-    D --> E{"Neue Runde?"}
+    A["1. Produktion mit Standardgewichten simulieren<br/>Vergleichsmaßstab aus Ergebnissen berechnen"]
+    A --> B["2. Andere lokale Gewichtungen erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
+    B --> C["3. Produktion mit jeder Gewichtung mehrfach simulieren<br/>und die Produktionsergebnisse bewerten"]
+    C --> D["4. Gewichtung mit den im Mittel besten<br/>Produktionsergebnissen auswählen"]
+    D --> E{"Weitere Suchrunde?"}
     E -- Ja --> B
-    E -- Nein --> F["5. Abschlussvergleich<br/>Drei Policies auf<br/>BENCHMARK_SEEDS"]
+    E -- Nein --> F["5. Gefundene Gewichtung überprüfen<br/>Mit Standardheuristik und Zufall<br/>in separaten Testläufen vergleichen"]
 ```
 
 Optimiert werden die **lokalen Gewichte (`HeuristicWeights`)** für die
@@ -2047,7 +2054,7 @@ und Bewertungsformeln bleiben während der Suche gleich. Auch die
 [globalen Gewichte](#globale-gewichte-in-optimizationpy), mit denen ganze
 Produktionsläufe beurteilt werden, bleiben fest.
 
-### 1. Referenzwerte bestimmen
+### 1. Produktion mit Standardgewichten simulieren
 
 Zuerst wird die heuristische Steuerung mit den unveränderten
 Standardgewichten `HeuristicWeights()` simuliert. Diese Läufe bilden die
@@ -2076,12 +2083,13 @@ durch null geteilt.
 **Ergebnis dieses Schritts:** feste Bezugsgrößen, mit denen die Zeitkennzahlen
 der folgenden Simulationsläufe vergleichbar gemacht werden.
 
-### 2. Gewichtssätze erzeugen
+### 2. Varianten der lokalen Gewichte erstellen
 
 `LocalHeuristicWeightOptimizer.optimize_iteratively()` beginnt mit den
-Standardgewichten. Für eine Suchrunde werden daraus mehrere
-**Kandidaten (vollständige Gewichtssätze)** erzeugt. „Kandidat“ bezeichnet
-hier keinen einzelnen Aktionskandidaten der Simulation.
+Standardgewichten. Für eine Suchrunde werden mehrere Varianten der lokalen
+Gewichtung erstellt. Jede Variante ist ein **vollständiger Gewichtssatz
+(`HeuristicWeights`)** und wird hier als Kandidat bezeichnet, nicht als
+einzelner Aktionskandidat der Simulation.
 
 - `neighboring_weights()` übernimmt den aktuellen Satz unverändert und
   erzeugt für jedes Gewicht eine kleinere und eine größere Variante:
@@ -2103,7 +2111,7 @@ verändert dabei aber keine Gewichte.
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die in der
 aktuellen Runde geprüft werden.
 
-### 3. Jeden Gewichtssatz simulieren und bewerten
+### 3. Produktion mit jeder Gewichtung mehrfach simulieren und bewerten
 
 `select_best_local_weight_set_across_seeds()` lässt jeden Kandidaten durch
 `evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
@@ -2174,7 +2182,7 @@ anders als beim Aktionsscore.
 Die Berechnung erfolgt in zwei Schritten:
 
 1. `metrics_relative_to_baseline()` teilt die Zeitkennzahlen durch die
-   festen Referenzwerte aus [Schritt 1](#1-referenzwerte-bestimmen).
+   festen Referenzwerte aus [Schritt 1](#1-produktion-mit-standardgewichten-simulieren).
    So entstehen dimensionslose Verhältniswerte. Bei einer positiven
    Baseline-Zeit bedeutet `1` gleich der Baseline, ein kleinerer Wert
    eine kürzere Zeit und ein größerer Wert eine längere Zeit.
@@ -2266,7 +2274,7 @@ sequenceDiagram
 
 </details>
 
-### 4. Besten Satz auswählen und Suche fortsetzen oder beenden
+### 4. Gewichtung anhand der mittleren Produktionsergebnisse auswählen
 
 `select_best_local_weight_set_across_seeds()` vergleicht die
 `mean_global_cost`-Werte aller Gewichtssätze der Runde und wählt den
@@ -2284,13 +2292,13 @@ kleinsten. `optimize_iteratively()` legt anschließend fest, wie es weitergeht:
   `stop_after_no_improvement` erfolglosen Runden seit der letzten
   Verbesserung. Ein Neustart setzt diesen Abbruchzähler nicht zurück.
 
-Bei einer weiteren Runde geht der Ablauf zu [Schritt 2](#2-gewichtssätze-erzeugen)
+Bei einer weiteren Runde geht der Ablauf zu [Schritt 2](#2-varianten-der-lokalen-gewichte-erstellen)
 zurück. Nach dem Ende liefert `WeightOptimizationResult` unter anderem
 `best_weights`, `best_mean_global_cost` und `best_evaluation`.
 In `evaluations` speichert `optimize_iteratively()` die jeweils
 verbesserten Lösungen, nicht jeden getesteten Kandidaten.
 
-### 5. Abschlussvergleich auf separaten Test-Seeds
+### 5. Gefundene Gewichtung mit Standardheuristik und Zufall vergleichen
 
 Erst nach der Gewichtssuche vergleicht `_benchmark_policies()` drei
 Steuerungen auf denselben separaten `BENCHMARK_SEEDS`:

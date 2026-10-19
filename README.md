@@ -2276,22 +2276,14 @@ Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
 - `tool_change_time`: Summe der Maschinenzeiten in den Zuständen
   `mounting` und `unmounting`.
 - `blocking_time`: Summe der Maschinenzeiten im Zustand `blocked`.
-- `total_jobs`, `completed_jobs` und `unfinished_jobs`: Gesamtzahl,
-  abgeschlossene und noch nicht abgeschlossene Jobs.
+- `total_jobs`: Gesamtzahl der Jobs als Bezugsgröße für die drei Quoten.
 - `rework_job_count`: Zahl abgeschlossener Jobs mit mindestens einer
   Nacharbeit; mehrere Nacharbeiten desselben Jobs erhöhen diesen Wert nicht
   mehrfach.
 - `scrap_job_count`: Summe der Ausschussentscheidungen abgeschlossener Jobs.
-- `defect_jobs`: Zahl der Jobs, bei denen mindestens ein Defekt erkannt
-  wurde, auch wenn sie später erfolgreich nachgearbeitet wurden.
-- `intact_jobs`: Zahl abgeschlossener Jobs mit `general_state="intact"`.
-  Dazu können auch herabgestufte Jobs gehören, weil deren geringere Qualität
-  getrennt durch `downgraded=True` markiert wird.
 - `downgraded_job_count`: Zahl herabgestufter Jobs.
 
 Die zugehörigen Raten entstehen durch Division durch `total_jobs`.
-Ein Job kann beispielsweise sowohl zur historischen Defektquote als auch
-zur abschließenden Intaktquote zählen.
 
 </details>
 
@@ -2305,9 +2297,7 @@ Bewertungszahl pro Lauf** zusammen. Anders als beim Aktionsscore gilt hier:
 
 In die Bewertung gehen **fünf Zeitkennzahlen** sowie **Nacharbeits-,
 Ausschuss- und Herabstufungsquote** ein. Sie erfassen den Zeitaufwand und
-die Folgen der Steuerungsentscheidungen. Defekt- und Intaktquote werden
-weiterhin zur Information erfasst, aber nicht zusätzlich bestraft.
-Unfertige Jobs bleiben eine Vollständigkeitsprüfung, kein Bewertungsbeitrag.
+die Folgen der Steuerungsentscheidungen.
 
 Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 
@@ -2515,10 +2505,8 @@ Gewichtssatz nicht mehr.
 Im Interface zeigt eine **Tabelle die Mittelwerte** der acht bewerteten
 Produktionskennzahlen und der globalen Bewertungszahl je Steuerung. Die
 zugehörigen Diagramme zeigen die Ergebnisse **für jeden einzelnen Test-Seed**.
-Defekt- und Intaktquote sowie die Anzahl unfertiger Jobs stehen getrennt
-unter **Additional information (not part of global cost)**. Damit lässt sich
-prüfen, ob die Heuristik die Zufallspolicy übertrifft und ob der gefundene
-Gewichtssatz die Standardheuristik verbessert.
+Damit lässt sich prüfen, ob die Heuristik die Zufallspolicy übertrifft und
+ob der gefundene Gewichtssatz die Standardheuristik verbessert.
 
 Der Name `Heuristic (optimized)` bezeichnet den während der Suche ausgewählten
 Gewichtssatz. Ob er auf den Test-Seeds tatsächlich besser ist, zeigen erst

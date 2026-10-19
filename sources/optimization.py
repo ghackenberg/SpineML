@@ -42,12 +42,6 @@ SCORED_METRICS = (
     "Scrap rate (%)",
     "Downgrade rate (%)",
 )
-# Diese Kennzahlen werden nur zur Einordnung und Vollständigkeitsprüfung erfasst.
-INFORMATIONAL_METRICS = (
-    "Unfinished jobs",
-    "Intact rate (%)",
-    "Defect rate (%)",
-)
 
 
 # Sucht die angegebene Beispieldatei in den möglichen Projektordnern und gibt
@@ -423,12 +417,6 @@ def compare_baseline_optimized(benchmark):
     )
     st.altair_chart(chart, use_container_width=True)
 
-    with st.expander("Additional information (not part of global cost)"):
-        information_frame = frame.groupby(
-            "Control", as_index=False,
-        )[list(INFORMATIONAL_METRICS)].mean()
-        st.dataframe(information_frame, use_container_width=True, hide_index=True)
-
 
 # Sammelt Kennzahlen für Gewichte oder eine Policy auf den angegebenen Seeds.
 def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
@@ -492,9 +480,6 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
             "Transport time": metrics.total_transport_time,
             "Tool change time": metrics.tool_change_time,
             "Blocking time": metrics.blocking_time,
-            "Unfinished jobs": metrics.unfinished_jobs,
-            "Intact rate (%)": metrics.intact_rate * 100.0,
-            "Defect rate (%)": metrics.defect_rate * 100.0,
             "Scrap rate (%)": metrics.scrap_rate * 100.0,
             "Rework rate (%)": metrics.rework_rate * 100.0,
             "Downgrade rate (%)": metrics.downgrade_rate * 100.0,
@@ -596,18 +581,6 @@ def _start_optimization(state, optimizer):
                 metrics_by_seed,
                 "blocking_time",
             ),
-            "Unfinished jobs": _mean_metric(
-                metrics_by_seed,
-                "unfinished_jobs",
-            ),
-            "Intact rate (%)": _mean_metric(
-                metrics_by_seed,
-                "intact_rate",
-            ) * 100.0,
-            "Defect rate (%)": _mean_metric(
-                metrics_by_seed,
-                "defect_rate",
-            ) * 100.0,
             "Scrap rate (%)": _mean_metric(
                 metrics_by_seed,
                 "scrap_rate",

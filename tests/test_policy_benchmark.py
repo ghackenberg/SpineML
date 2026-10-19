@@ -1,4 +1,3 @@
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -47,9 +46,13 @@ def test_benchmark_uses_three_controls_and_held_out_seeds_with_fixed_references(
     for rows in benchmark.values():
         assert [row["Seed"] for row in rows] == [101, 102]
         assert all(row["Weighted sum of metrics relative to baseline"] == 1.0 for row in rows)
+        assert all(set(row) == {
+            "Seed", *optimization.SCORED_METRICS,
+            "Weighted sum of metrics relative to baseline",
+        } for row in rows)
 
 
-def test_comparison_table_and_chart_include_all_three_controls(monkeypatch):
+def test_comparison_shows_all_three_controls_without_information_metrics(monkeypatch):
     metrics = {
         "Seed": 101,
         "Makespan": 10.0,
@@ -70,7 +73,10 @@ def test_comparison_table_and_chart_include_all_three_controls(monkeypatch):
     charts = []
     monkeypatch.setattr(optimization.st, "subheader", lambda *args: None)
     monkeypatch.setattr(optimization.st, "caption", lambda *args: None)
-    monkeypatch.setattr(optimization.st, "expander", lambda *args: nullcontext())
+    monkeypatch.setattr(
+        optimization.st, "expander",
+        lambda *args: pytest.fail("Removed information metrics must not be displayed"),
+    )
     monkeypatch.setattr(optimization.st, "dataframe", lambda frame, **kwargs: frames.append(frame))
     monkeypatch.setattr(optimization.st, "altair_chart", lambda chart, **kwargs: charts.append(chart))
 
@@ -87,9 +93,8 @@ def test_comparison_table_and_chart_include_all_three_controls(monkeypatch):
         *optimization.SCORED_METRICS,
         "Weighted sum of metrics relative to baseline",
     }
-    assert set(frames[1].columns) == {"Control", *optimization.INFORMATIONAL_METRICS}
-    assert set(frames[1]["Control"]) == set(labels)
-    assert (frames[1]["Defect rate (%)"] == 25.0).all()
+    assert len(frames) == 1
+    assert len(charts) == 1
 
 
 @pytest.mark.parametrize("draw_chart", [
@@ -131,3 +136,45 @@ def test_default_global_evaluation_uses_only_the_selected_weights():
         "scrap_job_penalty": 4.0,
         "downgrade_job_penalty": 3.0,
     }
+
+
+def test_progress_records_only_scored_metrics(monkeypatch):
+    weights = HeuristicWeights()
+    metrics = GlobalSimulationMetrics(
+        makespan=10.0, total_tardiness=2.0, total_transport_time=4.0,
+        tool_change_time=1.0, blocking_time=0.5,
+        total_jobs=10, completed_jobs=10, intact_jobs=8, defect_jobs=4,
+        rework_job_count=1, scrap_job_count=2, downgraded_job_count=1,
+    )
+    evaluation = SimpleNamespace(mean_global_cost=13.4, metrics_by_seed=(metrics, metrics))
+    result = SimpleNamespace(best_weights=weights)
+
+    def optimize(**kwargs):
+        kwargs["progress_callback"](1, evaluation, 1, 1)
+        return result
+
+    optimizer = SimpleNamespace(
+        simulation_runner=lambda weights, seed: metrics,
+        global_evaluation=optimization._global_evaluation(),
+        optimize_iteratively=optimize,
+    )
+    monkeypatch.setattr(
+        optimization.threading, "Thread",
+        lambda target, **kwargs: SimpleNamespace(start=target),
+    )
+    monkeypatch.setattr(optimization, "_benchmark_policies", lambda *args: {})
+    state = {}
+
+    optimization._start_optimization(state, optimizer)
+
+    assert state["error"] is None
+    assert not state["running"]
+    assert state["costs"] == [13.4]
+    assert len(state["metrics"]) == 1
+    row = state["metrics"][0]
+    assert set(row) == {"Candidate", *optimization.SCORED_METRICS}
+    assert row["Tool change time"] == 1.0
+    assert row["Blocking time"] == 0.5
+    assert row["Rework rate (%)"] == 10.0
+    assert row["Scrap rate (%)"] == 20.0
+    assert row["Downgrade rate (%)"] == 10.0

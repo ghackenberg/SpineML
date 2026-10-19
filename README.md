@@ -2153,8 +2153,8 @@ für jede Zeitkennzahl den Mittelwert über die Baseline-Läufe und speichert
 daraus die Referenzwerte. Die Baseline verwendet die Standardheuristik,
 nicht die Zufallspolicy.
 
-Der mittlere Baseline-Makespan wird unverändert als Referenz verwendet:
-`0.5` bleibt beispielsweise `0.5`. Ist dieser Mittelwert `0`, wird ein
+Der mittlere Baseline-Makespan wird unverändert als Referenz verwendet.
+Ist dieser Mittelwert `0`, wird ein
 `ValueError` ausgelöst, weil durch `0` nicht geteilt werden kann.
 
 Ist der Baseline-Mittelwert einer anderen Zeitkennzahl `0`, wird dafür die

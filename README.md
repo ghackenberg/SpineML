@@ -2375,8 +2375,7 @@ kleineren Mittelwert. Für den anschließenden Vergleich ist deshalb B besser.
 Gewichtssatz als Grundlage für die
 [Auswahl eines Gewichtssatzes](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
 
-<details>
-<summary>Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)</summary>
+#### Technischer Detailablauf zu Schritt 3 (Sequenzdiagramm)
 
 Die beteiligten Methoden setzen die oben beschriebene Reihenfolge um:
 
@@ -2419,8 +2418,6 @@ sequenceDiagram
     Optimizer->>Optimizer: mean_global_cost berechnen<br/>aus allen Seed-Ergebnissen
 ```
 
-</details>
-
 ### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
 Aus den Ergebnissen von [Schritt 3](#mittelwert-über-die-seeds) wird der
@@ -2446,8 +2443,7 @@ beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
 [Schritt 5](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)
 überprüft.
 
-<details>
-<summary>Weitere Suchrunden: Neustart, vorzeitiges Ende und Rückgabewerte im Code</summary>
+#### Weitere Suchrunden: Neustart, vorzeitiges Ende und Rückgabewerte im Code
 
 `select_best_local_weight_set_across_seeds()` ermittelt den besten Satz
 einer Runde. `optimize_iteratively()` speichert den bisher besten Satz und
@@ -2479,8 +2475,6 @@ Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
 Lösung und spätere Verbesserungen. Die
 [Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen alle
 abgeschlossenen Gewichtssatz-Prüfungen.
-
-</details>
 
 ### 5. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
@@ -2527,8 +2521,7 @@ separaten Testläufen.
 - [GlobalSimulationEvaluation.py](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py):
   berechnet Referenzwerte und die globale Bewertungszahl eines Laufs.
 
-<details>
-<summary>Technische Einbindung: Modellladen, Worker-Thread und Fortschrittsanzeige</summary>
+#### Technische Einbindung: Modellladen, Worker-Thread und Fortschrittsanzeige
 
 `optimization.py` liest das über `SPINEML_MODEL_FILE` ausgewählte Modell.
 `_suppress_model_visualization()` unterdrückt dabei dessen direkten
@@ -2551,8 +2544,6 @@ Steuerung und jeden Test-Seed den Runner auf: bei der Zufallspolicy über
 `run_policy(RandomPolicy(seed), seed)`, bei den Heuristiken über
 `runner(weights, seed)`. `compare_baseline_optimized()` bildet die
 Mittelwerte für die Ergebnistabelle und zeichnet die Kennzahlen je Test-Seed.
-
-</details>
 
 ## Optimierung starten
 

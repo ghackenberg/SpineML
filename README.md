@@ -2211,29 +2211,35 @@ lokalen Gewichte**, auch wenn nur eines davon geändert wird.
 
 **Wie viele Gewichtssätze entstehen insgesamt?**
 
-`HeuristicWeights` enthält aktuell **25 Gewichte**. Pro Suchrunde ergibt sich:
+`HeuristicWeights` enthält aktuell **25 Gewichte**. Pro Suchrunde werden
+zunächst folgende Sätze erzeugt:
 
-`1 Ausgangssatz + 2 × 25 Einzelvarianten + 3 Zufallssätze = 54 Gewichtssätze`
+`1 Ausgangssatz + 2 × 25 Einzelvarianten + 3 Zufallssätze = 54 erzeugte Gewichtssätze`
+
+**Vor der Simulation werden innerhalb jeder Suchrunde identische
+Gewichtssätze entfernt.** Stimmen alle Gewichte zweier Sätze überein,
+bleibt nur der erste Satz erhalten.
+Mit den aktuellen Standardgewichten bleiben in der ersten Suchrunde
+**53 unterschiedliche Gewichtssätze**, die jeweils mit allen Seeds geprüft werden.
 
 Eine **Iteration (Suchrunde der Optimierung)** beginnt mit dem Erstellen
 von Gewichtssätzen. Diese werden mit allen vorgesehenen Seeds simuliert
 und bewertet. Anschließend wird der beste geprüfte Gewichtssatz ausgewählt.
 
 `ITERATIONS = 2` bedeutet höchstens zwei solcher Suchrunden. Die zweite
-Suchrunde geht vom besten Gewichtssatz der ersten Runde aus. Damit sind
-bis zu **108 Gewichtssatz-Prüfungen** vorgesehen.
-
-Gleiche Sätze werden nicht aussortiert: Die 54 Sätze der ersten Suchrunde
-enthalten mit den aktuellen Standardgewichten 53 unterschiedliche Sätze.
-Das liegt daran, dass `complete_job_weight` bereits `1.0` ist; seine nach
-oben begrenzte Plus-Variante ist identisch zum Ausgangssatz.
+Suchrunde geht vom besten Gewichtssatz der ersten Runde aus. Mit den
+aktuellen Einstellungen sind damit höchstens **107 Gewichtssatz-Prüfungen**
+möglich: 53 in der ersten und höchstens 54 in der zweiten Runde.
+Die Zahl entfernter Doppelungen kann sich zwischen den Runden ändern;
+die Fortschrittsanzeige verwendet jeweils die bereinigte Anzahl.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
 [simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten) werden.
 
 ### 3. Produktion mit jedem Gewichtssatz mehrfach simulieren und bewerten
 
-`select_best_local_weight_set_across_seeds()` lässt jeden Kandidaten durch
+`select_best_local_weight_set_across_seeds()` entfernt zuerst identische
+Gewichtssätze und lässt danach jeden verbleibenden Satz durch
 `evaluate_local_weights_across_seeds()` prüfen. Für **einen Gewichtssatz**
 werden nacheinander alle [Seeds aus `SEEDS`](#baseline-technik) verwendet.
 
@@ -2557,4 +2563,4 @@ hier die berechnete Vergleichszahl, keinen Geldbetrag.
 
 Die aktuelle Runde und der Fortschritt innerhalb dieser Runde stehen zusätzlich
 oberhalb der Diagramme, zum Beispiel
-`Optimization: round 1, candidate 9/58`.
+`Optimization: round 1, candidate 9/53`.

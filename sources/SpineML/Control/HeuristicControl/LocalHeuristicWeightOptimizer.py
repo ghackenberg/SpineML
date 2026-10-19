@@ -213,10 +213,11 @@ class LocalHeuristicWeightOptimizer:
         iteration_number: int = 0,
         progress_callback=None,
     ) -> WeightOptimizationResult:
-        """Compare weight candidates across all seeds and return the best one."""
+        """Compare distinct weight candidates across all seeds and return the best one."""
         seed_values = tuple(seeds)
         evaluations = []
-        candidate_list = tuple(local_weight_candidates)
+        # Entfernt identische Gewichtssätze und behält ihre ursprüngliche Reihenfolge.
+        candidate_list = tuple(dict.fromkeys(local_weight_candidates))
         total_candidates = len(candidate_list)
 
         # Durchläuft jeden vollständigen lokalen weight set und nummeriert ihn ab 1.

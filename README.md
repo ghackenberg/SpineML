@@ -2132,10 +2132,7 @@ Robotergeschwindigkeit oder das Auftreten eines Defekts. Schematisch gilt:
 
 Ein **Seed (Startwert für die Zufallszahlengeneratoren)** macht die
 Zufallsziehungen reproduzierbar. `SpineMLSimulationRunner` setzt ihn beim
-Aufbau jedes vollständigen Simulationslaufs, nicht bei jeder Entscheidung
-erneut. Bei gleicher Konfiguration, gleicher Policy und demselben
-Gewichtssatz lässt sich damit derselbe Lauf wiederholen. Der Gewichtssatz
-bleibt während dieses Laufs unverändert.
+Aufbau jedes vollständigen Simulationslaufs.
 
 ##### Warum werden dieselben Seeds für verschiedene Gewichtungen verwendet?
 

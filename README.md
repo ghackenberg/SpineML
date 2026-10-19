@@ -2021,11 +2021,8 @@ Platz haben, ein weiter entfernter dagegen mehr. Je nachdem, ob Transportzeit
 oder freie Kapazität stärker gewichtet wird, kann die Steuerung ein anderes
 Ablageziel bevorzugen.
 
-**Ziel der Optimierung ist ein Gewichtssatz, mit dem die heuristische
-Steuerung im Mittel bessere Produktionsergebnisse erzielt.** Welche
-Gewichtung dafür günstig ist, lässt sich nicht an einer einzelnen
-Aktionsentscheidung erkennen. Deshalb werden unterschiedliche Gewichtssätze
-anhand vollständiger Produktionsläufe verglichen.
+**Ziel der Optimierung ist es, die lokalen Gewichte so zu wählen, dass die
+heuristische Steuerung im Mittel bessere Produktionsergebnisse erzielt.**
 
 #### Gewichtssätze mit denselben Seeds vergleichen
 

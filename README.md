@@ -2425,15 +2425,14 @@ Eine **Runde ohne Verbesserung** bedeutet: Kein geprüfter Gewichtssatz
 erreicht eine kleinere mittlere globale Bewertungszahl als der bisher beste
 Satz. Der Code verwendet dafür zwei getrennte Zähler:
 
-- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt die
-  erfolglosen Runden seit der letzten Verbesserung oder dem letzten Neustart.
-  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die Schrittweite auf
-  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt und dieser Zähler beginnt wieder
-  bei `0`. Der bisher beste Gewichtssatz bleibt der Ausgangspunkt.
-  Beispiel: Für ein Gewicht `0.5` entstehen bei Schrittweite `0.2` die
-  Varianten `0.3` und `0.7`.
-  Nach dem Zurücksetzen auf `0.4` werden stattdessen `0.1` und `0.9`
-  geprüft. Die Suche untersucht damit wieder weiter entfernte Werte.
+- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt Suchrunden
+  ohne besseres Ergebnis, nicht einzelne Gewichtssätze oder Simulationsläufe.
+  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die
+  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Dadurch werden
+  wieder größere Änderungen an den einzelnen Gewichten ausprobiert.
+  **Der bisher beste Gewichtssatz bleibt erhalten.** Nur die Größe der
+  nächsten Änderungsschritte wird angepasst. Der Neustart-Zähler beginnt
+  danach wieder bei `0`.
 - **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
   erfolglosen Runden seit der letzten Verbesserung. Bei vier solchen Runden
   (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche. Dieser Zähler läuft
@@ -2444,11 +2443,21 @@ Beide Zähler starten bei `0` und steigen bei jeder erfolglosen Runde um `1`.
 Nach der ersten Runde und nach jeder späteren Verbesserung werden beide
 auf `0` gesetzt.
 
-**Beispiel ohne zwischenzeitliche Verbesserung:** Nach zwei
-erfolglosen Runden erfolgt der Neustart; danach steht der Neustart-Zähler
-auf `0`, der Abbruch-Zähler weiterhin auf `2`. Bleiben die nächsten beiden
-Runden ebenfalls erfolglos, erreicht der Abbruch-Zähler `4` und die Suche
-endet.
+**Beispiel bei ausreichend vielen Suchrunden:** Nach der ersten Runde ist
+Gewichtssatz A mit einer mittleren globalen Bewertungszahl von `8` der bisher
+beste Satz. Die Schrittweite beträgt jetzt `0.2`; beide Zähler stehen auf `0`.
+
+1. In der nächsten Runde erreicht kein geprüfter Satz einen Wert unter `8`.
+   Beide Zähler steigen auf `1`.
+2. Auch in der folgenden Runde wird kein Wert unter `8` erreicht.
+   Beide Zähler steigen auf `2`. Jetzt erfolgt der Neustart: Die Schrittweite
+   wird von `0.2` auf `0.4` gesetzt, und Satz A bleibt der Ausgangspunkt.
+   Danach steht der Neustart-Zähler auf `0`, der Abbruch-Zähler weiterhin auf `2`.
+3. Bleiben auch die nächsten beiden Runden ohne Wert unter `8`, erreicht
+   der Abbruch-Zähler `4` und die Suche endet.
+
+„Neustart“ bedeutet hier also **größere Änderungsschritte**, nicht den
+Beginn der gesamten Optimierung von vorne.
 
 **Maximale Rundenzahl:** Unabhängig von den beiden Zählern endet die Suche
 spätestens nach `ITERATIONS` Runden.

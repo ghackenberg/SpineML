@@ -2300,15 +2300,28 @@ die Folgen der Steuerungsentscheidungen.
 
 Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 
-- **Zeiten:** Jede Zeitkennzahl wird durch ihren eigenen
+- **Zeitkennzahlen:** Produktionsdauer (`makespan`), Gesamtverspätung der Jobs
+  (`total_tardiness`), Transportzeit (`total_transport_time`),
+  Werkzeugwechselzeit (`tool_change_time`) und Maschinen-Blockierzeit
+  (`blocking_time`) werden jeweils durch ihren eigenen
   [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren)
   geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
   Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
   gleich der Referenz, ein kleinerer Wert eine kürzere Zeit.
-- **Nacharbeit, Ausschuss und Herabstufung:** Die betreffende Anzahl wird
-  durch die Gesamtzahl der Jobs geteilt. Beispielsweise ergeben `20`
-  Ausschussentscheidungen bei `100` Jobs die Ausschussrate
-  `20 / 100 = 0.2`. Diese drei Raten werden nicht durch
+
+- **Quoten:** Die drei Quoten werden mit der Gesamtzahl der Jobs
+  (`total_jobs`) als Bezugsgröße berechnet:
+
+  - **Nacharbeitsquote (`rework_rate`):**
+    `rework_job_count / total_jobs`. Jeder Job mit mindestens einer Nacharbeit
+    zählt einmal.
+  - **Ausschussquote (`scrap_rate`):**
+    `scrap_job_count / total_jobs`.
+  - **Herabstufungsquote (`downgrade_rate`):**
+    `downgraded_job_count / total_jobs`.
+
+  Beispielsweise ergeben `20` Ausschussentscheidungen bei `100` Jobs die
+  Ausschussquote `20 / 100 = 0.2`. Diese drei Quoten werden nicht durch
   Baseline-Referenzwerte geteilt. Nacharbeit wird dabei als zusätzlicher
   Aufwand neben den Zeitkennzahlen berücksichtigt.
 

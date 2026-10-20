@@ -2455,49 +2455,48 @@ Iterationen ohne Verbesserung führen zu größeren Suchschritten. Bleiben auch
 die nächsten beiden Iterationen ohne Verbesserung, endet die Suche. Eine
 Verbesserung setzt die Zählung für beide Grenzen wieder auf `0`.
 
-Das Diagramm zeigt diese Regeln einschließlich Verbesserungen. Unabhängig
-von den Zählern endet die Suche spätestens nach `ITERATIONS` Iterationen.
-**Aktuell ist `ITERATIONS = 2`:** Die erste Iteration legt den besten Satz
-fest, danach bleibt nur eine weitere Iteration. Neustart und vorzeitiger
-Abbruch können deshalb erst bei einer höheren Iterationsgrenze auftreten.
+Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**.
+Die Zahlen zeigen jeweils die Zählerstände nach der Iteration; `2 → 0`
+bedeutet, dass der Zähler innerhalb dieser Iteration auf `0` zurückgesetzt
+wird. In Iteration 3 setzt eine Verbesserung beide Zähler zurück. Danach
+folgen vier Iterationen ohne Verbesserung: Nach zwei erfolgt der Neustart,
+nach insgesamt vier der Abbruch.
+
+**Voraussetzung für dieses Beispiel ist `ITERATIONS >= 7`.** Aktuell ist
+`ITERATIONS = 2`; damit endet die Suche schon nach der zweiten Iteration.
+Die aktuelle Einstellung wird durch das Beispiel nicht geändert.
 
 ```mermaid
 ---
 config:
   flowchart:
-    wrappingWidth: 300
-    rankSpacing: 35
-    nodeSpacing: 35
+    wrappingWidth: 220
+    rankSpacing: 25
+    nodeSpacing: 20
     subGraphTitleMargin:
       top: 10
       bottom: 20
 ---
-flowchart TD
-    A["Iteration ausführen:<br/>Gewichtssätze erzeugen und prüfen"]
-    B{"Erste Iteration<br/>oder Verbesserung?"}
-    C["Besten Satz übernehmen<br/>Schrittweite halbieren<br/>Beide Zähler auf 0"]
-
-    subgraph Grenze["Abbruchgrenze: 4 Iterationen ohne Verbesserung"]
-        D["Bisher besten Satz behalten<br/>Beide Zähler um 1 erhöhen"]
-        E{"Abbruch-Zähler ≥ 4?"}
-        F{"Neustart-Zähler ≥ 2?"}
-        G["Neustart: breiter suchen<br/>Schrittweite auf 0.4<br/>Neustart-Zähler auf 0<br/>Abbruch-Zähler unverändert"]
-
-        D --> E
-        E -- Nein --> F
-        F -- Ja --> G
+flowchart TB
+    subgraph Verbesserung["Eine Verbesserung setzt beide Zähler zurück"]
+        direction LR
+        A["<b>Iteration 1</b><br/>Ersten besten Satz festlegen<br/>Neustart-Zähler: 0<br/>Abbruch-Zähler: 0"]
+        B["<b>Iteration 2</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
+        C["<b>Iteration 3</b><br/><b>VERBESSERUNG</b><br/>Neustart-Zähler: 1 → 0<br/>Abbruch-Zähler: 1 → 0<br/>Schrittweite: 0.2 → 0.1"]
+        A --> B --> C
     end
 
-    A --> B
-    B -- Ja --> C
-    B -- Nein --> D
-    E -- Ja --> Ende["Suche beenden"]
-    F -- Nein --> H{"ITERATIONS erreicht?"}
-    C --> H
-    G --> H
-    H -- Nein --> A
-    H -- Ja --> Ende
+    subgraph Grenze["Abbruchgrenze: 4 Iterationen ohne Verbesserung seit Iteration 3"]
+        direction LR
+        D["<b>Iteration 4</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
+        E["<b>Iteration 5</b><br/><b>NEUSTART nach 2</b><br/>Neustart-Zähler: 2 → 0<br/>Abbruch-Zähler: 2 bleibt 2<br/>Schrittweite: 0.1 → 0.4"]
+        F["<b>Iteration 6</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 3"]
+        G["<b>Iteration 7</b><br/><b>ABBRUCH nach 4</b><br/>Neustart-Zähler: 2<br/>Abbruch-Zähler: 4"]
+        D --> E --> F --> G
+    end
 
+    Verbesserung --> Grenze
+    style Verbesserung fill:transparent,stroke-width:1px
     style Grenze fill:transparent,stroke-width:2px
 ```
 

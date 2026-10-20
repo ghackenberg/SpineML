@@ -2392,83 +2392,86 @@ Gewichtssatz als Grundlage für die
 
 Aus den Ergebnissen von [Schritt 3](#mittelwert-über-die-seeds) wird der
 Gewichtssatz mit dem kleinsten `mean_global_cost` ausgewählt. In der ersten
-Suchrunde wird dieser Satz als bisher bester gespeichert. In späteren
-Runden wird geprüft, ob der Rundenbeste besser ist als der bisher beste Satz:
+Iteration wird dieser Satz als bisher bester gespeichert. In späteren
+Iterationen wird geprüft, ob der beste Satz dieser Iteration besser ist als
+der bisher beste Satz:
 
 - **Kleinerer Mittelwert:** Der neue Satz wird übernommen und ist der
-  Ausgangspunkt für die nächste Suchrunde. Die Schrittweite wird halbiert,
+  Ausgangspunkt für die nächste Iteration. Die Schrittweite wird halbiert,
   damit die nächsten Einzelvarianten näher an diesem Satz liegen.
 - **Gleicher oder größerer Mittelwert:** Der bisher beste Satz bleibt
   erhalten. Auch die Schrittweite bleibt zunächst unverändert.
 
-**Fortsetzung des Rechenbeispiels:** In Runde 1 wird Gewichtssatz B mit
+**Fortsetzung des Rechenbeispiels:** In Iteration 1 wird Gewichtssatz B mit
 `mean_global_cost = 8.8` ausgewählt. Die anfängliche Schrittweite `0.4`
-wird auf `0.2` halbiert. In Runde 2 werden Varianten von B und neue
+wird auf `0.2` halbiert. In Iteration 2 werden Varianten von B und neue
 Zufallssätze geprüft. Erreicht dabei beispielsweise ein Satz C den
 Mittelwert `8.6`, ersetzt C den Satz B. Erreicht kein Satz einen Wert unter
 `8.8`, bleibt B der beste Satz.
 
 Mit der aktuellen Einstellung `ITERATIONS = 2` endet die Suche nach diesen
-beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
+beiden Iterationen. Der beste gefundene Gewichtssatz wird anschließend in
 [Schritt 5](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)
 überprüft.
 
-#### Weitere Suchrunden: Neustart, vorzeitiges Ende und Rückgabewerte im Code
+#### Weitere Iterationen: Neustart, vorzeitiges Ende und Rückgabewerte im Code
 
 `select_best_local_weight_set_across_seeds()` ermittelt den besten Satz
-einer Runde. `optimize_iteratively()` speichert den bisher besten Satz und
-steuert die nächsten Runden. Nach der ersten Runde und nach jeder späteren
+einer Iteration. `optimize_iteratively()` speichert den bisher besten Satz und
+steuert die nächsten Iterationen. Nach der ersten Iteration und nach jeder späteren
 Verbesserung wird die Schrittweite halbiert. So werden kleinere Änderungen
 am besten Gewichtssatz untersucht.
 
-Eine **Runde ohne Verbesserung** bedeutet: Kein geprüfter Gewichtssatz
-erreicht eine kleinere mittlere globale Bewertungszahl als der bisher beste
-Satz. Der Code verwendet dafür zwei getrennte Zähler:
+Eine **Iteration ohne Verbesserung** bedeutet: In dieser Iteration werden
+mehrere Gewichtssätze erzeugt und jeweils über alle Seeds geprüft. Erreicht
+keiner eine kleinere mittlere globale Bewertungszahl als der bisher beste
+Gewichtssatz, ist diese Iteration ohne Verbesserung. Der Code verwendet dafür
+zwei getrennte Zähler:
 
-- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt Suchrunden
-  ohne besseres Ergebnis, nicht einzelne Gewichtssätze oder Simulationsläufe.
-  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser
-  Zähler auf `0` gesetzt und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4`
-  zurückgesetzt. **Die nächste Suchrunde erzeugt damit neue Nachbarvarianten
-  des bisher besten Gewichtssatzes.** Dabei wird jeweils nur ein Gewicht
-  mit der Schrittweite `0.4` verändert; die anderen Gewichte bleiben
-  unverändert. Die in [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
-  beschriebenen Wertebereiche gelten weiterhin. Die zusätzlichen zufälligen
-  Gewichtssätze werden unabhängig von dieser Schrittweite erzeugt:
-  **Die `0.4` gilt für die Nachbarsuche, nicht für die zufällige Exploration.**
-- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
-  erfolglosen Runden seit der letzten Verbesserung. Bei vier solchen Runden
-  (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche. Dieser Zähler läuft
-  beim Neustart weiter. Ist die Abbruchgrenze erreicht, endet die Suche
-  statt eines weiteren Neustarts.
+- **Neustart-Zähler (`rounds_without_improvement`):** Nach **zwei
+  aufeinanderfolgenden Iterationen ohne Verbesserung**
+  (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser Zähler auf `0` gesetzt
+  und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt.
+  Der bisher beste Gewichtssatz bleibt der Ausgangspunkt. Die größere
+  Schrittweite ermöglicht eine breitere Erkundung (Exploration), weil in der
+  nächsten Iteration weiter entfernte Nachbarvarianten untersucht werden.
+  Die zusätzlichen zufälligen Gewichtssätze werden weiterhin unabhängig
+  von dieser Schrittweite erzeugt, wie in
+  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
+- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt die
+  **Iterationen ohne Verbesserung seit der letzten Verbesserung**.
+  Ein Neustart setzt ihn **nicht** zurück. Wird ein besserer Gewichtssatz
+  gefunden, beginnt er wieder bei `0`. Bei `4`
+  (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche statt eines weiteren
+  Neustarts.
 
-Beide Zähler starten bei `0` und steigen bei jeder erfolglosen Runde um `1`.
-Nach der ersten Runde und nach jeder späteren Verbesserung werden beide
+Beide Zähler starten bei `0` und steigen bei jeder Iteration ohne Verbesserung
+um `1`. Nach der ersten Iteration und nach jeder späteren Verbesserung werden beide
 auf `0` gesetzt.
 
-**Beispiel bei ausreichend vielen Suchrunden:** Nach der ersten Runde ist
+**Beispiel bei ausreichend vielen Iterationen:** Nach der ersten Iteration ist
 Gewichtssatz A mit einer mittleren globalen Bewertungszahl von `8` der bisher
 beste Satz. Die Schrittweite beträgt jetzt `0.2`; beide Zähler stehen auf `0`.
 
-1. In der nächsten Runde erreicht kein geprüfter Satz einen Wert unter `8`.
+1. In der nächsten Iteration erreicht kein geprüfter Satz einen Wert unter `8`.
    Beide Zähler steigen auf `1`.
-2. Auch in der folgenden Runde wird kein Wert unter `8` erreicht.
+2. Auch in der folgenden Iteration wird kein Wert unter `8` erreicht.
    Beide Zähler steigen auf `2`. Jetzt erfolgt der Neustart: Die Schrittweite
    wird von `0.2` auf `0.4` gesetzt, und Satz A bleibt der Ausgangspunkt.
    Danach steht der Neustart-Zähler auf `0`, der Abbruch-Zähler weiterhin auf `2`.
-3. Bleiben auch die nächsten beiden Runden ohne Wert unter `8`, erreicht
+3. Bleiben auch die nächsten beiden Iterationen ohne Wert unter `8`, erreicht
    der Abbruch-Zähler `4` und die Suche endet.
 
 „Neustart“ bedeutet hier also **größere Änderungsschritte bei den
 Nachbarvarianten**, nicht den Beginn der gesamten Optimierung von vorne.
 
-**Maximale Rundenzahl:** Unabhängig von den beiden Zählern endet die Suche
-spätestens nach `ITERATIONS` Runden.
+**Maximale Anzahl von Iterationen:** Unabhängig von den beiden Zählern endet
+die Suche spätestens nach `ITERATIONS` Iterationen.
 
 **Aktuelle Einstellung:** Bei `ITERATIONS = 2` wird die Schrittweite noch
 nicht wegen ausbleibender Verbesserung zurückgesetzt und die Suche nicht
-vorzeitig beendet. Die erste Runde legt den besten Satz fest; danach folgt
-nur eine weitere Runde.
+vorzeitig beendet. Die erste Iteration legt den besten Satz fest; danach folgt
+nur eine weitere Iteration.
 
 Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
 `best_weights`, `best_mean_global_cost` und `best_evaluation`.

@@ -2416,11 +2416,16 @@ beiden Iterationen. Der beste gefundene Gewichtssatz wird anschließend in
 
 #### Weitere Iterationen: Neustart, vorzeitiges Ende und Rückgabewerte im Code
 
-`select_best_local_weight_set_across_seeds()` ermittelt den besten Satz
-einer Iteration. `optimize_iteratively()` speichert den bisher besten Satz und
-steuert die nächsten Iterationen. Nach der ersten Iteration und nach jeder späteren
-Verbesserung wird die Schrittweite halbiert. So werden kleinere Änderungen
-am besten Gewichtssatz untersucht.
+**Ziel der beiden Zähler:** Bleibt eine Verbesserung aus, soll die Suche
+zunächst mit größeren Änderungen weitere Gewichtssätze erkunden. Wird auch
+dadurch kein besserer Satz gefunden, soll die Suche beendet werden.
+
+**Ohne Verbesserung bleibt der bisher beste Gewichtssatz der Ausgangspunkt.**
+In jeder Iteration werden daraus weitere Nachbarvarianten erzeugt und
+zusätzliche zufällige Gewichtssätze geprüft, wie in
+[Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
+Exploration findet also in jeder Iteration statt. Die Zähler bestimmen,
+wann die Änderungsschritte wieder größer werden und wann die Suche aufhört.
 
 Eine **Iteration ohne Verbesserung** bedeutet: In dieser Iteration werden
 mehrere Gewichtssätze erzeugt und jeweils über alle Seeds geprüft. Erreicht
@@ -2428,17 +2433,15 @@ keiner eine kleinere mittlere globale Bewertungszahl als der bisher beste
 Gewichtssatz, ist diese Iteration ohne Verbesserung. Der Code verwendet dafür
 zwei getrennte Zähler:
 
-- **Neustart-Zähler (`rounds_without_improvement`):** Nach **zwei
+- **Neustart-Zähler (`rounds_without_improvement`) – breiter suchen:** Nach **zwei
   aufeinanderfolgenden Iterationen ohne Verbesserung**
   (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser Zähler auf `0` gesetzt
   und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt.
-  Der bisher beste Gewichtssatz bleibt der Ausgangspunkt. Die größere
-  Schrittweite ermöglicht eine breitere Erkundung (Exploration), weil in der
-  nächsten Iteration weiter entfernte Nachbarvarianten untersucht werden.
+  In der nächsten Iteration werden damit wieder größere Änderungen an
+  einzelnen Gewichten des bisher besten Satzes ausprobiert.
   Die zusätzlichen zufälligen Gewichtssätze werden weiterhin unabhängig
-  von dieser Schrittweite erzeugt, wie in
-  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
-- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt die
+  von dieser Schrittweite erzeugt.
+- **Abbruch-Zähler (`total_rounds_without_improvement`) – Suche beenden:** Er zählt die
   **Iterationen ohne Verbesserung seit der letzten Verbesserung**.
   Ein Neustart setzt ihn **nicht** zurück. Wird ein besserer Gewichtssatz
   gefunden, beginnt er wieder bei `0`. Bei `4`
@@ -2446,8 +2449,10 @@ zwei getrennte Zähler:
   Neustarts.
 
 Beide Zähler starten bei `0` und steigen bei jeder Iteration ohne Verbesserung
-um `1`. Nach der ersten Iteration und nach jeder späteren Verbesserung werden beide
-auf `0` gesetzt.
+um `1`. Nach der ersten Iteration und nach jeder späteren Verbesserung werden
+beide auf `0` gesetzt und die Schrittweite halbiert. So werden anschließend
+kleinere Änderungen am besten Gewichtssatz untersucht. Das Zurücksetzen der
+Zähler löscht den gespeicherten besten Gewichtssatz nicht.
 
 **Beispiel bei ausreichend vielen Iterationen:** Nach der ersten Iteration ist
 Gewichtssatz A mit einer mittleren globalen Bewertungszahl von `8` der bisher
@@ -2472,6 +2477,10 @@ die Suche spätestens nach `ITERATIONS` Iterationen.
 nicht wegen ausbleibender Verbesserung zurückgesetzt und die Suche nicht
 vorzeitig beendet. Die erste Iteration legt den besten Satz fest; danach folgt
 nur eine weitere Iteration.
+
+`select_best_local_weight_set_across_seeds()` ermittelt den besten Satz einer
+Iteration. `optimize_iteratively()` speichert den bisher besten Satz und
+steuert die weiteren Iterationen.
 
 Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
 `best_weights`, `best_mean_global_cost` und `best_evaluation`.

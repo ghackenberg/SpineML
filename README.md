@@ -2419,29 +2419,39 @@ beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
 einer Runde. `optimize_iteratively()` speichert den bisher besten Satz und
 steuert die nächsten Runden. Nach der ersten Runde und nach jeder späteren
 Verbesserung wird die Schrittweite halbiert. So werden kleinere Änderungen
-am besten Gewichtssatz untersucht. Dabei werden auch beide Zähler
-erfolgloser Runden auf `0` gesetzt.
+am besten Gewichtssatz untersucht.
 
 Eine **Runde ohne Verbesserung** bedeutet: Kein geprüfter Gewichtssatz
 erreicht eine kleinere mittlere globale Bewertungszahl als der bisher beste
-Satz. Für diesen Fall gelten folgende Regeln:
+Satz. Der Code verwendet dafür zwei getrennte Zähler:
 
-- **Wieder größere Änderungen ausprobieren (im Code „Neustart“):** Nach
-  zwei aufeinanderfolgenden erfolglosen Runden
-  (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die Schrittweite auf
-  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Der bisher
-  beste Gewichtssatz bleibt der Ausgangspunkt. Beispiel: Für ein Gewicht
-  `0.5` entstehen bei Schrittweite `0.2` die Varianten `0.3` und `0.7`.
+- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt die
+  erfolglosen Runden seit der letzten Verbesserung oder dem letzten Neustart.
+  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die Schrittweite auf
+  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt und dieser Zähler beginnt wieder
+  bei `0`. Der bisher beste Gewichtssatz bleibt der Ausgangspunkt.
+  Beispiel: Für ein Gewicht `0.5` entstehen bei Schrittweite `0.2` die
+  Varianten `0.3` und `0.7`.
   Nach dem Zurücksetzen auf `0.4` werden stattdessen `0.1` und `0.9`
   geprüft. Die Suche untersucht damit wieder weiter entfernte Werte.
-- **Suche bei ausbleibender Verbesserung beenden:** Bringen insgesamt vier
-  Runden hintereinander keinen besseren Satz
-  (`STOP_AFTER_NO_IMPROVEMENT = 4`), endet die Suche. Das Zurücksetzen der
-  Schrittweite unterbricht diese Zählung nicht: Zwei erfolglose Runden
-  führen zu einer größeren Schrittweite; bleiben auch die nächsten beiden
-  Runden erfolglos, endet die Suche statt eines weiteren Neustarts.
-- **Maximale Rundenzahl einhalten:** Die Suche endet spätestens nach
-  `ITERATIONS` Runden, auch wenn keine der anderen Abbruchbedingungen greift.
+- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
+  erfolglosen Runden seit der letzten Verbesserung. Bei vier solchen Runden
+  (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche. Dieser Zähler läuft
+  beim Neustart weiter. Ist die Abbruchgrenze erreicht, endet die Suche
+  statt eines weiteren Neustarts.
+
+Beide Zähler starten bei `0` und steigen bei jeder erfolglosen Runde um `1`.
+Nach der ersten Runde und nach jeder späteren Verbesserung werden beide
+auf `0` gesetzt.
+
+**Beispiel ohne zwischenzeitliche Verbesserung:** Nach zwei
+erfolglosen Runden erfolgt der Neustart; danach steht der Neustart-Zähler
+auf `0`, der Abbruch-Zähler weiterhin auf `2`. Bleiben die nächsten beiden
+Runden ebenfalls erfolglos, erreicht der Abbruch-Zähler `4` und die Suche
+endet.
+
+**Maximale Rundenzahl:** Unabhängig von den beiden Zählern endet die Suche
+spätestens nach `ITERATIONS` Runden.
 
 **Aktuelle Einstellung:** Bei `ITERATIONS = 2` wird die Schrittweite noch
 nicht wegen ausbleibender Verbesserung zurückgesetzt und die Suche nicht

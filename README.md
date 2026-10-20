@@ -2424,59 +2424,82 @@ dadurch kein besserer Satz gefunden, soll die Suche beendet werden.
 In jeder Iteration werden daraus weitere Nachbarvarianten erzeugt und
 zusätzliche zufällige Gewichtssätze geprüft, wie in
 [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
-Exploration findet also in jeder Iteration statt. Die Zähler bestimmen,
-wann die Änderungsschritte wieder größer werden und wann die Suche aufhört.
+Exploration findet also in jeder Iteration statt; beim Neustart werden die
+Änderungsschritte für die Nachbarvarianten wieder größer.
 
-Eine **Iteration ohne Verbesserung** bedeutet: In dieser Iteration werden
-mehrere Gewichtssätze erzeugt und jeweils über alle Seeds geprüft. Erreicht
-keiner eine kleinere mittlere globale Bewertungszahl als der bisher beste
-Gewichtssatz, ist diese Iteration ohne Verbesserung. Der Code verwendet dafür
-zwei getrennte Zähler:
+Eine **Verbesserung** liegt vor, wenn ein geprüfter Gewichtssatz eine kleinere
+mittlere globale Bewertungszahl als der bisher beste Satz erreicht. Dann wird
+er als neuer bester Satz übernommen, die Schrittweite halbiert und **beide
+Zähler werden auf `0` gesetzt**. Auch die erste Iteration legt einen besten
+Satz fest, halbiert die Schrittweite und setzt beide Zähler auf `0`.
 
-- **Neustart-Zähler (`rounds_without_improvement`) – breiter suchen:** Nach **zwei
-  aufeinanderfolgenden Iterationen ohne Verbesserung**
+Findet eine Iteration keinen besseren Satz, steigen beide Zähler um `1`:
+
+- **Neustart-Zähler (`rounds_without_improvement`) – breiter suchen:** Er
+  zählt die Iterationen ohne Verbesserung seit der letzten Verbesserung oder
+  dem letzten Neustart. Nach **zwei solchen Iterationen**
   (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser Zähler auf `0` gesetzt
   und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt.
-  In der nächsten Iteration werden damit wieder größere Änderungen an
-  einzelnen Gewichten des bisher besten Satzes ausprobiert.
-  Die zusätzlichen zufälligen Gewichtssätze werden weiterhin unabhängig
-  von dieser Schrittweite erzeugt.
-- **Abbruch-Zähler (`total_rounds_without_improvement`) – Suche beenden:** Er zählt die
-  **Iterationen ohne Verbesserung seit der letzten Verbesserung**.
-  Ein Neustart setzt ihn **nicht** zurück. Wird ein besserer Gewichtssatz
-  gefunden, beginnt er wieder bei `0`. Bei `4`
+  Der bisher beste Gewichtssatz bleibt erhalten; die nächste Iteration
+  untersucht wieder größere Änderungen an seinen einzelnen Gewichten.
+  Die zusätzlichen zufälligen Gewichtssätze bleiben von der Schrittweite
+  unabhängig.
+- **Abbruch-Zähler (`total_rounds_without_improvement`) – Suche beenden:**
+  Er zählt die **Iterationen ohne Verbesserung seit der letzten Verbesserung**.
+  Ein Neustart setzt ihn **nicht** zurück. Nach **vier solchen Iterationen**
   (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche statt eines weiteren
   Neustarts.
 
-Beide Zähler starten bei `0` und steigen bei jeder Iteration ohne Verbesserung
-um `1`. Nach der ersten Iteration und nach jeder späteren Verbesserung werden
-beide auf `0` gesetzt und die Schrittweite halbiert. So werden anschließend
-kleinere Änderungen am besten Gewichtssatz untersucht. Das Zurücksetzen der
-Zähler löscht den gespeicherten besten Gewichtssatz nicht.
+**Die Abbruchgrenze ist die übergeordnete Hülle um den Neustart:** Zwei
+Iterationen ohne Verbesserung führen zu größeren Suchschritten. Bleiben auch
+die nächsten beiden Iterationen ohne Verbesserung, endet die Suche. Eine
+Verbesserung setzt die Zählung für beide Grenzen wieder auf `0`.
 
-**Beispiel bei ausreichend vielen Iterationen:** Nach der ersten Iteration ist
-Gewichtssatz A mit einer mittleren globalen Bewertungszahl von `8` der bisher
-beste Satz. Die Schrittweite beträgt jetzt `0.2`; beide Zähler stehen auf `0`.
+Das Diagramm zeigt diese Regeln einschließlich Verbesserungen. Unabhängig
+von den Zählern endet die Suche spätestens nach `ITERATIONS` Iterationen.
+**Aktuell ist `ITERATIONS = 2`:** Die erste Iteration legt den besten Satz
+fest, danach bleibt nur eine weitere Iteration. Neustart und vorzeitiger
+Abbruch können deshalb erst bei einer höheren Iterationsgrenze auftreten.
 
-1. In der nächsten Iteration erreicht kein geprüfter Satz einen Wert unter `8`.
-   Beide Zähler steigen auf `1`.
-2. Auch in der folgenden Iteration wird kein Wert unter `8` erreicht.
-   Beide Zähler steigen auf `2`. Jetzt erfolgt der Neustart: Die Schrittweite
-   wird von `0.2` auf `0.4` gesetzt, und Satz A bleibt der Ausgangspunkt.
-   Danach steht der Neustart-Zähler auf `0`, der Abbruch-Zähler weiterhin auf `2`.
-3. Bleiben auch die nächsten beiden Iterationen ohne Wert unter `8`, erreicht
-   der Abbruch-Zähler `4` und die Suche endet.
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 300
+    rankSpacing: 35
+    nodeSpacing: 35
+    subGraphTitleMargin:
+      top: 10
+      bottom: 20
+---
+flowchart TD
+    A["Iteration ausführen:<br/>Gewichtssätze erzeugen und prüfen"]
+    B{"Erste Iteration<br/>oder Verbesserung?"}
+    C["Besten Satz übernehmen<br/>Schrittweite halbieren<br/>Beide Zähler auf 0"]
 
-„Neustart“ bedeutet hier also **größere Änderungsschritte bei den
-Nachbarvarianten**, nicht den Beginn der gesamten Optimierung von vorne.
+    subgraph Grenze["Abbruchgrenze: 4 Iterationen ohne Verbesserung"]
+        D["Bisher besten Satz behalten<br/>Beide Zähler um 1 erhöhen"]
+        E{"Abbruch-Zähler ≥ 4?"}
+        F{"Neustart-Zähler ≥ 2?"}
+        G["Neustart: breiter suchen<br/>Schrittweite auf 0.4<br/>Neustart-Zähler auf 0<br/>Abbruch-Zähler unverändert"]
 
-**Maximale Anzahl von Iterationen:** Unabhängig von den beiden Zählern endet
-die Suche spätestens nach `ITERATIONS` Iterationen.
+        D --> E
+        E -- Nein --> F
+        F -- Ja --> G
+    end
 
-**Aktuelle Einstellung:** Bei `ITERATIONS = 2` wird die Schrittweite noch
-nicht wegen ausbleibender Verbesserung zurückgesetzt und die Suche nicht
-vorzeitig beendet. Die erste Iteration legt den besten Satz fest; danach folgt
-nur eine weitere Iteration.
+    A --> B
+    B -- Ja --> C
+    B -- Nein --> D
+    E -- Ja --> Ende["Suche beenden"]
+    F -- Nein --> H{"ITERATIONS erreicht?"}
+    C --> H
+    G --> H
+    H -- Nein --> A
+    H -- Ja --> Ende
+
+    style Grenze fill:transparent,stroke-width:2px
+```
 
 `select_best_local_weight_set_across_seeds()` ermittelt den besten Satz einer
 Iteration. `optimize_iteratively()` speichert den bisher besten Satz und

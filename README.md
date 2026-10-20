@@ -2427,12 +2427,15 @@ Satz. Der Code verwendet dafür zwei getrennte Zähler:
 
 - **Neustart-Zähler (`rounds_without_improvement`):** Er zählt Suchrunden
   ohne besseres Ergebnis, nicht einzelne Gewichtssätze oder Simulationsläufe.
-  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die
-  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Dadurch werden
-  wieder größere Änderungen an den einzelnen Gewichten ausprobiert.
-  **Der bisher beste Gewichtssatz bleibt erhalten.** Nur die Größe der
-  nächsten Änderungsschritte wird angepasst. Der Neustart-Zähler beginnt
-  danach wieder bei `0`.
+  Nach zwei solchen Runden (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser
+  Zähler auf `0` gesetzt und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4`
+  zurückgesetzt. **Die nächste Suchrunde erzeugt damit neue Nachbarvarianten
+  des bisher besten Gewichtssatzes.** Dabei wird jeweils nur ein Gewicht
+  mit der Schrittweite `0.4` verändert; die anderen Gewichte bleiben
+  unverändert. Die in [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
+  beschriebenen Wertebereiche gelten weiterhin. Die zusätzlichen zufälligen
+  Gewichtssätze werden unabhängig von dieser Schrittweite erzeugt:
+  **Die `0.4` gilt für die Nachbarsuche, nicht für die zufällige Exploration.**
 - **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
   erfolglosen Runden seit der letzten Verbesserung. Bei vier solchen Runden
   (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche. Dieser Zähler läuft
@@ -2456,8 +2459,8 @@ beste Satz. Die Schrittweite beträgt jetzt `0.2`; beide Zähler stehen auf `0`.
 3. Bleiben auch die nächsten beiden Runden ohne Wert unter `8`, erreicht
    der Abbruch-Zähler `4` und die Suche endet.
 
-„Neustart“ bedeutet hier also **größere Änderungsschritte**, nicht den
-Beginn der gesamten Optimierung von vorne.
+„Neustart“ bedeutet hier also **größere Änderungsschritte bei den
+Nachbarvarianten**, nicht den Beginn der gesamten Optimierung von vorne.
 
 **Maximale Rundenzahl:** Unabhängig von den beiden Zählern endet die Suche
 spätestens nach `ITERATIONS` Runden.

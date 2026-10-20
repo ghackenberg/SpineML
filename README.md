@@ -2417,26 +2417,35 @@ beiden Runden. Der beste gefundene Gewichtssatz wird anschließend in
 
 `select_best_local_weight_set_across_seeds()` ermittelt den besten Satz
 einer Runde. `optimize_iteratively()` speichert den bisher besten Satz und
-steuert die nächsten Runden. Bei einer Verbesserung werden die Schrittweite
-halbiert und die Zähler erfolgloser Runden zurückgesetzt. Das geschieht
-auch nach der ersten Runde, die erstmals einen besten Satz festlegt.
+steuert die nächsten Runden. Nach der ersten Runde und nach jeder späteren
+Verbesserung wird die Schrittweite halbiert. So werden kleinere Änderungen
+am besten Gewichtssatz untersucht. Dabei werden auch beide Zähler
+erfolgloser Runden auf `0` gesetzt.
 
-Bei mehr Suchrunden können zusätzlich diese Regeln greifen:
+Eine **Runde ohne Verbesserung** bedeutet: Kein geprüfter Gewichtssatz
+erreicht eine kleinere mittlere globale Bewertungszahl als der bisher beste
+Satz. Für diesen Fall gelten folgende Regeln:
 
-- **Neustart:** Nach `RESTART_AFTER_NO_IMPROVEMENT = 2` aufeinanderfolgenden
-  Runden ohne Verbesserung wird die Schrittweite auf ihren Anfangswert
-  zurückgesetzt. Ausgangspunkt bleibt der bisher beste Gewichtssatz; die
-  Suche beginnt nicht wieder mit dem Standardgewichtssatz. Der Zähler bis
-  zum nächsten Neustart beginnt erneut bei `0`.
-- **Vorzeitiges Ende:** Nach `STOP_AFTER_NO_IMPROVEMENT = 4` Runden ohne
-  Verbesserung seit der letzten Verbesserung endet die Suche. Ein Neustart
-  setzt diesen Abbruchzähler nicht zurück. Diese Prüfung erfolgt vor der
-  Neustartprüfung.
-- **Maximale Rundenzahl:** Unabhängig davon endet die Suche spätestens nach
-  der in `ITERATIONS` eingestellten Anzahl von Runden.
+- **Wieder größere Änderungen ausprobieren (im Code „Neustart“):** Nach
+  zwei aufeinanderfolgenden erfolglosen Runden
+  (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird die Schrittweite auf
+  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Der bisher
+  beste Gewichtssatz bleibt der Ausgangspunkt. Beispiel: Für ein Gewicht
+  `0.5` entstehen bei Schrittweite `0.2` die Varianten `0.3` und `0.7`.
+  Nach dem Zurücksetzen auf `0.4` werden stattdessen `0.1` und `0.9`
+  geprüft. Die Suche untersucht damit wieder weiter entfernte Werte.
+- **Suche bei ausbleibender Verbesserung beenden:** Bringen insgesamt vier
+  Runden hintereinander keinen besseren Satz
+  (`STOP_AFTER_NO_IMPROVEMENT = 4`), endet die Suche. Das Zurücksetzen der
+  Schrittweite unterbricht diese Zählung nicht: Zwei erfolglose Runden
+  führen zu einer größeren Schrittweite; bleiben auch die nächsten beiden
+  Runden erfolglos, endet die Suche statt eines weiteren Neustarts.
+- **Maximale Rundenzahl einhalten:** Die Suche endet spätestens nach
+  `ITERATIONS` Runden, auch wenn keine der anderen Abbruchbedingungen greift.
 
-Bei den aktuell zwei Runden können Neustart und vorzeitiges Ende noch nicht
-ausgelöst werden: Die erste Runde legt den besten Satz fest, danach bleibt
+**Aktuelle Einstellung:** Bei `ITERATIONS = 2` wird die Schrittweite noch
+nicht wegen ausbleibender Verbesserung zurückgesetzt und die Suche nicht
+vorzeitig beendet. Die erste Runde legt den besten Satz fest; danach folgt
 nur eine weitere Runde.
 
 Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem

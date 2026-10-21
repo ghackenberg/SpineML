@@ -2139,9 +2139,16 @@ keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
    desto besser wird das Produktionsergebnis bewertet.
 6. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Erstellt
    den [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)
-   und übergibt ihm den Runner und die globale Bewertung. Der Aufruf
-   `optimize_iteratively()` führt die Gewichtssuche aus: Gewichtssätze
-   erstellen, simulieren, bewerten und den besten Satz behalten. Das sind die
+   und übergibt ihm zwei Bestandteile:
+
+   - **Den Runner**, damit er einen Gewichtssatz mit einem Seed simulieren
+     kann. Der Runner liefert die Produktionskennzahlen zurück.
+   - **Die globale Bewertung**, damit aus diesen Kennzahlen eine globale
+     Bewertungszahl berechnet wird. Je kleiner diese Zahl, desto besser.
+
+   Beim Aufruf von `optimize_iteratively()` testet der Optimierer jeden
+   Gewichtssatz mit allen Seeds, bildet den Mittelwert seiner Bewertungszahlen
+   und wählt den Gewichtssatz mit dem kleinsten Mittelwert aus. Das sind die
    [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
 **Nach dem Klick auf Start optimization:** `_start_optimization()` setzt die

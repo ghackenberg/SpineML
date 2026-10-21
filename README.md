@@ -2146,9 +2146,13 @@ keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
    - **Die globale Bewertung**, damit aus diesen Kennzahlen eine globale
      Bewertungszahl berechnet wird. Je kleiner diese Zahl, desto besser.
 
-   Beim Aufruf von `optimize_iteratively()` testet der Optimierer jeden
-   Gewichtssatz mit allen Seeds, bildet den Mittelwert seiner Bewertungszahlen
-   und wählt den Gewichtssatz mit dem kleinsten Mittelwert aus. Das sind die
+   Das Erstellen des Optimierers startet noch keine Gewichtssuche. Die Klasse
+   `LocalHeuristicWeightOptimizer` enthält dafür die Methode
+   [`optimize_iteratively()`](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
+   Erst der Aufruf `optimizer.optimize_iteratively(...)` startet die Suche.
+   Dabei testet der Optimierer jeden Gewichtssatz mit allen Seeds, bildet den
+   Mittelwert seiner Bewertungszahlen und wählt den Gewichtssatz mit dem
+   kleinsten Mittelwert aus. Das sind die
    [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
 **Nach dem Klick auf Start optimization** wird `_start_optimization()`
@@ -2170,8 +2174,10 @@ aufgerufen. Dabei passiert Folgendes:
      Mit dem Standardgewichtssatz simulieren und daraus die Referenzwerte
      für die Bewertung berechnen.
    - **Gewichtssätze suchen und vergleichen ([Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen)):**
-     `optimize_iteratively()` aufrufen, um verschiedene Gewichtssätze zu
-     testen und den Satz mit dem kleinsten Mittelwert auszuwählen.
+     Der Worker-Thread ruft `optimizer.optimize_iteratively(...)` auf.
+     Damit startet er die Gewichtssuche des zuvor erstellten Optimierers:
+     verschiedene Gewichtssätze testen und den Satz mit dem kleinsten
+     Mittelwert auswählen.
    - **Steuerungen vergleichen ([Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)):**
      `_benchmark_policies()` vergleicht die Zufallspolicy, die Standardheuristik
      und die Heuristik mit dem gefundenen Gewichtssatz auf separaten Test-Seeds.

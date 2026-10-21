@@ -2113,41 +2113,44 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 Das gewünschte Beispiel in [optimization.py](sources/optimization.py)
 bei `EXAMPLE_FILE` eintragen.
 
-Das Modell beschreibt das **Layout**,
-also den räumlichen Aufbau der Fabrik, und das **Szenario**, also die
-auszuführenden Produktionsaufträge. `_load_model()` führt die Modelldatei
-aus; `_suppress_model_visualization()` unterdrückt dabei deren direkten
-`simulate(...)`-Aufruf. `_find_layout_and_scenario()` wählt das Layout und
-Szenario aus, deren Produktion untersucht werden soll.
+Beim Öffnen der Oberfläche wird `create_optimizer()` aufgerufen. Diese
+Funktion bereitet die Optimierung mit folgenden Aufrufen vor:
 
-Der **Runner**
-([SpineMLSimulationRunner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py))
-führt ein Szenario in einem Layout mit einem Gewichtssatz und einem
-[Seed](#baseline-technik) aus. Nach dem Simulationslauf liefert er die
-Produktionskennzahlen zurück.
+1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
+   `EXAMPLE_FILE` eingetragene Datei.
+2. **`_load_model()` – Beispiel laden:** Führt die Beispieldatei aus und
+   übernimmt die darin definierten Modellobjekte.
 
-Um diese Produktionsergebnisse vergleichen zu können, richtet
-`create_optimizer()` die **globale Bewertung**
-([GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py))
-ein. Sie berechnet aus den Produktionskennzahlen eines Laufs eine
-[globale Bewertungszahl](#globale-bewertungszahl): Je kleiner diese Zahl,
-desto besser wird das Produktionsergebnis bewertet.
+   - **`_suppress_model_visualization()` – sofortigen Simulationsstart verhindern:**
+     Wird innerhalb von `_load_model()` verwendet. Ein `simulate(...)`-Aufruf
+     in der Beispieldatei startet dadurch beim Laden noch keine Simulation.
 
-Die Suche steuert der **Optimierer**
-([LocalHeuristicWeightOptimizer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)),
-den `create_optimizer()` mit dem Runner und der globalen Bewertung verbindet.
-Er lässt verschiedene Gewichtssätze simulieren und vergleicht ihre mittleren
-globalen Bewertungszahlen über die Seeds. Den bisher besten Gewichtssatz
-behält er für die weitere Suche. Die einzelnen Suchschritte werden ab
-[Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
+3. **`_find_layout_and_scenario()` – Layout und Szenario auswählen:** Bestimmt,
+   welches **Layout** (räumlicher Aufbau der Fabrik) und welches **Szenario**
+   (Produktionsaufträge) für die Optimierung verwendet werden.
+4. **`SpineMLSimulationRunner(...)` – Runner erstellen:** Der
+   [Runner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py)
+   führt später ein Szenario in einem Layout mit einem Gewichtssatz und einem
+   [Seed](#baseline-technik) aus. Nach dem Simulationslauf liefert er die
+   Produktionskennzahlen zurück.
+5. **`_global_evaluation()` – globale Bewertung erstellen:** Erstellt die
+   [GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py).
+   Sie berechnet später aus den Produktionskennzahlen eines Laufs eine
+   [globale Bewertungszahl](#globale-bewertungszahl). Je kleiner diese Zahl,
+   desto besser wird das Produktionsergebnis bewertet.
+6. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Verbindet
+   den Runner und die globale Bewertung mit dem
+   [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
+   Er testet später verschiedene Gewichtssätze und behält den mit der bisher
+   kleinsten mittleren globalen Bewertungszahl über die Seeds. Die Suche wird
+   ab [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
 
-Beim Klick auf **Start optimization** setzt `_start_optimization()` die
-Ergebnisse des vorherigen Optimierungslaufs im Anzeigestand zurück und
-startet einen Worker-Thread, also die Hintergrundausführung. Dieser führt
-nacheinander die Baseline in Schritt 1, die Gewichtssuche in den Schritten
-2 bis 5 und den Abschlussvergleich in Schritt 6 aus.
-Die Rückmeldungen an die Oberfläche werden bei
-[Schritt 3](#fortschritt-und-ergebnisdiagramme) erklärt.
+Erst beim Klick auf **Start optimization** wird `_start_optimization()`
+aufgerufen. Diese Funktion löscht die angezeigten Ergebnisse des vorherigen
+Optimierungslaufs und startet die Ausführung im Hintergrund. Dort werden
+nacheinander Schritt 1, die Schritte 2 bis 5 und Schritt 6 ausgeführt.
+Die [Fortschrittsanzeige](#fortschritt-und-ergebnisdiagramme) wird bei
+Schritt 3 erklärt.
 
 #### Suchparameter
 

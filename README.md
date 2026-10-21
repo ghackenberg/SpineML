@@ -2416,54 +2416,65 @@ beiden Iterationen. Der beste gefundene Gewichtssatz wird anschließend in
 
 #### Weitere Iterationen: Neustart, vorzeitiges Ende und Rückgabewerte im Code
 
-**Ziel der beiden Zähler:** Bleibt eine Verbesserung aus, soll die Suche
-zunächst mit größeren Änderungen weitere Gewichtssätze erkunden. Wird auch
-dadurch kein besserer Satz gefunden, soll die Suche beendet werden.
+**Ziel der beiden Zähler:** Bleibt der kleinste bisher gefundene
+**Mittelwert der globalen Bewertungszahlen über alle Seeds** mehrere
+Iterationen lang unverändert, soll die Suche zunächst größere Änderungen an
+den Gewichten ausprobieren. Wird weiterhin kein kleinerer Mittelwert
+gefunden, soll die Suche beendet werden.
 
-**Ohne Verbesserung bleibt der bisher beste Gewichtssatz der Ausgangspunkt.**
-In jeder Iteration werden daraus weitere Nachbarvarianten erzeugt und
-zusätzliche zufällige Gewichtssätze geprüft, wie in
-[Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
-Exploration findet also in jeder Iteration statt; beim Neustart werden die
-Änderungsschritte für die Nachbarvarianten wieder größer.
+**Was wird nach jeder Iteration verglichen?** Für jeden geprüften
+Gewichtssatz wird der [Mittelwert seiner globalen Bewertungszahlen über alle
+Seeds](#mittelwert-über-die-seeds) berechnet. Danach wird der kleinste
+Mittelwert der aktuellen Iteration mit dem bisher gespeicherten kleinsten
+Mittelwert verglichen. **Ein kleinerer Mittelwert ist besser.**
 
-Eine **Verbesserung** liegt vor, wenn ein geprüfter Gewichtssatz eine kleinere
-mittlere globale Bewertungszahl als der bisher beste Satz erreicht. Dann wird
-er als neuer bester Satz übernommen, die Schrittweite halbiert und **beide
-Zähler werden auf `0` gesetzt**. Auch die erste Iteration legt einen besten
-Satz fest, halbiert die Schrittweite und setzt beide Zähler auf `0`.
+- **Die aktuelle Iteration liefert einen kleineren Mittelwert:** Der
+  zugehörige Gewichtssatz wird als neuer bester Satz gespeichert. Die
+  Schrittweite wird halbiert und beide Zähler werden auf `0` gesetzt.
+- **Kein geprüfter Gewichtssatz der aktuellen Iteration liefert einen
+  kleineren Mittelwert:** Der bisher beste Gewichtssatz und sein Mittelwert
+  bleiben gespeichert. Beide Zähler steigen um `1`. Auch ein gleicher
+  Mittelwert zählt als **keine Verbesserung**.
 
-Findet eine Iteration keinen besseren Satz, steigen beide Zähler um `1`:
+In der **ersten Iteration** gibt es noch keinen gespeicherten besten
+Mittelwert. Deshalb werden zunächst der Satz mit dem kleinsten Mittelwert
+dieser Iteration und sein Mittelwert gespeichert. Die Schrittweite wird
+halbiert; beide Zähler stehen auf `0`.
 
-- **Neustart-Zähler (`rounds_without_improvement`) – breiter suchen:** Er
-  zählt die Iterationen ohne Verbesserung seit der letzten Verbesserung oder
-  dem letzten Neustart. Nach **zwei aufeinanderfolgenden Iterationen ohne
-  Verbesserung** erreicht er `2` (`RESTART_AFTER_NO_IMPROVEMENT = 2`) und
-  **löst einen Neustart aus**. Ziel dieses Neustarts ist eine breitere
-  Erkundung (Exploration) um den bisher besten Gewichtssatz. Dazu wird die
-  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Die nächste
-  Iteration untersucht dadurch wieder größere Änderungen an einzelnen
-  Gewichten. **Erst beim Neustart wird der Neustart-Zähler von `2` auf `0`
-  gesetzt. Der bisher beste Gewichtssatz bleibt erhalten.**
-  Die zusätzlichen zufälligen Gewichtssätze bleiben von der Schrittweite
-  unabhängig.
-- **Abbruch-Zähler (`total_rounds_without_improvement`) – Suche beenden:**
-  Er zählt die **Iterationen ohne Verbesserung seit der letzten Verbesserung**.
-  Ein Neustart setzt ihn **nicht** zurück. Nach **vier solchen Iterationen**
-  (`STOP_AFTER_NO_IMPROVEMENT = 4`) endet die Suche statt eines weiteren
-  Neustarts.
+**Was zählen die beiden Zähler?** Sie zählen Iterationen, in denen kein
+kleinerer Mittelwert gefunden wurde. Sie zählen weder einzelne
+Gewichtssätze noch Simulationsläufe oder Neustarts.
 
-**Die Abbruchgrenze ist die übergeordnete Hülle um den Neustart:** Zwei
-Iterationen ohne Verbesserung führen zu größeren Suchschritten. Bleiben auch
-die nächsten beiden Iterationen ohne Verbesserung, endet die Suche. Eine
-Verbesserung setzt die Zählung für beide Grenzen wieder auf `0`.
+- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt diese
+  Iterationen seit dem letzten Neustart oder seit der letzten Übernahme
+  eines Gewichtssatzes mit kleinerem Mittelwert. Erreicht der Zähler `2`
+  (`RESTART_AFTER_NO_IMPROVEMENT = 2`), wird ein **Neustart ausgelöst**, sofern
+  die Abbruchgrenze noch nicht erreicht ist. Beim Neustart wird die
+  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt und anschließend
+  der Neustart-Zähler von `2` auf `0` gesetzt. Der bisher beste Gewichtssatz
+  bleibt der Ausgangspunkt. Die nächste Iteration prüft Nachbarvarianten
+  mit größeren Änderungen an einzelnen Gewichten: Das ist die breitere
+  Erkundung (Exploration). Zusätzliche zufällige Gewichtssätze werden
+  weiterhin unabhängig von der Schrittweite erzeugt, wie in
+  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
+- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
+  Iterationen ohne kleineren Mittelwert seit der letzten Übernahme eines
+  besten Satzes. **Beim Neustart bleibt dieser Zähler unverändert.**
+  Erreicht der Abbruch-Zähler `4` (`STOP_AFTER_NO_IMPROVEMENT = 4`), endet die
+  Suche. Bei `4` wird deshalb kein weiterer Neustart mehr ausgeführt.
 
-Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**.
-Die Zahlen zeigen jeweils die Zählerstände nach der Iteration; `2 → 0`
-bedeutet, dass der Zähler innerhalb dieser Iteration auf `0` zurückgesetzt
-wird. In Iteration 3 setzt eine Verbesserung beide Zähler zurück. Danach
-folgen vier Iterationen ohne Verbesserung: Nach zwei erfolgt der Neustart,
-nach insgesamt vier der Abbruch.
+**Die Abbruchgrenze umfasst die Iterationen vor und nach dem Neustart:**
+Nach zwei Iterationen ohne kleineren Mittelwert steht der Neustart-Zähler
+zunächst auf `2`. Der Neustart setzt ihn auf `0`; der Abbruch-Zähler bleibt
+auf `2`. Liefern die nächsten beiden Iterationen ebenfalls keinen kleineren
+Mittelwert, erreicht der Abbruch-Zähler `4` und die Suche endet.
+
+Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**
+und frei gewählten Mittelwerten: In Iteration 1 wird der Mittelwert `8`
+gespeichert. Erst Iteration 3 liefert mit `7` einen kleineren Mittelwert.
+Die Iterationen 4 bis 7 liefern keinen Mittelwert unter `7`.
+Die Zählerstände sind jeweils nach der Iteration angegeben; `2 → 0` zeigt
+den Anstieg auf `2` und das anschließende Zurücksetzen beim Neustart.
 
 **Voraussetzung für dieses Beispiel ist `ITERATIONS >= 7`.** Aktuell ist
 `ITERATIONS = 2`; damit endet die Suche schon nach der zweiten Iteration.
@@ -2481,20 +2492,20 @@ config:
       bottom: 20
 ---
 flowchart TB
-    subgraph Verbesserung["Eine Verbesserung setzt beide Zähler zurück"]
+    subgraph Verbesserung["Iteration 3 liefert einen kleineren Mittelwert: 7 statt 8"]
         direction LR
-        A["<b>Iteration 1</b><br/>Ersten besten Satz festlegen<br/>Neustart-Zähler: 0<br/>Abbruch-Zähler: 0"]
-        B["<b>Iteration 2</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
-        C["<b>Iteration 3</b><br/><b>VERBESSERUNG</b><br/>Neustart-Zähler: 1 → 0<br/>Abbruch-Zähler: 1 → 0<br/>Schrittweite: 0.2 → 0.1"]
+        A["<b>Iteration 1</b><br/>Besten Mittelwert 8 speichern<br/>Neustart-Zähler: 0<br/>Abbruch-Zähler: 0"]
+        B["<b>Iteration 2</b><br/>Kein Mittelwert unter 8<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
+        C["<b>Iteration 3</b><br/><b>Neuen Mittelwert 7 speichern</b><br/>Neustart-Zähler: 1 → 0<br/>Abbruch-Zähler: 1 → 0<br/>Schrittweite: 0.2 → 0.1"]
         A --> B --> C
     end
 
-    subgraph Grenze["Abbruchgrenze: 4 Iterationen ohne Verbesserung seit Iteration 3"]
+    subgraph Grenze["Abbruchgrenze: 4 Iterationen ohne einen Mittelwert unter 7"]
         direction LR
-        D["<b>Iteration 4</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
-        E["<b>Iteration 5</b><br/><b>NEUSTART nach 2</b><br/>Neustart-Zähler: 2 → 0<br/>Abbruch-Zähler: 2 bleibt 2<br/>Schrittweite: 0.1 → 0.4"]
-        F["<b>Iteration 6</b><br/>Keine Verbesserung<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 3"]
-        G["<b>Iteration 7</b><br/><b>ABBRUCH nach 4</b><br/>Neustart-Zähler: 2<br/>Abbruch-Zähler: 4"]
+        D["<b>Iteration 4</b><br/>Kein Mittelwert unter 7<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 1"]
+        E["<b>Iteration 5</b><br/>Kein Mittelwert unter 7<br/><b>NEUSTART nach 2</b><br/>Neustart-Zähler: 2 → 0<br/>Abbruch-Zähler: 2 bleibt 2<br/>Schrittweite: 0.1 → 0.4"]
+        F["<b>Iteration 6</b><br/>Kein Mittelwert unter 7<br/>Neustart-Zähler: 1<br/>Abbruch-Zähler: 3"]
+        G["<b>Iteration 7</b><br/>Kein Mittelwert unter 7<br/><b>ABBRUCH nach 4</b><br/>Neustart-Zähler: 2<br/>Abbruch-Zähler: 4"]
         D --> E --> F --> G
     end
 
@@ -2509,8 +2520,9 @@ steuert die weiteren Iterationen.
 
 Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
 `best_weights`, `best_mean_global_cost` und `best_evaluation`.
-`optimize_iteratively()` speichert in `evaluations` die erste ausgewählte
-Lösung und spätere Verbesserungen. Die
+`optimize_iteratively()` speichert in `evaluations` die Bewertung des ersten
+ausgewählten Satzes und die Bewertungen später übernommener Sätze mit
+kleinerem Mittelwert. Die
 [Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen alle
 abgeschlossenen Gewichtssatz-Prüfungen.
 

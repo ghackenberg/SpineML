@@ -2161,18 +2161,23 @@ flowchart TD
    den [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)
    und übergibt ihm zwei Bestandteile:
 
-   - **Den Runner**, damit er einen Gewichtssatz mit einem Seed simulieren
-     kann. Der Runner liefert die Produktionskennzahlen zurück.
-   - **Die globale Bewertung**, damit aus diesen Kennzahlen eine globale
-     Bewertungszahl berechnet wird. Je kleiner diese Zahl, desto besser.
+   - **Den Runner zum Aufrufen:** Der Optimierer übergibt ihm bei jedem
+     Aufruf einen Gewichtssatz und einen Seed. Der Runner simuliert die
+     Produktion und liefert die Produktionskennzahlen zurück.
+   - **Die globale Bewertung als Bewertungsregel:** Sie berechnet aus den
+     Kennzahlen eines Laufs eine globale Bewertungszahl. Je kleiner diese
+     Zahl, desto besser.
 
    Das Erstellen des Optimierers startet noch keine Gewichtssuche. Die Klasse
    `LocalHeuristicWeightOptimizer` enthält dafür die Methode
    [`optimize_iteratively()`](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
    Erst der Aufruf `optimizer.optimize_iteratively(...)` startet die Suche.
-   Dabei testet der Optimierer jeden Gewichtssatz mit allen Seeds, bildet den
-   Mittelwert seiner Bewertungszahlen und wählt den Gewichtssatz mit dem
-   kleinsten Mittelwert aus. Das sind die
+   **Für einen Gewichtssatz** simuliert der Optimierer die Produktion mit
+   jedem Seed und bewertet jeden Lauf mit der globalen Bewertung. Aus den
+   Bewertungszahlen dieser Läufe bildet er den Mittelwert **für diesen
+   Gewichtssatz**. Danach prüft er den nächsten Gewichtssatz genauso.
+   Er vergleicht die Mittelwerte der Gewichtssätze und wählt den Satz mit
+   dem kleinsten Mittelwert aus. Das sind die
    [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
 **Nach dem Klick auf Start optimization** wird `_start_optimization()`

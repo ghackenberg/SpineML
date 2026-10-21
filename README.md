@@ -2109,7 +2109,27 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
 **Vor dem Klick auf Start optimization:** `create_optimizer()` lädt das
 eingetragene Beispiel und erstellt die benötigten Objekte. Dabei wird noch
-keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
+keine Produktion simuliert. Das erste Diagramm zeigt diese Vorbereitung.
+Die Nummern entsprechen den Erklärungen darunter.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 340
+    rankSpacing: 30
+    nodeSpacing: 25
+---
+flowchart TD
+    P0["create_optimizer()"]
+    P0 --> P1["1. _resolve_model_path()<br/>Beispieldatei finden"]
+    P1 --> P2["2. _load_model()<br/>Layout und Szenario laden"]
+    P2 -. "verwendet beim Laden" .-> PS["_suppress_model_visualization()<br/>simulate(...) deaktivieren"]
+    P2 --> P3["3. _find_layout_and_scenario()<br/>Layout und Szenario auswählen"]
+    P3 --> P4["4. SpineMLSimulationRunner(...)<br/>Runner erstellen"]
+    P4 --> P5["5. _global_evaluation()<br/>Globale Bewertung erstellen"]
+    P5 --> P6["6. LocalHeuristicWeightOptimizer(...)<br/>Optimierer erstellen<br/>Runner und globale Bewertung übergeben"]
+```
 
 1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
    `EXAMPLE_FILE` eingetragene Datei.
@@ -2156,7 +2176,45 @@ keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
    [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
 **Nach dem Klick auf Start optimization** wird `_start_optimization()`
-aufgerufen. Dabei passiert Folgendes:
+aufgerufen. Das zweite Diagramm zeigt die Aufgabenteilung zwischen dem
+Streamlit-Thread und dem Worker-Thread. Beide verwenden dieselben
+Fortschritts- und Ergebnisdaten in `state`.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 320
+    rankSpacing: 35
+    nodeSpacing: 30
+    subGraphTitleMargin:
+      top: 10
+      bottom: 20
+---
+flowchart TB
+    U["<b>Streamlit-Thread: Oberfläche</b><br/>Beim Klick: _start_optimization()<br/>Alte Ergebnisse zurücksetzen<br/><br/>Während der Berechnung: state lesen<br/>Fortschritt und Diagramme aktualisieren<br/><br/>Nach Ende: Ergebnis oder Fehler anzeigen"]
+
+    subgraph Berechnung[" "]
+        direction TB
+        B["<b>Worker-Thread: worker()</b><br/>1. Baseline berechnen<br/>Standardgewichtssatz mit allen SEEDS"]
+        B --> O["2–5. Gewichtssuche ausführen<br/>optimizer.optimize_iteratively(...)"]
+        O --> V["6. Drei Steuerungen vergleichen<br/>_benchmark_policies()"]
+        V --> E["Abschluss melden<br/>state.running = False"]
+    end
+
+    Z[("Gemeinsame Daten: state<br/>Fortschritt und Kennzahlen<br/>Ergebnisse und Fehler")]
+    U -- "Worker-Thread starten" --> B
+    O -. "progress()" .-> Z
+    E -. "Abschluss oder Fehler" .-> Z
+    Z -. "Daten für die Anzeige" .-> U
+
+    style Berechnung fill:transparent,stroke:#64748b,stroke-width:1px
+```
+
+Die durchgezogenen Pfeile zeigen den Ablauf. Die gestrichelten Pfeile zeigen
+den Datenaustausch über `state`. Die Worker-Kette zeigt den Ablauf ohne Fehler.
+Tritt in einer Phase ein Fehler auf, bricht die Berechnung dort ab und
+speichert die Fehlermeldung in `state`. Die einzelnen Aufgaben sind:
 
 1. **Alte Anzeigeergebnisse zurücksetzen:** Die Funktion entfernt die
    gespeicherten Ergebnisse und Diagrammdaten des vorherigen Optimierungslaufs.

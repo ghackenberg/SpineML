@@ -2028,10 +2028,10 @@ heuristische Steuerung im Mittel bessere Produktionsergebnisse erzielt.**
 
 #### Gesamter Optimierungsablauf
 
-Das Diagramm ist der Ausgangspunkt für die folgenden Abschnitte: Es zeigt
-zuerst die Vorbereitung als **Schritt 0**, danach die Schritte 1 bis 6.
-Eine **Iteration** umfasst die Schritte 2 bis 5. Alle Erklärungen, technischen
-Details und Anzeigen sind unten dem zugehörigen Schritt zugeordnet.
+Das Diagramm zeigt den Ablauf von der Vorbereitung bis zum Vergleich der
+Steuerungen. Die Abschnitte darunter erklären die Schritte in derselben
+Reihenfolge. Eine **Iteration ist eine Suchrunde**, in der die Schritte
+2 bis 5 einmal durchlaufen werden.
 
 ```mermaid
 ---
@@ -2107,10 +2107,9 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
 #### Modell und Hintergrundlauf vorbereiten
 
-Das gewünschte Beispiel in [optimization.py](sources/optimization.py)
-bei `EXAMPLE_FILE` eintragen.
-
-`create_optimizer()` bereitet die Optimierung in dieser Reihenfolge vor:
+**Vor dem Klick auf Start optimization:** `create_optimizer()` lädt das
+eingetragene Beispiel und erstellt die benötigten Objekte. Dabei wird noch
+keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
 
 1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
    `EXAMPLE_FILE` eingetragene Datei.
@@ -2119,37 +2118,39 @@ bei `EXAMPLE_FILE` eintragen.
    startet dabei noch nicht.
 
    - **`_suppress_model_visualization()` – sofortigen Simulationsstart verhindern:**
-     Wird innerhalb von `_load_model()` verwendet. Trotz des Namens verhindert
-     die Funktion nicht nur die visuelle Anzeige, sondern den gesamten
-     Simulationsstart durch `simulate(...)` in der Beispieldatei. Das Beispiel
-     wird zunächst nur geladen. Die Simulationsläufe startet später der Runner.
+     Verhindert innerhalb von `_load_model()`, dass `simulate(...)` in der
+     Beispieldatei eine Simulation startet. Es wird nicht nur die Animation
+     ausgeschaltet: Beim Laden wird kein Simulationslauf ausgeführt.
 
 3. **`_find_layout_and_scenario()` – Layout und Szenario auswählen:** Bestimmt,
    welches **Layout** (räumlicher Aufbau der Fabrik) und welches **Szenario**
    (Produktionsaufträge) für die Optimierung verwendet werden.
-4. **`SpineMLSimulationRunner(...)` – Runner erstellen:** Der
+4. **`SpineMLSimulationRunner(...)` – Runner erstellen:** Erstellt den
    [Runner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py)
-   führt später ein Szenario in einem Layout mit einem Gewichtssatz und einem
-   [Seed](#baseline-technik) aus. Nach dem Simulationslauf liefert er die
-   Produktionskennzahlen zurück.
+   mit dem ausgewählten Layout und Szenario. Ein Aufruf
+   `runner(weights, seed)` führt dieses Szenario mit dem übergebenen
+   Gewichtssatz und [Seed](#baseline-technik) aus und liefert die
+   Produktionskennzahlen zurück. Diese Aufrufe beginnen nach dem Klick auf
+   **Start optimization** mit den Läufen in [Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren).
 5. **`_global_evaluation()` – globale Bewertung erstellen:** Erstellt die
    [GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py).
-   Sie berechnet später aus den Produktionskennzahlen eines Laufs eine
+   Sie berechnet aus den Produktionskennzahlen eines abgeschlossenen Laufs eine
    [globale Bewertungszahl](#globale-bewertungszahl). Je kleiner diese Zahl,
    desto besser wird das Produktionsergebnis bewertet.
-6. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Verbindet
-   den Runner und die globale Bewertung mit dem
-   [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
-   Er testet später verschiedene Gewichtssätze und behält den mit der bisher
-   kleinsten mittleren globalen Bewertungszahl über die Seeds. Die Suche wird
-   ab [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
+6. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Erstellt
+   den [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)
+   und übergibt ihm den Runner und die globale Bewertung. Der Aufruf
+   `optimize_iteratively()` führt die Gewichtssuche aus: Gewichtssätze
+   erstellen, simulieren, bewerten und den besten Satz behalten. Das sind die
+   [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
-Erst beim Klick auf **Start optimization** wird `_start_optimization()`
-aufgerufen. Diese Funktion löscht die angezeigten Ergebnisse des vorherigen
-Optimierungslaufs und startet die Ausführung im Hintergrund. Dort werden
-nacheinander Schritt 1, die Schritte 2 bis 5 und Schritt 6 ausgeführt.
-Die [Fortschrittsanzeige](#fortschritt-und-ergebnisdiagramme) wird bei
-Schritt 3 erklärt.
+**Nach dem Klick auf Start optimization:** `_start_optimization()` setzt die
+angezeigten Ergebnisse des vorherigen Optimierungslaufs zurück und startet
+einen Hintergrundlauf (Worker-Thread). Dieser führt zuerst die Baseline in
+Schritt 1 aus, ruft danach `optimize_iteratively()` für die Schritte 2 bis 5
+auf und startet abschließend den Vergleich der drei Steuerungen in Schritt 6.
+Währenddessen zeigt das Interface den
+[Fortschritt und die Ergebnisse](#fortschritt-und-ergebnisdiagramme).
 
 #### Suchparameter
 
@@ -2162,8 +2163,8 @@ Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
 | `ITERATIONS` | Maximale Anzahl der [Iterationen](#5-weitere-iteration-ausführen). |
 | `INITIAL_WEIGHT_STEP` | Anfängliche Schrittweite für das [Erhöhen und Verringern einzelner Gewichte](#2-varianten-des-lokalen-gewichtssatzes-erstellen). |
 | `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Iteration. |
-| `RESTART_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten Neustart oder dem letzten kleineren Mittelwert bis zum [Neustart](#5-weitere-iteration-ausführen). |
-| `STOP_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten gespeicherten besten Satz bis zum [vorzeitigen Ende](#5-weitere-iteration-ausführen). |
+| `RESTART_AFTER_NO_IMPROVEMENT` | Nach dieser Anzahl von Iterationen ohne besseren Gewichtssatz wird die Schrittweite zurückgesetzt ([Neustart in Schritt 5](#5-weitere-iteration-ausführen)). |
+| `STOP_AFTER_NO_IMPROVEMENT` | Nach dieser Anzahl aufeinanderfolgender Iterationen ohne besseren Gewichtssatz endet die Suche. Ein Neustart unterbricht diese Zählung nicht ([Schritt 5](#5-weitere-iteration-ausführen)). |
 
 **Ergebnis der Vorbereitung:** Nach dem Klick beginnt im Hintergrund
 [Schritt 1: Produktion mit dem Standardgewichtssatz simulieren](#1-produktion-mit-dem-standardgewichtssatz-simulieren).
@@ -2176,22 +2177,23 @@ Zuerst wird die heuristische Steuerung mit dem **Standardgewichtssatz
 `HeuristicWeights()`** einmal pro Seed aus `SEEDS` simuliert, aktuell mit
 Seed `1` und Seed `2`. Diese Läufe bilden die **Baseline (Vergleichsbasis)**.
 
-Für jede [Zeitkennzahl](#produktionskennzahlen) wird anschließend der
-**Mittelwert (Durchschnitt) über die Baseline-Läufe mit allen Seeds** berechnet.
-Daraus werden feste Referenzwerte für den Vergleich mit anderen
-Gewichtssätzen bestimmt.
+Nach diesen Läufen wird für jede [Zeitkennzahl](#produktionskennzahlen)
+der **Mittelwert (Durchschnitt) über die Baseline-Seeds** berechnet und als
+Referenzwert gespeichert. Dieser Referenzwert ist die Vergleichsgröße für
+dieselbe Zeitkennzahl in den anderen Produktionsläufen.
 
 **Beispiel:** Angenommen, der Standardgewichtssatz erreicht eine
 Produktionsdauer ([`makespan`](#produktionskennzahlen)) von `9` Stunden mit
 Seed `1` und `11` Stunden mit Seed `2`. Als Referenz wird ihr Mittelwert
-`(9 + 11) / 2 = 10` Stunden gespeichert. Wie diese Referenz in die Bewertung
-eines späteren Laufs eingeht, zeigt das
+`(9 + 11) / 2 = 10` Stunden gespeichert. Wie die Produktionsdauer eines
+anderen Laufs durch diese Referenz geteilt wird, zeigt das
 [Rechenbeispiel in Schritt 3](#globale-gewichte-in-optimizationpy).
 
-**Im Code:** Der Worker berechnet die Baseline vor dem Aufruf von
-`optimize_iteratively()`. Die Methode
+**Im Code:** Der Hintergrundlauf ruft den Runner zuerst mit
+`HeuristicWeights()` und jedem Seed aus `SEEDS` auf. Danach berechnet
 `GlobalSimulationEvaluation.calculate_baseline_reference_values()`
-speichert die Referenzwerte aus diesen Baseline-Läufen.
+die Referenzwerte aus den gemessenen Zeitkennzahlen. Erst danach beginnt
+`optimize_iteratively()` mit der Gewichtssuche.
 
 **Ergebnis dieses Schritts:** feste Baseline-Referenzwerte für die Zeitkennzahlen
 aller folgenden Läufe, einschließlich des
@@ -2211,9 +2213,10 @@ Robotergeschwindigkeit oder das Auftreten eines Defekts. Schematisch gilt:
 
 `Neuer Zustand = bisheriger Zustand + Auswirkungen der gewählten Aktion + gegebenenfalls Zufallseinflüsse`
 
-Ein **Seed (Startwert für die Zufallszahlengeneratoren)** macht die
-Zufallsziehungen reproduzierbar. `SpineMLSimulationRunner` setzt ihn beim
-Aufbau jedes vollständigen Simulationslaufs.
+Ein **Seed ist ein Startwert für die Zufallszahlengeneratoren**. Er macht
+die Zufallsziehungen reproduzierbar. Der Runner setzt diesen Startwert,
+bevor er einen neuen Simulationslauf ausführt. Seed `1` und Seed `2` stehen
+deshalb für zwei Läufe mit unterschiedlichen reproduzierbaren Zufallsziehungen.
 
 **Der Zufall wird dadurch nicht entfernt.** Bei demselben Seed werden
 beispielsweise die anfänglichen Maschinengeschwindigkeiten für zwei
@@ -2227,15 +2230,15 @@ etwa eine kürzere Produktionsdauer oder weniger Verspätung.
 
 ### 2. Varianten des lokalen Gewichtssatzes erstellen
 
-Die Suche startet in `optimization.py` mit dem Standardgewichtssatz
-[HeuristicWeights()](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py). In jeder Iteration stellt
-`LocalHeuristicWeightOptimizer.optimize_iteratively()` die zu prüfenden
-Gewichtssätze auf zwei Arten zusammen. **Jeder Gewichtssatz enthält alle
-lokalen Gewichte**, auch wenn nur eines davon geändert wird.
+In der ersten Iteration ist der Standardgewichtssatz
+[HeuristicWeights()](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
+der Ausgangspunkt. `optimize_iteratively()` erstellt daraus die zu prüfenden
+Gewichtssätze. **Jeder Gewichtssatz enthält alle lokalen Gewichte**, auch
+wenn nur eines davon geändert wird. Es gibt zwei Arten von Varianten:
 
 1. **Einzelne Gewichte verändern: `neighboring_weights()`**
 
-   Der aktuelle Gewichtssatz bleibt als Vergleich enthalten. Zusätzlich
+   Der Ausgangssatz bleibt als Vergleich enthalten. Zusätzlich
    werden für jedes Gewicht zwei Varianten erstellt: eine mit
    `Gewicht − Schrittweite` und eine mit `Gewicht + Schrittweite`.
    Alle anderen Gewichte werden unverändert übernommen. Die veränderten
@@ -2260,9 +2263,9 @@ lokalen Gewichte**, auch wenn nur eines davon geändert wird.
 
 2. **Weitere Gewichtssätze zufällig zusammenstellen: `random_local_weight_candidates()`**
 
-   Hier erhält jedes Gewicht einen neu gezogenen Zufallswert. So entstehen
-   zusätzliche Gewichtssätze, bei denen mehrere Gewichte gleichzeitig
-   vom Ausgangssatz abweichen können. Der Zufallsbereich reicht von
+   Für jeden zusätzlichen Gewichtssatz wird jeder einzelne Gewichtswert neu
+   ausgelost. Anders als bei den Einzelvarianten können somit alle Gewichte
+   gleichzeitig vom Ausgangssatz abweichen. Der Zufallsbereich reicht von
    `0.000001` bis `1.0`; nur für `wait_action_weight` verwendet diese Methode
    den kleineren Bereich von `0.000001` bis `0.1`.
 
@@ -2294,8 +2297,8 @@ Bei den aktuell zwei Iterationen sind höchstens **107 Gewichtssatz-Prüfungen**
 möglich: 53 in der ersten und höchstens 54 in der zweiten Iteration. Wie der
 Ausgangssatz für die nächste Iteration ausgewählt wird, erklärt
 [Schritt 5](#5-weitere-iteration-ausführen).
-Die Zahl entfernter Doppelungen kann sich zwischen den Iterationen ändern;
-die Fortschrittsanzeige verwendet jeweils die bereinigte Anzahl.
+Die Fortschrittsanzeige zählt nur die Gewichtssätze, die nach dem Entfernen
+identischer Sätze tatsächlich geprüft werden.
 
 **Ergebnis dieses Schritts:** eine Liste von Gewichtssätzen, die anschließend
 [simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten) werden.
@@ -2325,8 +2328,10 @@ Seeds und einem eigenen Mittelwert.
 #### Gewichtssätze mit denselben Seeds vergleichen
 
 Jeder Gewichtssatz wird mit **derselben Liste von [Seeds](#baseline-technik)**
-getestet. Die beiden Diagrammzeilen zeigen zwei verschiedene Gewichtssätze. Jeder Zweig im Diagramm steht für einen vollständigen
-Produktionslauf und dessen [globale Bewertungszahl](#globale-bewertungszahl).
+getestet. Die beiden Diagrammzeilen zeigen zwei verschiedene Gewichtssätze.
+Jeder Zweig steht für einen vollständigen Produktionslauf und dessen
+[globale Bewertungszahl](#globale-bewertungszahl). Die Läufe werden
+nacheinander ausgeführt.
 Der [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds)
 fasst das Ergebnis eines Gewichtssatzes zusammen:
 
@@ -2352,46 +2357,53 @@ flowchart LR
 
 #### Simulationslauf und Produktionskennzahlen
 
-Für jeden Lauf werden die Simulationsumgebung und ihre Komponenten mit
-derselben Layout- und Szenariokonfiguration neu aufgebaut.
+Für jeden Gewichtssatz und Seed ruft der Optimierer `runner(weights, seed)`
+auf. Dieser Aufruf führt drei Schritte aus:
 
-Der getestete Gewichtssatz bleibt während des gesamten Laufs unverändert.
-Die Steuerung trifft damit wiederholt Entscheidungen, bis die Produktion
-beendet ist. Gemessen werden anschließend die Ergebnisse des **gesamten
-Produktionslaufs**: zum Beispiel Produktionsdauer, Gesamtverspätung,
-Transportzeit sowie Nacharbeits-, Ausschuss- und Herabstufungsquote.
-Diese Ergebnisse heißen **Produktionskennzahlen**.
-
-**Im Code:** Für jeden Gewichtssatz und Seed ruft der Optimierer
-`runner(weights, seed)` auf. Der Runner erfasst die Produktionskennzahlen mit
-`collect_global_metrics()` und gibt sie als `GlobalSimulationMetrics` zurück.
-Sind beim Laufende noch Jobs unfertig, löst er einen Fehler aus.
+1. **Steuerung erstellen:** Der Runner erstellt die heuristische Steuerung
+   mit dem übergebenen Gewichtssatz.
+2. **Produktion simulieren:** `run_policy()` setzt die Zufallszahlengeneratoren
+   auf den Seed, baut die Simulation mit dem ausgewählten Layout und Szenario
+   neu auf und führt sie aus. Die Steuerung entscheidet während dieses Laufs
+   wiederholt über Aktionen. Der Gewichtssatz bleibt dabei unverändert.
+3. **Produktionsergebnis erfassen:** `collect_global_metrics()` erfasst die
+   Kennzahlen des gesamten Laufs. Der Runner gibt sie als
+   `GlobalSimulationMetrics` an den Optimierer zurück. Sind beim Laufende
+   noch Jobs unfertig, meldet der Runner stattdessen einen Fehler.
 
 ##### Produktionskennzahlen
 
-- `makespan`: Letzte gespeicherte Jobabschlusszeit minus frühester
-  `earliest_start_time` der Aufträge. Maßgeblich ist `mark_finished()`,
-  nicht der spätere Zeitpunkt, zu dem der Watcher die Simulation stoppt.
-- `total_tardiness`: Summe der positiven Verspätungen aller abgeschlossenen
-  **Jobs**. Für jeden Job gilt
+Die Bewertung verwendet die folgenden acht Kennzahlen. Die fünf Zeitkennzahlen
+werden in Stunden erfasst.
+
+- **Produktionsdauer (`makespan`):** Zeit vom frühesten vorgesehenen
+  Auftragsstart (`earliest_start_time`) bis zum letzten Jobabschluss.
+  `mark_finished()` speichert die Jobabschlusszeit beim Einlagern ins Endlager.
+- **Gesamtverspätung (`total_tardiness`):** Summe der positiven Verspätungen
+  aller abgeschlossenen **Jobs**. Für jeden Job gilt
   `Jobverspätung = max(0, completed_time − Deadline des zugehörigen Auftrags)`.
   Mehrere verspätete Jobs desselben Auftrags zählen einzeln. Frühe Abschlüsse
   verringern die Summe nicht. Beispiel: Bei Deadline `10` und Jobabschlüssen
   `8`, `12` und `15` ist die Gesamtverspätung `0 + 2 + 5 = 7`.
   Im Interface heißt diese Kennzahl **Total job tardiness**.
-- `total_transport_time`: Summe der Bewegungszeiten für X, Y und Z aller
-  Roboter. Ein- und Auslagerungswartezeiten zählen nicht als Bewegung.
-- `tool_change_time`: Summe der Maschinenzeiten in den Zuständen
-  `mounting` und `unmounting`.
-- `blocking_time`: Summe der Maschinenzeiten im Zustand `blocked`.
-- `total_jobs`: Gesamtzahl der Jobs als Bezugsgröße für die drei Quoten.
-- `rework_job_count`: Zahl abgeschlossener Jobs mit mindestens einer
-  Nacharbeit; mehrere Nacharbeiten desselben Jobs erhöhen diesen Wert nicht
-  mehrfach.
-- `scrap_job_count`: Summe der Ausschussentscheidungen abgeschlossener Jobs.
-- `downgraded_job_count`: Zahl herabgestufter Jobs.
+- **Transportzeit (`total_transport_time`):** Summe der Bewegungszeiten für
+  X, Y und Z aller Roboter. Ein- und Auslagerungswartezeiten zählen nicht mit.
+- **Werkzeugwechselzeit (`tool_change_time`):** Summe der Zeiten aller
+  Maschinen für Werkzeugmontage (`mounting`) und -demontage (`unmounting`).
+- **Maschinen-Blockierzeit (`blocking_time`):** Summe der Maschinenzeiten im
+  Zustand `blocked`. Eine Maschine setzt diesen Zustand, wenn sie eine neue
+  Aktion anfordert und ihr Ausgangspuffer voll ist.
+- **Nacharbeitsquote (`rework_rate`):** Anteil der Jobs mit mindestens einer
+  Nacharbeit. Der Zähler `rework_job_count` zählt jeden abgeschlossenen Job
+  mit Nacharbeit einmal, unabhängig von der Anzahl seiner Nacharbeiten.
+- **Ausschussquote (`scrap_rate`):** Ausschussentscheidungen im Verhältnis
+  zur Gesamtzahl der Jobs. `scrap_job_count` summiert dafür die
+  Ausschussentscheidungen abgeschlossener Jobs.
+- **Herabstufungsquote (`downgrade_rate`):** Anteil der herabgestuften Jobs.
+  Ihr Zähler heißt `downgraded_job_count`.
 
-Die zugehörigen Raten entstehen durch Division durch `total_jobs`.
+Für alle drei Quoten ist `total_jobs` die Gesamtzahl der Jobs. Die
+[Berechnung der Quoten](#globale-bewertungszahl) folgt im nächsten Abschnitt.
 
 #### Globale Bewertungszahl
 
@@ -2405,7 +2417,8 @@ In die Bewertung gehen **fünf Zeitkennzahlen** sowie **Nacharbeits-,
 Ausschuss- und Herabstufungsquote** ein. Sie erfassen den Zeitaufwand und
 die Folgen der Steuerungsentscheidungen.
 
-Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
+Für die Berechnung werden zuerst die Zeitkennzahlen durch ihre Referenzen
+geteilt und die drei Quoten berechnet:
 
 - **Zeitkennzahlen:** Produktionsdauer (`makespan`), Gesamtverspätung der Jobs
   (`total_tardiness`), Transportzeit (`total_transport_time`),
@@ -2435,7 +2448,7 @@ Zuerst werden aus den Kennzahlen vergleichbare Zahlenwerte berechnet:
 Danach wird jeder Wert mit seinem [globalen Gewicht](#globale-gewichte-in-optimizationpy)
 multipliziert. Die Produkte werden addiert:
 
-`Globale Bewertungszahl = Summe(Kennzahlbeitrag × globales Gewicht)`
+`Globale Bewertungszahl = Summe(umgerechneter Kennzahlwert × globales Gewicht)`
 
 Es wird **nicht durch die Gewichtssumme geteilt**. Alle Gewichtssätze werden
 mit denselben globalen Gewichten und Baseline-Referenzwerten beurteilt.
@@ -2489,17 +2502,17 @@ berechnete Bewertungszahl `8.65`. Angenommen, sein Lauf mit Seed `2` erreicht
 | B | `8.9` | `8.7` | `(8.9 + 8.7) / 2 = 8.8` |
 
 Gewichtssatz A ist bei Seed `1` besser, Gewichtssatz B erreicht aber den
-kleineren Mittelwert. Für den anschließenden Vergleich ist deshalb B besser.
+kleineren Mittelwert. Deshalb wird B in
+[Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
+gegenüber A bevorzugt.
 
 #### Fortschritt und Ergebnisdiagramme
 
-Dieser Teil der Oberfläche zeigt die Prüfung der Gewichtssätze aus
-**Schritt 3**. Die Rückmeldefunktion `progress` in `optimization.py`
-übernimmt Iterationsnummer, Kandidatennummer und Kandidatenanzahl in den
-Anzeigestand. Sobald ein Gewichtssatz mit allen Seeds ausgewertet ist,
-ergänzt sie seinen `mean_global_cost` und die Mittelwerte seiner acht
-Produktionskennzahlen. Streamlit liest diesen Stand und aktualisiert die
-Anzeige während des Hintergrundlaufs.
+Während der Gewichtssuche meldet `progress` in `optimization.py` an die
+Oberfläche, welche Iteration und welcher Gewichtssatz gerade geprüft werden.
+Sobald alle Seed-Läufe eines Gewichtssatzes ausgewertet sind, speichert
+`progress` dessen mittlere globale Bewertungszahl und die Mittelwerte der
+acht Produktionskennzahlen. Daraus aktualisiert das Interface die Diagramme.
 
 Während der Suche steht oberhalb der Diagramme beispielsweise
 `Optimization: round 1, candidate 9/53`. Das bedeutet: In Iteration `1`
@@ -2507,10 +2520,10 @@ wird gerade der neunte von `53` Gewichtssätzen geprüft. Die Fortschrittsanzeig
 bezieht sich auf die **aktuelle Iteration**, nicht auf die gesamte Optimierung.
 
 Die drei folgenden Darstellungen verwenden dagegen eine fortlaufende
-X-Achse `Candidate`: Sie nummeriert alle abgeschlossenen Gewichtssatz-Prüfungen
-über die Iterationen hinweg. Ein neuer Punkt erscheint, wenn die Läufe mit
-allen Seeds für diesen Gewichtssatz ausgewertet sind. Die Verbindungslinien
-zeigen nur die Prüfreihenfolge.
+X-Achse `Candidate` (geprüfter Gewichtssatz): Sie nummeriert alle
+abgeschlossenen Prüfungen über die Iterationen hinweg. Ein neuer Punkt
+erscheint, wenn die Läufe mit allen Seeds für diesen Gewichtssatz
+ausgewertet sind. Die Verbindungslinien zeigen nur die Prüfreihenfolge.
 
 ##### Bedeutung der Kostenkurve
 
@@ -2549,16 +2562,16 @@ Für einen Ausgangswert ungleich `0` gilt:
 
 **Beispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8` Stunden,
 ist die Abweichung `(8 − 10) / 10 × 100 = −20 %`. Ein negativer Wert bedeutet
-eine Verringerung, ein positiver Wert eine Erhöhung. Ob das vorteilhaft ist,
-hängt von der Kennzahl und dem Produktionsziel ab. Weniger Verspätung ist
-günstig; eine niedrigere Nacharbeitsquote allein beweist dagegen noch keine
-bessere Steuerung, wenn dafür mehr Ausschuss oder Herabstufung entsteht.
+eine Verringerung, ein positiver Wert eine Erhöhung. Eine Verringerung einer
+einzelnen Kennzahl beweist noch kein besseres Gesamtergebnis: Weniger
+Nacharbeit kann beispielsweise mit mehr Ausschuss einhergehen. Ob der
+Gewichtssatz insgesamt besser abschneidet, zeigt seine
+[mittlere globale Bewertungszahl](#mittelwert-über-die-seeds).
 
-**Darstellungsgrenze bei Ausgangswert `0`:** Dafür ist keine prozentuale
-Abweichung berechenbar. Der aktuelle Code zeichnet für diese Kennzahl
-durchgehend `0 %`, auch wenn spätere Gewichtssätze andere Werte erreichen.
-Für diesen Fall sind die Werte im
-[Kennzahlendiagramm](#einzelne-produktionskennzahlen) maßgeblich.
+**Ausgangswert `0`:** Eine prozentuale Abweichung ist dann nicht berechenbar.
+Das Diagramm zeigt für diese Kennzahl durchgehend `0 %`, auch wenn andere
+Gewichtssätze einen Wert ungleich `0` erreichen. Die tatsächlichen Werte
+stehen im [Kennzahlendiagramm](#einzelne-produktionskennzahlen).
 
 **Ergebnis dieses Schritts:** ein `mean_global_cost` pro geprüftem
 Gewichtssatz als Grundlage für die
@@ -2584,64 +2597,55 @@ entschieden.
 
 ### 5. Weitere Iteration ausführen?
 
-**Ziel dieses Schritts:** Nach der Auswahl in
-[Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
-wird entschieden, ob die Suche fortgesetzt wird. Der Vergleich mit dem
-gespeicherten besten Satz bestimmt, wie die Zähler und die Schrittweite
-behandelt werden. Die Abbruchgrenze und die maximale Anzahl von Iterationen
-bestimmen, ob die Suche anschließend weiterläuft.
+**Ziel dieses Schritts:** Einen besseren Gewichtssatz übernehmen und die
+Suche von diesem Satz aus fortsetzen. Wird kein besserer Satz gefunden,
+soll die Suche zunächst größere Änderungen ausprobieren. Bleibt die Suche
+auch damit ohne Verbesserung, soll sie enden.
 
-Bleibt der kleinste bisher gefundene
-**Mittelwert der globalen Bewertungszahlen über alle Seeds** mehrere
-Iterationen lang unverändert, soll die Suche zunächst größere Änderungen an
-den Gewichten ausprobieren. Wird weiterhin kein kleinerer Mittelwert
-gefunden, soll die Suche beendet werden.
+**Was bedeutet Verbesserung?** `optimize_iteratively()` vergleicht den
+kleinsten Mittelwert aus der aktuellen Iteration
+([Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen))
+mit dem gespeicherten besten Mittelwert aus den bisherigen Iterationen.
+Nur wenn der neue Mittelwert **kleiner** ist, liegt eine Verbesserung vor.
+Ein gleicher Mittelwert zählt nicht als Verbesserung.
 
-**Was wird verglichen?** Aus [Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
-liegt der kleinste Mittelwert der aktuellen Iteration bereits vor.
-Dieser Wert wird mit dem bisher gespeicherten kleinsten Mittelwert
-verglichen. **Ein kleinerer Mittelwert ist besser.**
+- **Erste Iteration:** Es gibt noch keinen gespeicherten besten Satz.
+  Deshalb werden der beste Satz dieser Iteration und sein Mittelwert
+  gespeichert. Die Schrittweite wird halbiert. Neustart-Zähler und
+  Abbruch-Zähler werden auf `0` gesetzt.
+- **Weitere Iteration mit Verbesserung:** Der neue Satz und sein kleinerer
+  Mittelwert ersetzen den gespeicherten besten Satz und dessen Mittelwert.
+  Die Schrittweite wird halbiert, damit die nächste Iteration kleinere
+  Änderungen an diesem neuen Ausgangssatz prüft. Neustart-Zähler und
+  Abbruch-Zähler werden auf `0` gesetzt.
+- **Weitere Iteration ohne Verbesserung:** Der gespeicherte beste Satz
+  bleibt erhalten. Neustart-Zähler und Abbruch-Zähler steigen jeweils um `1`.
 
-- **Die aktuelle Iteration liefert einen kleineren Mittelwert:** Der
-  zugehörige Gewichtssatz wird als neuer bester Satz gespeichert. Die
-  Schrittweite wird halbiert und beide Zähler werden auf `0` gesetzt.
-- **Kein geprüfter Gewichtssatz der aktuellen Iteration liefert einen
-  kleineren Mittelwert:** Der bisher beste Gewichtssatz und sein Mittelwert
-  bleiben gespeichert. Beide Zähler steigen um `1`. Auch ein gleicher
-  Mittelwert zählt als **keine Verbesserung**.
+**Wozu dienen die beiden Zähler?** Beide zählen Iterationen ohne Verbesserung,
+aber sie lösen unterschiedliche Reaktionen aus:
 
-In der **ersten Iteration** gibt es noch keinen gespeicherten besten
-Mittelwert. Deshalb werden zunächst der Satz mit dem kleinsten Mittelwert
-dieser Iteration und sein Mittelwert gespeichert. Die Schrittweite wird
-halbiert; beide Zähler stehen auf `0`.
+- **Neustart-Zähler (`rounds_without_improvement`) – größere Änderungen
+  ausprobieren:** Er zählt die Iterationen ohne Verbesserung seit der letzten
+  Verbesserung oder dem letzten Neustart. Erreicht er `2`, wird ein Neustart
+  ausgelöst (`RESTART_AFTER_NO_IMPROVEMENT = 2`). Die Schrittweite wird auf
+  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Der bisher beste Gewichtssatz
+  bleibt erhalten und ist der Ausgangspunkt für die nächste Iteration.
+  Der Neustart-Zähler wird von `2` auf `0` gesetzt. Die größeren
+  Änderungsschritte dienen der breiteren Erkundung (Exploration).
+  Die [zusätzlichen zufälligen Gewichtssätze](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
+  werden unabhängig von dieser Schrittweite erzeugt.
+- **Abbruch-Zähler (`total_rounds_without_improvement`) – erfolglose Suche
+  beenden:** Er zählt die aufeinanderfolgenden Iterationen ohne Verbesserung
+  seit dem letzten gespeicherten besseren Satz. **Ein Neustart setzt diesen
+  Zähler nicht zurück.** Erreicht er `4` (`STOP_AFTER_NO_IMPROVEMENT = 4`),
+  endet die Suche. Die Abbruchprüfung erfolgt vor der Neustartprüfung;
+  bei `4` wird deshalb kein weiterer Neustart ausgelöst.
 
-**Was zählen die beiden Zähler?** Sie zählen Iterationen, in denen kein
-kleinerer Mittelwert gefunden wurde. Sie zählen weder einzelne
-Gewichtssätze noch Simulationsläufe oder Neustarts.
-
-- **Neustart-Zähler (`rounds_without_improvement`):** Er zählt diese
-  Iterationen seit dem letzten Neustart oder seit der letzten Übernahme
-  eines Gewichtssatzes mit kleinerem Mittelwert. Erreicht der Zähler `2`
-  (`RESTART_AFTER_NO_IMPROVEMENT = 2`), wird ein **Neustart ausgelöst**, sofern
-  die Abbruchgrenze noch nicht erreicht ist. Beim Neustart wird die
-  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt und anschließend
-  der Neustart-Zähler von `2` auf `0` gesetzt. Der bisher beste Gewichtssatz
-  bleibt der Ausgangspunkt. Die nächste Iteration prüft Nachbarvarianten
-  mit größeren Änderungen an einzelnen Gewichten: Das ist die breitere
-  Erkundung (Exploration). Zusätzliche zufällige Gewichtssätze werden
-  weiterhin unabhängig von der Schrittweite erzeugt, wie in
-  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) beschrieben.
-- **Abbruch-Zähler (`total_rounds_without_improvement`):** Er zählt alle
-  Iterationen ohne kleineren Mittelwert seit der letzten Übernahme eines
-  besten Satzes. **Beim Neustart bleibt dieser Zähler unverändert.**
-  Erreicht der Abbruch-Zähler `4` (`STOP_AFTER_NO_IMPROVEMENT = 4`), endet die
-  Suche. Bei `4` wird deshalb kein weiterer Neustart mehr ausgeführt.
-
-**Die Abbruchgrenze umfasst die Iterationen vor und nach dem Neustart:**
-Nach zwei Iterationen ohne kleineren Mittelwert steht der Neustart-Zähler
-zunächst auf `2`. Der Neustart setzt ihn auf `0`; der Abbruch-Zähler bleibt
-auf `2`. Liefern die nächsten beiden Iterationen ebenfalls keinen kleineren
-Mittelwert, erreicht der Abbruch-Zähler `4` und die Suche endet.
+**Beispiel ohne zwischenzeitliche Verbesserung:** Zwei erfolglose Iterationen
+führen zum Neustart: Neustart-Zähler `2 → 0`, Abbruch-Zähler bleibt `2`.
+Bleiben auch die nächsten beiden Iterationen erfolglos, erreicht der
+Abbruch-Zähler `4` und die Suche endet. Die Abbruchgrenze umfasst also die
+Iterationen vor und nach dem Neustart.
 
 **Wie wird die Raute „5. Weitere Iteration ausführen?“ beantwortet?**
 
@@ -2655,9 +2659,6 @@ Mittelwert, erreicht der Abbruch-Zähler `4` und die Suche endet.
   gespeicherten besten Satz folgt der
   [Abschlussvergleich in Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
-Ein Neustart allein beendet die Suche nicht. Er setzt die Schrittweite
-für die weitere Suche zurück; die genannten Grenzen gelten weiterhin.
-
 Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**
 und frei gewählten Mittelwerten: In Iteration 1 wird der Mittelwert `8`
 gespeichert. Erst Iteration 3 liefert mit `7` einen kleineren Mittelwert.
@@ -2665,9 +2666,9 @@ Die Iterationen 4 bis 7 liefern keinen Mittelwert unter `7`.
 Die Zählerstände sind jeweils nach der Iteration angegeben; `2 → 0` zeigt
 den Anstieg auf `2` und das anschließende Zurücksetzen beim Neustart.
 
-**Voraussetzung für dieses Beispiel ist `ITERATIONS >= 7`.** Aktuell ist
-`ITERATIONS = 2`; damit endet die Suche schon nach der zweiten Iteration.
-Die aktuelle Einstellung wird durch das Beispiel nicht geändert.
+**Dieses Beispiel setzt `ITERATIONS >= 7` voraus.** In `optimization.py`
+ist aktuell `ITERATIONS = 2` eingestellt. Die tatsächliche Suche endet damit
+nach zwei Iterationen, bevor ein Neustart oder der Abbruch-Zähler greifen kann.
 
 ```mermaid
 ---
@@ -2703,27 +2704,28 @@ flowchart TB
     style Grenze fill:transparent,stroke-width:2px
 ```
 
-`optimize_iteratively()` setzt die Regeln aus Schritt 5 um: Die Methode
-speichert den bisher besten Satz, aktualisiert Schrittweite und Zähler und
-steuert die weiteren Iterationen.
+Wenn die Suche endet, gibt `optimize_iteratively()` ein
+`WeightOptimizationResult` mit folgenden Ergebnissen zurück:
 
-Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
-`best_weights`, `best_mean_global_cost` und `best_evaluation`.
-`optimize_iteratively()` speichert in `evaluations` die Bewertung des ersten
-ausgewählten Satzes und die Bewertungen später übernommener Sätze mit
-kleinerem Mittelwert. Die
-[Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen alle
-abgeschlossenen Gewichtssatz-Prüfungen.
+| Feld | Inhalt |
+| --- | --- |
+| `best_weights` | Der beste gefundene Gewichtssatz. |
+| `best_mean_global_cost` | Seine mittlere globale Bewertungszahl über die Seeds. |
+| `best_evaluation` | Seine Bewertung mit den Kennzahlen und Bewertungszahlen der einzelnen Seed-Läufe. |
+| `evaluations` | Die Bewertung des zuerst gespeicherten besten Satzes und aller danach übernommenen besseren Sätze. |
+
+`evaluations` enthält damit nicht alle geprüften Gewichtssätze. Die
+[Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen jede
+abgeschlossene Gewichtssatz-Prüfung.
 
 <a id="5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen"></a>
 
 ### 6. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
-Jetzt wird geprüft, ob der gefundene Gewichtssatz auch bei **bisher nicht
-für die Gewichtssuche verwendeten Seeds** bessere Produktionsergebnisse
-erzielt. Dafür werden die separaten `BENCHMARK_SEEDS` verwendet, aktuell
-`[101, 102, 103, 104, 105]`. Auf jedem dieser Test-Seeds werden drei
-Steuerungen ausgeführt:
+Nach dem Ende der Gewichtssuche werden drei Steuerungen miteinander
+verglichen. Dafür werden **andere Seeds als bei der Gewichtssuche** verwendet:
+`BENCHMARK_SEEDS = [101, 102, 103, 104, 105]`. Jede Steuerung führt mit jedem
+dieser fünf Seeds einen vollständigen Produktionslauf aus:
 
 | Anzeige im Interface | Verwendete Steuerung |
 | --- | --- |
@@ -2733,8 +2735,9 @@ Steuerungen ausgeführt:
 
 Alle drei Steuerungen verwenden dasselbe Layout, dasselbe Szenario,
 dieselben Test-Seeds sowie dieselben globalen Gewichte und
-Baseline-Referenzwerte. Die Test-Ergebnisse ändern den ausgewählten
-Gewichtssatz nicht mehr.
+Baseline-Referenzwerte. Insgesamt entstehen **15 Testläufe: fünf pro
+Steuerung**. Der in der Suche gefundene Gewichtssatz bleibt bei diesem
+Vergleich unverändert.
 
 Im Interface zeigt eine **Tabelle die Mittelwerte** der acht bewerteten
 Produktionskennzahlen und der globalen Bewertungszahl je Steuerung. Die
@@ -2742,9 +2745,11 @@ zugehörigen Diagramme zeigen die Ergebnisse **für jeden einzelnen Test-Seed**.
 Damit lässt sich prüfen, ob die Heuristik die Zufallspolicy übertrifft und
 ob der gefundene Gewichtssatz die Standardheuristik verbessert.
 
-Der Name `Heuristic (optimized)` bezeichnet den während der Suche ausgewählten
-Gewichtssatz. Ob er auf den Test-Seeds tatsächlich besser ist, zeigen erst
-die Ergebnisse; ein Vorteil oder ein globales Optimum ist nicht garantiert.
+Entscheidend ist der Mittelwert der globalen Bewertungszahl über die fünf
+Test-Seeds: **Der kleinere Mittelwert ist besser.** Der Name
+`Heuristic (optimized)` bedeutet nur, dass diese Steuerung den in der Suche
+gefundenen Gewichtssatz verwendet. Ob sie die Standardheuristik und die
+Zufallspolicy übertrifft, zeigt dieser Vergleich.
 
 **Technische Umsetzung:** `_benchmark_policies()` ruft für jede Steuerung
 und jeden Test-Seed den Runner auf: bei der Zufallspolicy über

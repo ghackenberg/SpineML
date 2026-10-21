@@ -2118,8 +2118,10 @@ bei `EXAMPLE_FILE` eintragen.
    übernimmt die darin definierten Modellobjekte.
 
    - **`_suppress_model_visualization()` – sofortigen Simulationsstart verhindern:**
-     Wird innerhalb von `_load_model()` verwendet. Ein `simulate(...)`-Aufruf
-     in der Beispieldatei startet dadurch beim Laden noch keine Simulation.
+     Wird innerhalb von `_load_model()` verwendet. Trotz des Namens verhindert
+     die Funktion nicht nur die visuelle Anzeige, sondern den gesamten
+     Simulationsstart durch `simulate(...)` in der Beispieldatei. Das Beispiel
+     wird zunächst nur geladen. Die Simulationsläufe startet später der Runner.
 
 3. **`_find_layout_and_scenario()` – Layout und Szenario auswählen:** Bestimmt,
    welches **Layout** (räumlicher Aufbau der Fabrik) und welches **Szenario**

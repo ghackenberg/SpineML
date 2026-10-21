@@ -2120,13 +2120,11 @@ aus; `_suppress_model_visualization()` unterdrückt dabei deren direkten
 `simulate(...)`-Aufruf. `_find_layout_and_scenario()` wählt das Layout und
 Szenario aus, deren Produktion untersucht werden soll.
 
-Für die späteren Produktionsläufe erstellt `create_optimizer()` einen
-**Runner**
-([SpineMLSimulationRunner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py)).
-Er führt jeweils eine vollständige Simulation mit dem ausgewählten Layout
-und Szenario aus und liefert die Produktionskennzahlen zurück. Dafür erhält
-er einen Gewichtssatz und einen [Seed](#baseline-technik), also einen
-Startwert für die Zufallszahlengeneratoren.
+Der **Runner**
+([SpineMLSimulationRunner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py))
+führt ein Szenario in einem Layout mit einem Gewichtssatz und einem
+[Seed](#baseline-technik) aus. Nach dem Simulationslauf liefert er die
+Produktionskennzahlen zurück.
 
 Um diese Produktionsergebnisse vergleichen zu können, richtet
 `create_optimizer()` die **globale Bewertung**

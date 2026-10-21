@@ -2151,13 +2151,47 @@ keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
    und wählt den Gewichtssatz mit dem kleinsten Mittelwert aus. Das sind die
    [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
-**Nach dem Klick auf Start optimization:** `_start_optimization()` setzt die
-angezeigten Ergebnisse des vorherigen Optimierungslaufs zurück und startet
-einen Hintergrundlauf (Worker-Thread). Dieser führt zuerst die Baseline in
-Schritt 1 aus, ruft danach `optimize_iteratively()` für die Schritte 2 bis 5
-auf und startet abschließend den Vergleich der drei Steuerungen in Schritt 6.
-Währenddessen zeigt das Interface den
-[Fortschritt und die Ergebnisse](#fortschritt-und-ergebnisdiagramme).
+**Nach dem Klick auf Start optimization** wird `_start_optimization()`
+aufgerufen. Dabei passiert Folgendes:
+
+1. **Alte Anzeigeergebnisse zurücksetzen:** Die Funktion entfernt die
+   gespeicherten Ergebnisse und Diagrammdaten des vorherigen Optimierungslaufs.
+   Die Fortschrittszähler beginnen wieder bei `0`.
+2. **Berechnung im Hintergrund starten:** Die Funktion startet einen
+   **Worker-Thread**. Das ist ein zusätzlicher Ausführungsablauf im selben
+   Python-Programm. Er führt die Berechnungen aus, während die Oberfläche
+   den Fortschritt anzeigen und ihre Diagramme aktualisieren kann. Sie muss
+   dafür nicht warten, bis die gesamte Optimierung abgeschlossen ist.
+   Im Code führt dieser Thread die Funktion `worker()` aus.
+3. **Die drei Phasen nacheinander ausführen:** `worker()` führt diese
+   Aufgaben in genau dieser Reihenfolge aus:
+
+   - **Baseline berechnen ([Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren)):**
+     Mit dem Standardgewichtssatz simulieren und daraus die Referenzwerte
+     für die Bewertung berechnen.
+   - **Gewichtssätze suchen und vergleichen ([Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen)):**
+     `optimize_iteratively()` aufrufen, um verschiedene Gewichtssätze zu
+     testen und den Satz mit dem kleinsten Mittelwert auszuwählen.
+   - **Steuerungen vergleichen ([Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)):**
+     `_benchmark_policies()` vergleicht die Zufallspolicy, die Standardheuristik
+     und die Heuristik mit dem gefundenen Gewichtssatz auf separaten Test-Seeds.
+
+   **Der Worker-Thread startet nicht mehrere Simulationen gleichzeitig.**
+   Die einzelnen Simulationsläufe werden nacheinander ausgeführt.
+
+4. **Fortschritt an die Oberfläche weitergeben:** Während der Gewichtssuche
+   speichert `progress()` die aktuelle Iterationsnummer und die Nummer des
+   geprüften Gewichtssatzes in `state`, dem gemeinsamen Speicher für
+   Fortschritt und Ergebnisse. Nach der vollständigen Prüfung eines Satzes
+   werden dort auch dessen mittlere globale Bewertungszahl und die
+   Mittelwerte seiner Produktionskennzahlen ergänzt.
+   Die Oberfläche liest diese Daten regelmäßig und aktualisiert daraus die
+   [Fortschrittsanzeige und Diagramme](#fortschritt-und-ergebnisdiagramme).
+   Der Startknopf bleibt während des laufenden Vorgangs deaktiviert.
+5. **Abschluss anzeigen:** Wenn der Worker fertig ist, zeigt die Oberfläche
+   den besten Gewichtssatz und den Vergleich der drei Steuerungen. Bricht
+   die Berechnung wegen eines Fehlers ab, zeigt sie stattdessen die
+   Fehlermeldung.
 
 #### Suchparameter
 

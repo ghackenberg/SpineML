@@ -2110,9 +2110,9 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
 #### Modell und Hintergrundlauf vorbereiten
 
-[optimization.py](sources/optimization.py) liest beim Aufbau der Oberfläche
-das bei `EXAMPLE_FILE` eingetragene Modell. Eine bereits gesetzte
-Umgebungsvariable `SPINEML_MODEL_FILE` hat Vorrang vor diesem Eintrag.
+Das gewünschte Beispiel in [optimization.py](sources/optimization.py)
+bei `EXAMPLE_FILE` eintragen.
+
 Das Modell beschreibt das **Layout**,
 also den räumlichen Aufbau der Fabrik, und das **Szenario**, also die
 auszuführenden Produktionsaufträge. `_load_model()` führt die Modelldatei

@@ -2028,9 +2028,9 @@ heuristische Steuerung im Mittel bessere Produktionsergebnisse erzielt.**
 
 #### Gesamter Optimierungsablauf
 
-Das Diagramm zeigt die fünf Schritte der Optimierung. Eine **Iteration
-(Suchrunde)** umfasst die Schritte 2 bis 4. Die anschließenden Abschnitte
-erklären die Schritte in derselben Reihenfolge.
+Das Diagramm zeigt die sechs nummerierten Schritte der Optimierung. Eine
+**Iteration (Suchrunde)** umfasst die Schritte 2 bis 5. Die anschließenden
+Abschnitte erklären die Schritte in derselben Reihenfolge.
 
 ```mermaid
 ---
@@ -2049,13 +2049,13 @@ flowchart TD
         direction TB
         B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
         B --> C["3. Produktion mit jedem Gewichtssatz<br/>einmal pro Seed aus SEEDS vollständig simulieren<br/>und die Produktionsergebnisse bewerten"]
-        C --> D["4. Gewichtssatz mit der kleinsten<br/>mittleren globalen Bewertungszahl auswählen"]
+        C --> D["4. Besten Gewichtssatz dieser Iteration auswählen<br/>Kleinster Mittelwert über alle Seeds"]
+        D --> E{"5. Weitere Iteration<br/>ausführen?"}
     end
 
     A --> B
-    D --> E{"Weitere Iteration?"}
     E -- Ja --> B
-    E -- Nein --> F["5. Gefundenen Gewichtssatz mit<br/>Standardheuristik und Zufallspolicy vergleichen<br/>Separate Test-Seeds verwenden"]
+    E -- Nein --> F["6. Gefundenen Gewichtssatz mit<br/>Standardheuristik und Zufallspolicy vergleichen<br/>Separate Test-Seeds verwenden"]
 
     style Iteration fill:transparent,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
 ```
@@ -2065,7 +2065,8 @@ Direkt zu den Details:
 [2. Gewichtssätze erstellen](#2-varianten-des-lokalen-gewichtssatzes-erstellen) ·
 [3. Gewichtssätze simulieren und bewerten](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten) ·
 [4. Gewichtssatz auswählen](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen) ·
-[5. Steuerungen vergleichen](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
+[5. Weitere Iteration ausführen?](#5-weitere-iteration-ausführen) ·
+[6. Steuerungen vergleichen](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
 #### Gewichtssätze mit denselben Seeds vergleichen
 
@@ -2118,7 +2119,7 @@ eines späteren Laufs eingeht, zeigt das
 
 **Ergebnis dieses Schritts:** feste Baseline-Referenzwerte für die Zeitkennzahlen
 aller folgenden Läufe, einschließlich des
-[Abschlussvergleichs](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
+[Abschlussvergleichs](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
 <a id="baseline-technik"></a>
 
@@ -2390,43 +2391,41 @@ Gewichtssatz als Grundlage für die
 
 ### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
-Aus den Ergebnissen von [Schritt 3](#mittelwert-über-die-seeds) wird der
-Gewichtssatz mit dem kleinsten `mean_global_cost` ausgewählt. In der ersten
-Iteration wird dieser Satz als bisher bester gespeichert. In späteren
-Iterationen wird geprüft, ob der beste Satz dieser Iteration besser ist als
-der bisher beste Satz:
+In [Schritt 3](#mittelwert-über-die-seeds) wurden alle Gewichtssätze der
+aktuellen Iteration mit allen Seeds geprüft. Für jeden Satz liegt deshalb
+ein Mittelwert der globalen Bewertungszahlen (`mean_global_cost`) vor.
+`select_best_local_weight_set_across_seeds()` wählt den Satz mit dem
+**kleinsten Mittelwert innerhalb dieser Iteration** aus.
 
-- **Kleinerer Mittelwert:** Der neue Satz wird übernommen und ist der
-  Ausgangspunkt für die nächste Iteration. Die Schrittweite wird halbiert,
-  damit die nächsten Einzelvarianten näher an diesem Satz liegen.
-- **Gleicher oder größerer Mittelwert:** Der bisher beste Satz bleibt
-  erhalten. Auch die Schrittweite bleibt zunächst unverändert.
+**Fortsetzung des Rechenbeispiels:** Gewichtssatz A erreicht den Mittelwert
+`9.1`, Gewichtssatz B den Mittelwert `8.8`. Deshalb wird B als bester Satz
+dieser Iteration ausgewählt.
 
-**Fortsetzung des Rechenbeispiels:** In Iteration 1 wird Gewichtssatz B mit
-`mean_global_cost = 8.8` ausgewählt. Die anfängliche Schrittweite `0.4`
-wird auf `0.2` halbiert. In Iteration 2 werden Varianten von B und neue
-Zufallssätze geprüft. Erreicht dabei beispielsweise ein Satz C den
-Mittelwert `8.6`, ersetzt C den Satz B. Erreicht kein Satz einen Wert unter
-`8.8`, bleibt B der beste Satz.
+Ob dieser Satz den bisher gespeicherten besten Satz ersetzt und ob eine
+weitere Iteration ausgeführt wird, wird in [Schritt 5](#5-weitere-iteration-ausführen)
+entschieden.
 
-Mit der aktuellen Einstellung `ITERATIONS = 2` endet die Suche nach diesen
-beiden Iterationen. Der beste gefundene Gewichtssatz wird anschließend in
-[Schritt 5](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen)
-überprüft.
+<a id="weitere-iterationen-neustart-vorzeitiges-ende-und-rückgabewerte-im-code"></a>
 
-#### Weitere Iterationen: Neustart, vorzeitiges Ende und Rückgabewerte im Code
+### 5. Weitere Iteration ausführen?
 
-**Ziel der beiden Zähler:** Bleibt der kleinste bisher gefundene
+**Ziel dieses Schritts:** Nach der Auswahl in
+[Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
+wird entschieden, ob die Suche fortgesetzt wird. Der Vergleich mit dem
+gespeicherten besten Satz bestimmt, wie die Zähler und die Schrittweite
+behandelt werden. Die Abbruchgrenze und die maximale Anzahl von Iterationen
+bestimmen, ob die Suche anschließend weiterläuft.
+
+Bleibt der kleinste bisher gefundene
 **Mittelwert der globalen Bewertungszahlen über alle Seeds** mehrere
 Iterationen lang unverändert, soll die Suche zunächst größere Änderungen an
 den Gewichten ausprobieren. Wird weiterhin kein kleinerer Mittelwert
 gefunden, soll die Suche beendet werden.
 
-**Was wird nach jeder Iteration verglichen?** Für jeden geprüften
-Gewichtssatz wird der [Mittelwert seiner globalen Bewertungszahlen über alle
-Seeds](#mittelwert-über-die-seeds) berechnet. Danach wird der kleinste
-Mittelwert der aktuellen Iteration mit dem bisher gespeicherten kleinsten
-Mittelwert verglichen. **Ein kleinerer Mittelwert ist besser.**
+**Was wird verglichen?** Aus [Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
+liegt der kleinste Mittelwert der aktuellen Iteration bereits vor.
+Dieser Wert wird mit dem bisher gespeicherten kleinsten Mittelwert
+verglichen. **Ein kleinerer Mittelwert ist besser.**
 
 - **Die aktuelle Iteration liefert einen kleineren Mittelwert:** Der
   zugehörige Gewichtssatz wird als neuer bester Satz gespeichert. Die
@@ -2468,6 +2467,21 @@ Nach zwei Iterationen ohne kleineren Mittelwert steht der Neustart-Zähler
 zunächst auf `2`. Der Neustart setzt ihn auf `0`; der Abbruch-Zähler bleibt
 auf `2`. Liefern die nächsten beiden Iterationen ebenfalls keinen kleineren
 Mittelwert, erreicht der Abbruch-Zähler `4` und die Suche endet.
+
+**Wie wird die Raute „5. Weitere Iteration ausführen?“ beantwortet?**
+
+- **Ja:** Der Abbruch-Zähler liegt unter `4` und die Anzahl bereits
+  ausgeführter Iterationen ist kleiner als `ITERATIONS`. Die Suche kehrt zu
+  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) zurück. Dort
+  werden Varianten des gespeicherten besten Satzes mit der jetzt geltenden
+  Schrittweite sowie zusätzliche zufällige Gewichtssätze erzeugt.
+- **Nein:** Der Abbruch-Zähler erreicht `4` oder die Anzahl ausgeführter
+  Iterationen erreicht `ITERATIONS`. Die Gewichtssuche endet; mit dem
+  gespeicherten besten Satz folgt der
+  [Abschlussvergleich in Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
+
+Ein Neustart allein beendet die Suche nicht. Er setzt die Schrittweite
+für die weitere Suche zurück; die genannten Grenzen gelten weiterhin.
 
 Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**
 und frei gewählten Mittelwerten: In Iteration 1 wird der Mittelwert `8`
@@ -2514,8 +2528,8 @@ flowchart TB
     style Grenze fill:transparent,stroke-width:2px
 ```
 
-`select_best_local_weight_set_across_seeds()` ermittelt den besten Satz einer
-Iteration. `optimize_iteratively()` speichert den bisher besten Satz und
+`optimize_iteratively()` setzt die Regeln aus Schritt 5 um: Die Methode
+speichert den bisher besten Satz, aktualisiert Schrittweite und Zähler und
 steuert die weiteren Iterationen.
 
 Das Ergebnisobjekt `WeightOptimizationResult` enthält unter anderem
@@ -2526,7 +2540,9 @@ kleinerem Mittelwert. Die
 [Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen alle
 abgeschlossenen Gewichtssatz-Prüfungen.
 
-### 5. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
+<a id="5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen"></a>
+
+### 6. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
 Jetzt wird geprüft, ob der gefundene Gewichtssatz auch bei **bisher nicht
 für die Gewichtssuche verwendeten Seeds** bessere Produktionsergebnisse
@@ -2560,7 +2576,7 @@ separaten Testläufen.
 
 ### Beteiligte Dateien
 
-- [optimization.py](sources/optimization.py): koordiniert die fünf Schritte
+- [optimization.py](sources/optimization.py): koordiniert die sechs Schritte
   und zeigt Fortschritt und Ergebnisse im Streamlit-Interface.
 - [HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py):
   definiert und prüft die veränderbaren lokalen Gewichte.
@@ -2632,12 +2648,12 @@ Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
 | Parameter | Bedeutung |
 | --- | --- |
 | `SEEDS` | Gemeinsame Seeds für die [Baseline](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und die Gewichtssuche. |
-| `BENCHMARK_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
-| `ITERATIONS` | Maximale Anzahl der Suchrunden. |
+| `BENCHMARK_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
+| `ITERATIONS` | Maximale Anzahl der [Iterationen](#5-weitere-iteration-ausführen). |
 | `INITIAL_WEIGHT_STEP` | Anfängliche Schrittweite für das [Erhöhen und Verringern einzelner Gewichte](#2-varianten-des-lokalen-gewichtssatzes-erstellen). |
-| `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Suchrunde. |
-| `RESTART_AFTER_NO_IMPROVEMENT` | Anzahl erfolgloser Runden bis zum [Zurücksetzen der Schrittweite](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen). |
-| `STOP_AFTER_NO_IMPROVEMENT` | Anzahl erfolgloser Runden seit der letzten Verbesserung bis zum vorzeitigen Ende. |
+| `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Iteration. |
+| `RESTART_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten Neustart oder dem letzten kleineren Mittelwert bis zum [Neustart](#5-weitere-iteration-ausführen). |
+| `STOP_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten gespeicherten besten Satz bis zum [vorzeitigen Ende](#5-weitere-iteration-ausführen). |
 
 ### Fortschritt und Ergebnisdiagramme
 

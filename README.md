@@ -2083,32 +2083,27 @@ Suche nach einem geeigneten Gewichtssatz starten.
 
 Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
-1. Den Webserver aus dem Projektordner starten:
+1. Das gewünschte Beispiel direkt oben in
+   [sources/optimization.py](sources/optimization.py) bei `EXAMPLE_FILE`
+   eintragen. Standardmäßig ist `example-1.py` eingestellt. Für Beispiel 0
+   wird die Zeile geändert zu:
 
-   ```powershell
+   ```python
+   EXAMPLE_FILE = "example-0.py"
+   ```
+
+2. Die Datei speichern und den Webserver aus dem Projektordner starten:
+
+   ```console
    python -m streamlit run sources/optimization.py
    ```
 
-2. Ohne gesetzte Umgebungsvariable `SPINEML_MODEL_FILE` verwendet die
-   Anwendung `example-1.py`. Oben im Interface steht der tatsächlich geladene
-   Dateiname, zum Beispiel `Example: example-1.py`.
-3. Auf **Start optimization** klicken. Der Hintergrundlauf beginnt mit
+3. Oben im Interface steht der geladene Dateiname, in diesem Fall
+   `Example: example-0.py`. Auf **Start optimization** klicken.
+   Der Hintergrundlauf beginnt mit
    [Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und führt
    danach die Gewichtssuche und den Abschlussvergleich aus. Das Interface
    zeigt den [Fortschritt und die Ergebnisse](#fortschritt-und-ergebnisdiagramme).
-
-Ein anderes Beispiel kann vor dem Start in PowerShell gewählt werden:
-
-```powershell
-$env:SPINEML_MODEL_FILE = "example-0.py"
-python -m streamlit run sources/optimization.py
-```
-
-Alternativ startet ein vorbereiteter Einstieg ein bestimmtes Beispiel:
-
-```powershell
-python sources/examples/optimization/example-0-optimize.py
-```
 
 <a id="beteiligte-dateien"></a>
 <a id="technische-einbindung-modellladen-worker-thread-und-fortschrittsanzeige"></a>
@@ -2116,7 +2111,9 @@ python sources/examples/optimization/example-0-optimize.py
 #### Modell und Hintergrundlauf vorbereiten
 
 [optimization.py](sources/optimization.py) liest beim Aufbau der Oberfläche
-das über `SPINEML_MODEL_FILE` ausgewählte Modell. Es beschreibt das **Layout**,
+das bei `EXAMPLE_FILE` eingetragene Modell. Eine bereits gesetzte
+Umgebungsvariable `SPINEML_MODEL_FILE` hat Vorrang vor diesem Eintrag.
+Das Modell beschreibt das **Layout**,
 also den räumlichen Aufbau der Fabrik, und das **Szenario**, also die
 auszuführenden Produktionsaufträge. `_load_model()` führt die Modelldatei
 aus; `_suppress_model_visualization()` unterdrückt dabei deren direkten

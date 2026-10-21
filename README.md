@@ -2217,10 +2217,12 @@ flowchart TB
     style Berechnung fill:transparent,stroke:#64748b,stroke-width:1px
 ```
 
-Die durchgezogenen Pfeile zeigen den Ablauf. Die gestrichelten Pfeile zeigen
-den Datenaustausch über `state`. Die Worker-Kette zeigt den Ablauf ohne Fehler.
-Tritt in einer Phase ein Fehler auf, bricht die Berechnung dort ab und
-speichert die Fehlermeldung in `state`. Die einzelnen Aufgaben sind:
+`state` ist der gemeinsame Speicher für Fortschritt und Ergebnisse. Der
+Worker schreibt diese Daten hinein. Die Oberfläche liest sie und aktualisiert
+damit die Anzeige. Das zeigen die gestrichelten Pfeile. Die durchgezogenen
+Pfeile zeigen die Reihenfolge der Aufgaben.
+
+Der Ablauf im Detail:
 
 1. **Alte Anzeigeergebnisse zurücksetzen:** Die Funktion entfernt die
    gespeicherten Ergebnisse und Diagrammdaten des vorherigen Optimierungslaufs.

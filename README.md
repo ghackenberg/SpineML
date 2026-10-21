@@ -2437,11 +2437,14 @@ Findet eine Iteration keinen besseren Satz, steigen beide Zähler um `1`:
 
 - **Neustart-Zähler (`rounds_without_improvement`) – breiter suchen:** Er
   zählt die Iterationen ohne Verbesserung seit der letzten Verbesserung oder
-  dem letzten Neustart. Nach **zwei solchen Iterationen**
-  (`RESTART_AFTER_NO_IMPROVEMENT = 2`) wird dieser Zähler auf `0` gesetzt
-  und die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt.
-  Der bisher beste Gewichtssatz bleibt erhalten; die nächste Iteration
-  untersucht wieder größere Änderungen an seinen einzelnen Gewichten.
+  dem letzten Neustart. Nach **zwei aufeinanderfolgenden Iterationen ohne
+  Verbesserung** erreicht er `2` (`RESTART_AFTER_NO_IMPROVEMENT = 2`) und
+  **löst einen Neustart aus**. Ziel dieses Neustarts ist eine breitere
+  Erkundung (Exploration) um den bisher besten Gewichtssatz. Dazu wird die
+  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Die nächste
+  Iteration untersucht dadurch wieder größere Änderungen an einzelnen
+  Gewichten. **Erst beim Neustart wird der Neustart-Zähler von `2` auf `0`
+  gesetzt. Der bisher beste Gewichtssatz bleibt erhalten.**
   Die zusätzlichen zufälligen Gewichtssätze bleiben von der Schrittweite
   unabhängig.
 - **Abbruch-Zähler (`total_rounds_without_improvement`) – Suche beenden:**

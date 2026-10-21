@@ -2100,10 +2100,7 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
 3. Oben im Interface steht der geladene Dateiname, in diesem Fall
    `Example: example-0.py`. Auf **Start optimization** klicken.
-   Der Hintergrundlauf beginnt mit
-   [Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und führt
-   danach die Gewichtssuche und den Abschlussvergleich aus. Das Interface
-   zeigt den [Fortschritt und die Ergebnisse](#fortschritt-und-ergebnisdiagramme).
+   Danach startet die Optimierung.
 
 <a id="beteiligte-dateien"></a>
 <a id="technische-einbindung-modellladen-worker-thread-und-fortschrittsanzeige"></a>

@@ -2176,9 +2176,15 @@ flowchart TD
    [Schritten 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
 
 **Nach dem Klick auf Start optimization** wird `_start_optimization()`
-aufgerufen. Das zweite Diagramm zeigt die Aufgabenteilung zwischen dem
-Streamlit-Thread und dem Worker-Thread. Beide verwenden dieselben
-Fortschritts- und Ergebnisdaten in `state`.
+aufgerufen. Diese Funktion startet den **Worker-Thread**. Der
+**Streamlit-Thread für die Oberfläche läuft bereits**.
+
+Der Worker berechnet zuerst die Baseline. **Erst danach** ruft er
+`optimizer.optimize_iteratively(...)` auf und startet damit die Gewichtssuche.
+Nach dem Ende der Gewichtssuche führt er den Abschlussvergleich aus.
+
+Das zweite Diagramm zeigt diese Aufgabenteilung. Beide Threads verwenden
+dieselben Fortschritts- und Ergebnisdaten in `state`.
 
 ```mermaid
 ---

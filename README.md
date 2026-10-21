@@ -2074,9 +2074,8 @@ Direkt zu den Details:
 
 ### 0. Modell laden und Optimierung starten
 
-**Ziel:** Das ausgewählte Layout und Szenario sowie Runner, globale Bewertung
-und Optimierer werden vorbereitet. Anschließend startet der Klick auf
-**Start optimization** die Schritte 1 bis 6 im Hintergrund.
+**Ziel:** Das Produktionsbeispiel laden und über **Start optimization** die
+Suche nach einem geeigneten Gewichtssatz starten.
 
 <a id="optimierung-starten"></a>
 
@@ -2117,18 +2116,35 @@ python sources/examples/optimization/example-0-optimize.py
 #### Modell und Hintergrundlauf vorbereiten
 
 [optimization.py](sources/optimization.py) liest beim Aufbau der Oberfläche
-das über `SPINEML_MODEL_FILE` ausgewählte Modell. `_load_model()` führt die
-Modelldatei aus; `_suppress_model_visualization()` unterdrückt dabei deren
-direkten `simulate(...)`-Aufruf. `_find_layout_and_scenario()` ermittelt das
-Layout-Szenario-Paar, das für die Optimierung verwendet wird.
+das über `SPINEML_MODEL_FILE` ausgewählte Modell. Es beschreibt das **Layout**,
+also den räumlichen Aufbau der Fabrik, und das **Szenario**, also die
+auszuführenden Produktionsaufträge. `_load_model()` führt die Modelldatei
+aus; `_suppress_model_visualization()` unterdrückt dabei deren direkten
+`simulate(...)`-Aufruf. `_find_layout_and_scenario()` wählt das Layout und
+Szenario aus, deren Produktion untersucht werden soll.
 
-`create_optimizer()` erstellt den
-[SpineMLSimulationRunner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py),
-die [GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py)
-und den [LocalHeuristicWeightOptimizer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
-Der Optimierer erhält den Runner als aufrufbares Objekt und die
-[globale Bewertung](#globale-bewertungszahl) für den Vergleich vollständiger
-Produktionsläufe.
+Für die späteren Produktionsläufe erstellt `create_optimizer()` einen
+**Runner**
+([SpineMLSimulationRunner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py)).
+Er führt jeweils eine vollständige Simulation mit dem ausgewählten Layout
+und Szenario aus und liefert die Produktionskennzahlen zurück. Dafür erhält
+er einen Gewichtssatz und einen [Seed](#baseline-technik), also einen
+Startwert für die Zufallszahlengeneratoren.
+
+Um diese Produktionsergebnisse vergleichen zu können, richtet
+`create_optimizer()` die **globale Bewertung**
+([GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py))
+ein. Sie berechnet aus den Produktionskennzahlen eines Laufs eine
+[globale Bewertungszahl](#globale-bewertungszahl): Je kleiner diese Zahl,
+desto besser wird das Produktionsergebnis bewertet.
+
+Die Suche steuert der **Optimierer**
+([LocalHeuristicWeightOptimizer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)),
+den `create_optimizer()` mit dem Runner und der globalen Bewertung verbindet.
+Er lässt verschiedene Gewichtssätze simulieren und vergleicht ihre mittleren
+globalen Bewertungszahlen über die Seeds. Den bisher besten Gewichtssatz
+behält er für die weitere Suche. Die einzelnen Suchschritte werden ab
+[Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
 
 Beim Klick auf **Start optimization** setzt `_start_optimization()` die
 Ergebnisse des vorherigen Optimierungslaufs im Anzeigestand zurück und
@@ -2152,8 +2168,8 @@ Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
 | `RESTART_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten Neustart oder dem letzten kleineren Mittelwert bis zum [Neustart](#5-weitere-iteration-ausführen). |
 | `STOP_AFTER_NO_IMPROVEMENT` | Anzahl der Iterationen ohne kleineren Mittelwert seit dem letzten gespeicherten besten Satz bis zum [vorzeitigen Ende](#5-weitere-iteration-ausführen). |
 
-**Ergebnis der Vorbereitung:** Modell, Runner, globale Bewertung und
-Optimierer sind bereit; der Hintergrundlauf startet die Baseline.
+**Ergebnis der Vorbereitung:** Nach dem Klick beginnt im Hintergrund
+[Schritt 1: Produktion mit dem Standardgewichtssatz simulieren](#1-produktion-mit-dem-standardgewichtssatz-simulieren).
 
 <a id="1-produktion-mit-standardgewichten-simulieren"></a>
 

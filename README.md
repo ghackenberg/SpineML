@@ -2114,8 +2114,9 @@ bei `EXAMPLE_FILE` eintragen.
 
 1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
    `EXAMPLE_FILE` eingetragene Datei.
-2. **`_load_model()` – Beispiel laden:** Führt die Beispieldatei aus und
-   übernimmt die darin definierten Modellobjekte.
+2. **`_load_model()` – Beispiel laden:** Lädt die Fabrikkonfiguration (Layout)
+   und die Produktionsaufträge (Szenario) aus der Beispieldatei. Die Simulation
+   startet dabei noch nicht.
 
    - **`_suppress_model_visualization()` – sofortigen Simulationsstart verhindern:**
      Wird innerhalb von `_load_model()` verwendet. Trotz des Namens verhindert

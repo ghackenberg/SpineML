@@ -2110,8 +2110,7 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 Das gewünschte Beispiel in [optimization.py](sources/optimization.py)
 bei `EXAMPLE_FILE` eintragen.
 
-Beim Öffnen der Oberfläche wird `create_optimizer()` aufgerufen. Diese
-Funktion bereitet die Optimierung mit folgenden Aufrufen vor:
+`create_optimizer()` bereitet die Optimierung in dieser Reihenfolge vor:
 
 1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
    `EXAMPLE_FILE` eingetragene Datei.

@@ -2161,12 +2161,18 @@ aufgerufen. Dabei passiert Folgendes:
 1. **Alte Anzeigeergebnisse zurücksetzen:** Die Funktion entfernt die
    gespeicherten Ergebnisse und Diagrammdaten des vorherigen Optimierungslaufs.
    Die Fortschrittszähler beginnen wieder bei `0`.
-2. **Berechnung im Hintergrund starten:** Die Funktion startet einen
-   **Worker-Thread**. Das ist ein zusätzlicher Ausführungsablauf im selben
-   Python-Programm. Er führt die Berechnungen aus, während die Oberfläche
-   den Fortschritt anzeigen und ihre Diagramme aktualisieren kann. Sie muss
-   dafür nicht warten, bis die gesamte Optimierung abgeschlossen ist.
-   Im Code führt dieser Thread die Funktion `worker()` aus.
+2. **Berechnung im Hintergrund starten:** `_start_optimization()` startet
+   einen zusätzlichen **Worker-Thread**. Ein Thread ist ein Ausführungsablauf
+   innerhalb des Python-Programms. Für diesen Ablauf ist die Arbeit aufgeteilt:
+
+   - **Streamlit-Thread – Anzeige:** Aktualisiert die Oberfläche, die
+     Fortschrittsanzeige und die Diagramme.
+   - **Worker-Thread – Berechnung:** Führt die Funktion `worker()` aus.
+     Diese berechnet die Baseline, führt die Gewichtssuche aus und startet
+     den Abschlussvergleich.
+
+   So kann die Oberfläche den Fortschritt anzeigen, während der Worker
+   rechnet. Sie muss nicht warten, bis die gesamte Optimierung beendet ist.
 3. **Die drei Phasen nacheinander ausführen:** `worker()` führt diese
    Aufgaben in genau dieser Reihenfolge aus:
 

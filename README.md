@@ -2171,14 +2171,9 @@ flowchart TD
    Das Erstellen des Optimierers startet noch keine Gewichtssuche. Die Klasse
    `LocalHeuristicWeightOptimizer` enthält dafür die Methode
    [`optimize_iteratively()`](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py).
-   Erst der Aufruf `optimizer.optimize_iteratively(...)` startet die Suche.
-   **Für einen Gewichtssatz** simuliert der Optimierer die Produktion mit
-   jedem Seed und bewertet jeden Lauf mit der globalen Bewertung. Aus den
-   Bewertungszahlen dieser Läufe bildet er den Mittelwert **für diesen
-   Gewichtssatz**. Danach prüft er den nächsten Gewichtssatz genauso.
-   Er vergleicht die Mittelwerte der Gewichtssätze und wählt den Satz mit
-   dem kleinsten Mittelwert aus. Das sind die
-   [Schritte 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
+   Erst der Aufruf `optimizer.optimize_iteratively(...)` startet die
+   Gewichtssuche. Ihr Ablauf wird in den
+   [Schritten 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
 
 **Nach dem Klick auf Start optimization** wird `_start_optimization()`
 aufgerufen. Das zweite Diagramm zeigt die Aufgabenteilung zwischen dem

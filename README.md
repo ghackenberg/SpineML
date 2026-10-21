@@ -2219,8 +2219,7 @@ flowchart TB
 
 `state` ist der gemeinsame Speicher für Fortschritt und Ergebnisse. Der
 Worker schreibt diese Daten hinein. Die Oberfläche liest sie und aktualisiert
-damit die Anzeige. Das zeigen die gestrichelten Pfeile. Die durchgezogenen
-Pfeile zeigen die Reihenfolge der Aufgaben.
+damit die Anzeige.
 
 Der Ablauf im Detail:
 
@@ -2228,8 +2227,10 @@ Der Ablauf im Detail:
    gespeicherten Ergebnisse und Diagrammdaten des vorherigen Optimierungslaufs.
    Die Fortschrittszähler beginnen wieder bei `0`.
 2. **Berechnung im Hintergrund starten:** `_start_optimization()` startet
-   einen zusätzlichen **Worker-Thread**. Ein Thread ist ein Ausführungsablauf
-   innerhalb des Python-Programms. Für diesen Ablauf ist die Arbeit aufgeteilt:
+   einen zusätzlichen **Worker-Thread**. Ein Thread ist eine
+   **Ausführungseinheit innerhalb eines Prozesses**. Streamlit-Thread und
+   Worker-Thread gehören hier zum selben Python-Prozess und teilen sich die
+   Daten in `state`. Die Arbeit ist aufgeteilt:
 
    - **Streamlit-Thread – Anzeige:** Aktualisiert die Oberfläche, die
      Fortschrittsanzeige und die Diagramme.

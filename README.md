@@ -2126,12 +2126,12 @@ keine Produktion simuliert. Die Aufrufe erfolgen in dieser Reihenfolge:
    welches **Layout** (räumlicher Aufbau der Fabrik) und welches **Szenario**
    (Produktionsaufträge) für die Optimierung verwendet werden.
 4. **`SpineMLSimulationRunner(...)` – Runner erstellen:** Erstellt den
-   [Runner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py)
-   mit dem ausgewählten Layout und Szenario. Ein Aufruf
-   `runner(weights, seed)` führt dieses Szenario mit dem übergebenen
-   Gewichtssatz und [Seed](#baseline-technik) aus und liefert die
-   Produktionskennzahlen zurück. Diese Aufrufe beginnen nach dem Klick auf
-   **Start optimization** mit den Läufen in [Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren).
+   [Runner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py).
+   Der Runner ist nicht die Simulation selbst: Er startet einen Simulationslauf
+   und führt ihn aus. Dafür verwendet er das ausgewählte Layout und Szenario
+   sowie den beim Aufruf `runner(weights, seed)` übergebenen Gewichtssatz und
+   [Seed](#baseline-technik). Nach dem Lauf gibt er die Produktionskennzahlen
+   zurück. Das Erstellen des Runners startet noch keine Simulation.
 5. **`_global_evaluation()` – globale Bewertung erstellen:** Erstellt die
    [GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py).
    Sie berechnet aus den Produktionskennzahlen eines abgeschlossenen Laufs eine

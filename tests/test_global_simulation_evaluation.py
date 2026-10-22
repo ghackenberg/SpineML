@@ -1,4 +1,5 @@
 from dataclasses import fields, replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -6,6 +7,7 @@ from SpineML.Control.HeuristicControl import (
     GlobalSimulationEvaluation,
     GlobalSimulationMetrics,
     GlobalSimulationWeights,
+    SpineMLSimulationRunner,
 )
 
 
@@ -14,7 +16,6 @@ TIME_METRICS = (
     "total_tardiness",
     "total_transport_time",
     "tool_change_time",
-    "blocking_time",
 )
 
 
@@ -31,7 +32,6 @@ def make_evaluation():
             total_tardiness=4.0,
             total_transport_time=1.0,
             tool_change_time=1.0,
-            blocking_time=1.0,
             rework_job_penalty=3.0,
             scrap_job_penalty=4.0,
             downgrade_job_penalty=3.0,
@@ -99,14 +99,12 @@ def test_each_time_reference_is_its_own_unchanged_baseline_mean():
             total_tardiness=0.02,
             total_transport_time=0.2,
             tool_change_time=0.01,
-            blocking_time=0.03,
         ),
         GlobalSimulationMetrics(
             makespan=0.6,
             total_tardiness=0.04,
             total_transport_time=0.4,
             tool_change_time=0.03,
-            blocking_time=0.07,
         ),
     ]
 
@@ -117,7 +115,6 @@ def test_each_time_reference_is_its_own_unchanged_baseline_mean():
         "total_tardiness": 0.03,
         "total_transport_time": 0.3,
         "tool_change_time": 0.02,
-        "blocking_time": 0.05,
     })
 
 
@@ -125,8 +122,8 @@ def test_zero_mean_error_does_not_replace_existing_references():
     evaluation = make_evaluation()
     original_references = evaluation.calculate_baseline_reference_values([make_metrics()])
 
-    with pytest.raises(ValueError, match="baseline mean blocking_time must not be zero"):
-        evaluation.calculate_baseline_reference_values([make_metrics(blocking_time=0.0)])
+    with pytest.raises(ValueError, match="baseline mean tool_change_time must not be zero"):
+        evaluation.calculate_baseline_reference_values([make_metrics(tool_change_time=0.0)])
 
     assert evaluation.baseline_reference_values == original_references
 
@@ -136,12 +133,47 @@ def test_empty_baseline_still_raises_value_error():
         make_evaluation().calculate_baseline_reference_values([])
 
 
-def test_global_weights_contain_only_the_eight_selected_objectives():
+def test_global_weights_contain_only_the_seven_selected_objectives():
     assert {field.name for field in fields(GlobalSimulationWeights)} == {
         *TIME_METRICS,
         "rework_job_penalty",
         "scrap_job_penalty",
         "downgrade_job_penalty",
+    }
+
+
+def test_runner_collects_only_the_four_retained_time_metrics():
+    movement_durations = {"moving_x": 1.0, "moving_y": 2.0, "moving_z": 3.0}
+    tool_durations = {"mounting": 4.0, "unmounting": 5.0}
+    layout = SimpleNamespace(
+        sim_main_robot=SimpleNamespace(
+            state_move=SimpleNamespace(
+                value=SimpleNamespace(value_duration=movement_durations.__getitem__),
+            ),
+        ),
+        sim_corridors=[],
+        simMachines=lambda: [SimpleNamespace(
+            state=SimpleNamespace(
+                value=SimpleNamespace(value_duration=tool_durations.__getitem__),
+            ),
+        )],
+    )
+    job = SimpleNamespace(
+        order=SimpleNamespace(earliest_start_time=2.0, latest_end_time=10.0),
+        completed_time=15.0,
+        general_state=SimpleNamespace(get=lambda: "intact"),
+    )
+    scenario = SimpleNamespace(sim_orders=[SimpleNamespace(sim_jobs=[job])])
+
+    metrics = SpineMLSimulationRunner(None, None).collect_global_metrics(
+        layout, scenario, simulation_end_time=100.0,
+    )
+
+    assert {name: getattr(metrics, name) for name in TIME_METRICS} == {
+        "makespan": 13.0,
+        "total_tardiness": 5.0,
+        "total_transport_time": 6.0,
+        "tool_change_time": 9.0,
     }
 
 
@@ -155,7 +187,7 @@ def test_relative_metrics_and_readme_example_use_only_scored_objectives():
     ])
     metrics = GlobalSimulationMetrics(
         makespan=8.0, total_tardiness=2.0, total_transport_time=6.0,
-        tool_change_time=1.0, blocking_time=0.0,
+        tool_change_time=1.0,
         rework_job_count=10, scrap_job_count=20, downgraded_job_count=10,
         total_jobs=100, completed_jobs=100, intact_jobs=80, defect_jobs=40,
     )
@@ -165,7 +197,6 @@ def test_relative_metrics_and_readme_example_use_only_scored_objectives():
         "total_tardiness": 0.5,
         "total_transport_time": 0.75,
         "tool_change_time": 0.5,
-        "blocking_time": 0.0,
         "rework_rate": 0.1,
         "scrap_rate": 0.2,
         "downgrade_rate": 0.1,
@@ -196,7 +227,6 @@ def test_information_and_completion_counts_do_not_add_objective_penalties(change
     ("total_tardiness", 0.5, 2.0),
     ("total_transport_time", 0.5, 0.5),
     ("tool_change_time", 0.5, 0.5),
-    ("blocking_time", 0.5, 0.5),
     ("rework_job_count", 1, 0.3),
     ("scrap_job_count", 1, 0.4),
     ("downgraded_job_count", 1, 0.3),

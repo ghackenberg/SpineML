@@ -2493,7 +2493,7 @@ auf. Dieser Aufruf führt drei Schritte aus:
 
 ##### Produktionskennzahlen
 
-Die Bewertung verwendet die folgenden acht Kennzahlen. Die fünf Zeitkennzahlen
+Die Bewertung verwendet die folgenden sieben Kennzahlen. Die vier Zeitkennzahlen
 werden in Stunden erfasst.
 
 - **Produktionsdauer (`makespan`):** Zeit vom frühesten vorgesehenen
@@ -2510,9 +2510,6 @@ werden in Stunden erfasst.
   X, Y und Z aller Roboter. Ein- und Auslagerungswartezeiten zählen nicht mit.
 - **Werkzeugwechselzeit (`tool_change_time`):** Summe der Zeiten aller
   Maschinen für Werkzeugmontage (`mounting`) und -demontage (`unmounting`).
-- **Maschinen-Blockierzeit (`blocking_time`):** Summe der Maschinenzeiten im
-  Zustand `blocked`. Eine Maschine setzt diesen Zustand, wenn sie eine neue
-  Aktion anfordert und ihr Ausgangspuffer voll ist.
 - **Nacharbeitsquote (`rework_rate`):** Anteil der Jobs mit mindestens einer
   Nacharbeit. Der Zähler `rework_job_count` zählt jeden abgeschlossenen Job
   mit Nacharbeit einmal, unabhängig von der Anzahl seiner Nacharbeiten.
@@ -2533,7 +2530,7 @@ fasst `GlobalSimulationEvaluation` die Kennzahlen zu **einer globalen
 Bewertungszahl pro Lauf** zusammen. Anders als beim Aktionsscore gilt hier:
 **Je kleiner die Bewertungszahl, desto besser wird das Produktionsergebnis bewertet.**
 
-In die Bewertung gehen **fünf Zeitkennzahlen** sowie **Nacharbeits-,
+In die Bewertung gehen **vier Zeitkennzahlen** sowie **Nacharbeits-,
 Ausschuss- und Herabstufungsquote** ein. Sie erfassen den Zeitaufwand und
 die Folgen der Steuerungsentscheidungen.
 
@@ -2541,9 +2538,8 @@ Für die Berechnung werden zuerst die Zeitkennzahlen durch ihre Referenzen
 geteilt und die drei Quoten berechnet:
 
 - **Zeitkennzahlen:** Produktionsdauer (`makespan`), Gesamtverspätung der Jobs
-  (`total_tardiness`), Transportzeit (`total_transport_time`),
-  Werkzeugwechselzeit (`tool_change_time`) und Maschinen-Blockierzeit
-  (`blocking_time`) werden jeweils durch ihren eigenen
+  (`total_tardiness`), Transportzeit (`total_transport_time`) und
+  Werkzeugwechselzeit (`tool_change_time`) werden jeweils durch ihren eigenen
   [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren)
   geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
   Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
@@ -2589,14 +2585,13 @@ behandelt und `10` herabgestuft.
 | Gesamtverspätung | `2 / 4 = 0.5` | `4.0` | `2.0` |
 | Transportzeit | `6 / 8 = 0.75` | `1.0` | `0.75` |
 | Werkzeugwechselzeit | `1 / 2 = 0.5` | `1.0` | `0.5` |
-| Blockierzeit | `0 / 1 = 0` | `1.0` | `0` |
 | Nacharbeitsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
 | Ausschussquote | `20 / 100 = 0.2` | `4.0` | `0.8` |
 | Herabstufungsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
 
 Die Bewertungszahl dieses Laufs ist die Summe der letzten Spalte:
 
-`4.0 + 2.0 + 0.75 + 0.5 + 0 + 0.3 + 0.8 + 0.3 = 8.65`
+`4.0 + 2.0 + 0.75 + 0.5 + 0.3 + 0.8 + 0.3 = 8.65`
 
 Ein höheres globales Gewicht lässt die betreffende Kennzahl stärker in die
 Bewertung eingehen. Steigt beispielsweise die Ausschussrate um `0.1`, erhöht
@@ -2632,7 +2627,7 @@ Während der Gewichtssuche meldet `progress` in `optimization.py` an die
 Oberfläche, welche Iteration und welcher Gewichtssatz gerade geprüft werden.
 Sobald alle Seed-Läufe eines Gewichtssatzes ausgewertet sind, speichert
 `progress` dessen mittlere globale Bewertungszahl und die Mittelwerte der
-acht Produktionskennzahlen. Daraus aktualisiert das Interface die Diagramme.
+sieben Produktionskennzahlen. Daraus aktualisiert das Interface die Diagramme.
 
 Während der Suche steht oberhalb der Diagramme beispielsweise
 `Optimization: round 1, candidate 9/53`. Das bedeutet: In Iteration `1`
@@ -2658,7 +2653,7 @@ besten Satz nicht automatisch.
 
 ##### Einzelne Produktionskennzahlen
 
-**Mean metrics per candidate** zeigt für jede der acht
+**Mean metrics per candidate** zeigt für jede der sieben
 [bewerteten Produktionskennzahlen](#globale-bewertungszahl) ein eigenes Diagramm. Auf der
 Y-Achse steht jeweils ihr Mittelwert über die Seeds, beispielsweise die
 mittlere Produktionsdauer oder die mittlere Ausschussquote.
@@ -2859,7 +2854,7 @@ Baseline-Referenzwerte. Insgesamt entstehen **15 Testläufe: fünf pro
 Steuerung**. Der in der Suche gefundene Gewichtssatz bleibt bei diesem
 Vergleich unverändert.
 
-Im Interface zeigt eine **Tabelle die Mittelwerte** der acht bewerteten
+Im Interface zeigt eine **Tabelle die Mittelwerte** der sieben bewerteten
 Produktionskennzahlen und der globalen Bewertungszahl je Steuerung. Die
 zugehörigen Diagramme zeigen die Ergebnisse **für jeden einzelnen Test-Seed**.
 Damit lässt sich prüfen, ob die Heuristik die Zufallspolicy übertrifft und

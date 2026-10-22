@@ -201,20 +201,17 @@ class SpineMLSimulationRunner:
             )
 
         tool_change_time = 0.0
-        blocking_time = 0.0
         for machine in sim_layout.simMachines():
             tool_change_time += machine.state.value.value_duration("mounting")
             tool_change_time += machine.state.value.value_duration(
                 "unmounting"
             )
-            blocking_time += machine.state.value.value_duration("blocked")
 
         return GlobalSimulationMetrics(
             makespan=makespan,
             total_tardiness=total_tardiness,
             total_transport_time=total_transport_time,
             tool_change_time=tool_change_time,
-            blocking_time=blocking_time,
             rework_job_count=rework_job_count,
             scrap_job_count=scrap_job_count,
             unfinished_jobs=unfinished_jobs,

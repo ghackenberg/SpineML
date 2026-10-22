@@ -7,6 +7,18 @@ from SpineML.Control.GeneralControl import RandomPolicy
 from SpineML.Control.HeuristicControl import GlobalSimulationMetrics, HeuristicWeights
 
 
+def test_interface_uses_the_seven_selected_production_objectives():
+    assert optimization.SCORED_METRICS == (
+        "Makespan",
+        "Total job tardiness",
+        "Transport time",
+        "Tool change time",
+        "Rework rate (%)",
+        "Scrap rate (%)",
+        "Downgrade rate (%)",
+    )
+
+
 def test_benchmark_uses_three_controls_and_held_out_seeds_with_fixed_references(monkeypatch):
     assert set(optimization.SEEDS).isdisjoint(optimization.BENCHMARK_SEEDS)
     monkeypatch.setattr(optimization, "BENCHMARK_SEEDS", [101, 102])
@@ -59,7 +71,6 @@ def test_comparison_shows_all_three_controls_without_information_metrics(monkeyp
         "Total job tardiness": 2.0,
         "Transport time": 4.0,
         "Tool change time": 1.0,
-        "Blocking time": 0.5,
         "Unfinished jobs": 0,
         "Intact rate (%)": 100.0,
         "Defect rate (%)": 25.0,
@@ -131,7 +142,6 @@ def test_default_global_evaluation_uses_only_the_selected_weights():
         "total_tardiness": 4.0,
         "total_transport_time": 1.0,
         "tool_change_time": 1.0,
-        "blocking_time": 1.0,
         "rework_job_penalty": 3.0,
         "scrap_job_penalty": 4.0,
         "downgrade_job_penalty": 3.0,
@@ -142,7 +152,7 @@ def test_progress_records_only_scored_metrics(monkeypatch):
     weights = HeuristicWeights()
     metrics = GlobalSimulationMetrics(
         makespan=10.0, total_tardiness=2.0, total_transport_time=4.0,
-        tool_change_time=1.0, blocking_time=0.5,
+        tool_change_time=1.0,
         total_jobs=10, completed_jobs=10, intact_jobs=8, defect_jobs=4,
         rework_job_count=1, scrap_job_count=2, downgraded_job_count=1,
     )
@@ -174,7 +184,6 @@ def test_progress_records_only_scored_metrics(monkeypatch):
     row = state["metrics"][0]
     assert set(row) == {"Candidate", *optimization.SCORED_METRICS}
     assert row["Tool change time"] == 1.0
-    assert row["Blocking time"] == 0.5
     assert row["Rework rate (%)"] == 10.0
     assert row["Scrap rate (%)"] == 20.0
     assert row["Downgrade rate (%)"] == 10.0

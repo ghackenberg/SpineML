@@ -10,7 +10,6 @@ class GlobalSimulationMetrics:
     total_tardiness: float
     total_transport_time: float = 0.0
     tool_change_time: float = 0.0
-    blocking_time: float = 0.0
     rework_job_count: float = 0.0
     scrap_job_count: float = 0.0
     unfinished_jobs: int = 0
@@ -68,7 +67,6 @@ class GlobalSimulationWeights:
     total_tardiness: float
     total_transport_time: float
     tool_change_time: float
-    blocking_time: float
     rework_job_penalty: float
     scrap_job_penalty: float
     downgrade_job_penalty: float = 0.0
@@ -125,7 +123,6 @@ class GlobalSimulationEvaluation:
             "total_tardiness": mean_value("total_tardiness"),
             "total_transport_time": mean_value("total_transport_time"),
             "tool_change_time": mean_value("tool_change_time"),
-            "blocking_time": mean_value("blocking_time"),
         }
         # Gibt eine Kopie der berechneten Baseline-Referenzwerte zurück.
         return dict(self.baseline_reference_values)
@@ -148,7 +145,6 @@ class GlobalSimulationEvaluation:
             "total_tardiness": metrics.total_tardiness,
             "total_transport_time": metrics.total_transport_time,
             "tool_change_time": metrics.tool_change_time,
-            "blocking_time": metrics.blocking_time,
         }
 
         relative_metrics = {}
@@ -185,7 +181,6 @@ class GlobalSimulationEvaluation:
             + self.weights.total_transport_time
             * relative_metrics["total_transport_time"]
             + self.weights.tool_change_time * relative_metrics["tool_change_time"]
-            + self.weights.blocking_time * relative_metrics["blocking_time"]
             + self.weights.rework_job_penalty
             * relative_metrics["rework_rate"]
             + self.weights.scrap_job_penalty

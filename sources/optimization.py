@@ -37,7 +37,6 @@ SCORED_METRICS = (
     "Total job tardiness",
     "Transport time",
     "Tool change time",
-    "Blocking time",
     "Rework rate (%)",
     "Scrap rate (%)",
     "Downgrade rate (%)",
@@ -208,8 +207,6 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
             total_transport_time=1.0,
             # Weight für Werkzeugwechsel sowie Montage- und Demontagezeiten.
             tool_change_time=1.0,
-            # Weight für Wartezeit durch blockierte oder volle Puffer.
-            blocking_time=1.0,
             # Strafe für den Anteil der Jobs, die nachgearbeitet wurden.
             rework_job_penalty=3.0,
             # Strafe für den Anteil der Jobs, die als Scrap endeten.
@@ -225,7 +222,7 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
 @st.cache_resource
 # Erstellt den Optimierer aus dem ausgewählten Beispielmodell.
 def create_optimizer(model_file: str, model_stamp: int):
-    """Lädt ein Beispiel und erstellt den Optimierer mit den acht globalen Zielen."""
+    """Lädt ein Beispiel und erstellt den Optimierer mit den sieben globalen Zielen."""
     del model_stamp
     # Sucht die ausgewählte Beispieldatei und liefert ihren vollständigen Pfad.
     model_path = _resolve_model_path(model_file)
@@ -479,7 +476,6 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
             "Total job tardiness": metrics.total_tardiness,
             "Transport time": metrics.total_transport_time,
             "Tool change time": metrics.tool_change_time,
-            "Blocking time": metrics.blocking_time,
             "Scrap rate (%)": metrics.scrap_rate * 100.0,
             "Rework rate (%)": metrics.rework_rate * 100.0,
             "Downgrade rate (%)": metrics.downgrade_rate * 100.0,
@@ -576,10 +572,6 @@ def _start_optimization(state, optimizer):
             "Tool change time": _mean_metric(
                 metrics_by_seed,
                 "tool_change_time",
-            ),
-            "Blocking time": _mean_metric(
-                metrics_by_seed,
-                "blocking_time",
             ),
             "Scrap rate (%)": _mean_metric(
                 metrics_by_seed,

@@ -2102,6 +2102,26 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
    `Example: example-0.py`. Auf **Start optimization** klicken.
    Danach startet die Optimierung.
 
+#### Größeres Beispiel für den Steuerungsvergleich
+
+[example-5.py](sources/examples/normal/example-5.py) enthält **24 Jobs aus
+acht Aufträgen**, drei Endprodukte und zwölf Maschinen in drei Seitenkorridoren.
+Zwölf Operationstypen ermöglichen alternative Bearbeitungswege mit zwei oder
+drei Schritten. Operationsdauer, Werkzeugverbrauch, Pufferkapazität und
+Ein- und Auslagerzeiten sind nicht überall gleich. Die Aufträge haben
+unterschiedliche Startzeiten und Deadlines.
+
+Für dieses Beispiel in `sources/optimization.py` eintragen:
+
+```python
+EXAMPLE_FILE = "example-5.py"
+```
+
+Die Steuerungen können damit unterschiedliche Jobs, Maschinen und
+Bearbeitungswege auswählen. Ob der gefundene Gewichtssatz bessere Ergebnisse
+erzielt, zeigt der Vergleich auf den Test-Seeds. Die größere Jobzahl erhöht
+die Rechenzeit pro Simulationslauf.
+
 <a id="beteiligte-dateien"></a>
 <a id="technische-einbindung-modellladen-worker-thread-und-fortschrittsanzeige"></a>
 

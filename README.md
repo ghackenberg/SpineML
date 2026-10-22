@@ -2693,96 +2693,53 @@ Gewichtssatz als Grundlage für die
 
 ### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
-In [Schritt 3](#mittelwert-über-die-seeds) wurden alle Gewichtssätze der
-aktuellen Iteration mit allen Seeds geprüft. Für jeden Satz liegt deshalb
-ein Mittelwert der globalen Bewertungszahlen (`mean_global_cost`) vor.
-`select_best_local_weight_set_across_seeds()` wählt den Satz mit dem
-**kleinsten Mittelwert innerhalb dieser Iteration** aus.
+`select_best_local_weight_set_across_seeds()` wählt aus allen geprüften
+Gewichtssätzen der aktuellen Iteration den Satz mit dem **kleinsten
+[Mittelwert über die Seeds](#mittelwert-über-die-seeds)** aus.
 
-**Fortsetzung des Rechenbeispiels:** Gewichtssatz A erreicht den Mittelwert
-`9.1`, Gewichtssatz B den Mittelwert `8.8`. Deshalb wird B als bester Satz
-dieser Iteration ausgewählt.
+**Beispiel:** A erreicht `9.1`, B erreicht `8.8`. Deshalb wird B ausgewählt.
 
-Ob dieser Satz den bisher gespeicherten besten Satz ersetzt und ob eine
-weitere Iteration ausgeführt wird, wird in [Schritt 5](#5-weitere-iteration-ausführen)
-entschieden.
+Ob B den bisher besten Satz ersetzt und die Suche weiterläuft, entscheidet
+[Schritt 5](#5-weitere-iteration-ausführen).
 
 <a id="weitere-iterationen-neustart-vorzeitiges-ende-und-rückgabewerte-im-code"></a>
 
 ### 5. Weitere Iteration ausführen?
 
-**Ziel dieses Schritts:** Einen besseren Gewichtssatz übernehmen und die
-Suche von diesem Satz aus fortsetzen. Wird kein besserer Satz gefunden,
-soll die Suche zunächst größere Änderungen ausprobieren. Bleibt die Suche
-auch damit ohne Verbesserung, soll sie enden.
+**Ziel:** Vom besten Gewichtssatz aus weitersuchen. Ohne Verbesserung werden
+zunächst größere Änderungen ausprobiert; bleibt der Erfolg aus, endet die Suche.
 
-**Was bedeutet Verbesserung?** `optimize_iteratively()` vergleicht den
-kleinsten Mittelwert aus der aktuellen Iteration
-([Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen))
-mit dem gespeicherten besten Mittelwert aus den bisherigen Iterationen.
-Nur wenn der neue Mittelwert **kleiner** ist, liegt eine Verbesserung vor.
-Ein gleicher Mittelwert zählt nicht als Verbesserung.
+`optimize_iteratively()` vergleicht den besten Mittelwert dieser Iteration
+mit dem bisher gespeicherten besten Mittelwert. **Nur ein kleinerer Wert ist
+eine Verbesserung; ein gleicher Wert zählt nicht.**
 
-- **Erste Iteration:** Es gibt noch keinen gespeicherten besten Satz.
-  Deshalb werden der beste Satz dieser Iteration und sein Mittelwert
-  gespeichert. Die Schrittweite wird halbiert. Neustart-Zähler und
-  Abbruch-Zähler werden auf `0` gesetzt.
-- **Weitere Iteration mit Verbesserung:** Der neue Satz und sein kleinerer
-  Mittelwert ersetzen den gespeicherten besten Satz und dessen Mittelwert.
-  Die Schrittweite wird halbiert, damit die nächste Iteration kleinere
-  Änderungen an diesem neuen Ausgangssatz prüft. Neustart-Zähler und
-  Abbruch-Zähler werden auf `0` gesetzt.
-- **Weitere Iteration ohne Verbesserung:** Der gespeicherte beste Satz
-  bleibt erhalten. Neustart-Zähler und Abbruch-Zähler steigen jeweils um `1`.
+- **Erste Iteration oder Verbesserung:** Den ausgewählten Satz und seinen
+  Mittelwert speichern, die Schrittweite halbieren und Neustart-Zähler sowie
+  Abbruch-Zähler auf `0` setzen.
+- **Keine Verbesserung:** Den bisherigen besten Satz behalten. Beide Zähler
+  steigen um `1`.
 
-**Wozu dienen die beiden Zähler?** Beide zählen Iterationen ohne Verbesserung,
-aber sie lösen unterschiedliche Reaktionen aus:
+Die beiden Zähler steuern die Suche bei ausbleibender Verbesserung:
 
-- **Neustart-Zähler (`rounds_without_improvement`) – größere Änderungen
-  ausprobieren:** Er zählt die Iterationen ohne Verbesserung seit der letzten
-  Verbesserung oder dem letzten Neustart. Erreicht er `2`, wird ein Neustart
-  ausgelöst (`RESTART_AFTER_NO_IMPROVEMENT = 2`). Die Schrittweite wird auf
-  `INITIAL_WEIGHT_STEP = 0.4` zurückgesetzt. Der bisher beste Gewichtssatz
-  bleibt erhalten und ist der Ausgangspunkt für die nächste Iteration.
-  Der Neustart-Zähler wird von `2` auf `0` gesetzt. Die größeren
-  Änderungsschritte dienen der breiteren Erkundung (Exploration).
-  Die [zusätzlichen zufälligen Gewichtssätze](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
-  werden unabhängig von dieser Schrittweite erzeugt.
-- **Abbruch-Zähler (`total_rounds_without_improvement`) – erfolglose Suche
-  beenden:** Er zählt die aufeinanderfolgenden Iterationen ohne Verbesserung
-  seit dem letzten gespeicherten besseren Satz. **Ein Neustart setzt diesen
-  Zähler nicht zurück.** Erreicht er `4` (`STOP_AFTER_NO_IMPROVEMENT = 4`),
-  endet die Suche. Die Abbruchprüfung erfolgt vor der Neustartprüfung;
-  bei `4` wird deshalb kein weiterer Neustart ausgelöst.
+- **Neustart-Zähler (`rounds_without_improvement`):** Zählt Iterationen ohne
+  Verbesserung seit der letzten Verbesserung oder dem letzten Neustart.
+  Bei `2` (`RESTART_AFTER_NO_IMPROVEMENT`) wird ein Neustart ausgelöst:
+  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurücksetzen, diesen Zähler auf `0` setzen.
+  Die nächste Iteration prüft größere Änderungen am bisherigen besten Satz.
+- **Abbruch-Zähler (`total_rounds_without_improvement`):** Zählt die
+  aufeinanderfolgenden Iterationen ohne Verbesserung. **Ein Neustart setzt
+  ihn nicht zurück.** Bei `4` (`STOP_AFTER_NO_IMPROVEMENT`) endet die Suche;
+  ein weiterer Neustart wird dann nicht mehr ausgeführt.
 
-**Beispiel ohne zwischenzeitliche Verbesserung:** Zwei erfolglose Iterationen
-führen zum Neustart: Neustart-Zähler `2 → 0`, Abbruch-Zähler bleibt `2`.
-Bleiben auch die nächsten beiden Iterationen erfolglos, erreicht der
-Abbruch-Zähler `4` und die Suche endet. Die Abbruchgrenze umfasst also die
-Iterationen vor und nach dem Neustart.
+Eine weitere Iteration beginnt bei [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen),
+solange der Abbruch-Zähler unter `4` liegt und noch nicht `ITERATIONS`
+Iterationen ausgeführt wurden. Andernfalls folgt der
+[Abschlussvergleich in Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
-**Wie wird die Raute „5. Weitere Iteration ausführen?“ beantwortet?**
-
-- **Ja:** Der Abbruch-Zähler liegt unter `4` und die Anzahl bereits
-  ausgeführter Iterationen ist kleiner als `ITERATIONS`. Die Suche kehrt zu
-  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen) zurück. Dort
-  werden Varianten des gespeicherten besten Satzes mit der jetzt geltenden
-  Schrittweite sowie zusätzliche zufällige Gewichtssätze erzeugt.
-- **Nein:** Der Abbruch-Zähler erreicht `4` oder die Anzahl ausgeführter
-  Iterationen erreicht `ITERATIONS`. Die Gewichtssuche endet; mit dem
-  gespeicherten besten Satz folgt der
-  [Abschlussvergleich in Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
-
-Das Diagramm zeigt einen **beispielhaften Verlauf mit sieben Iterationen**
-und frei gewählten Mittelwerten: In Iteration 1 wird der Mittelwert `8`
-gespeichert. Erst Iteration 3 liefert mit `7` einen kleineren Mittelwert.
-Die Iterationen 4 bis 7 liefern keinen Mittelwert unter `7`.
-Die Zählerstände sind jeweils nach der Iteration angegeben; `2 → 0` zeigt
-den Anstieg auf `2` und das anschließende Zurücksetzen beim Neustart.
-
-**Dieses Beispiel setzt `ITERATIONS >= 7` voraus.** In `optimization.py`
-ist aktuell `ITERATIONS = 2` eingestellt. Die tatsächliche Suche endet damit
-nach zwei Iterationen, bevor ein Neustart oder der Abbruch-Zähler greifen kann.
+Das Diagramm zeigt ein **Beispiel mit sieben Iterationen**: Verbesserung in
+Iteration 3, Neustart in Iteration 5 und Abbruch in Iteration 7.
+**Aktuell gilt `ITERATIONS = 2`:** Die tatsächliche Suche endet nach zwei
+Iterationen, bevor Neustart oder Abbruch-Zähler greifen können.
 
 ```mermaid
 ---
@@ -2818,59 +2775,31 @@ flowchart TB
     style Grenze fill:transparent,stroke-width:2px
 ```
 
-Wenn die Suche endet, gibt `optimize_iteratively()` ein
-`WeightOptimizationResult` mit folgenden Ergebnissen zurück:
-
-| Feld | Inhalt |
-| --- | --- |
-| `best_weights` | Der beste gefundene Gewichtssatz. |
-| `best_mean_global_cost` | Seine mittlere globale Bewertungszahl über die Seeds. |
-| `best_evaluation` | Seine Bewertung mit den Kennzahlen und Bewertungszahlen der einzelnen Seed-Läufe. |
-| `evaluations` | Die Bewertung des zuerst gespeicherten besten Satzes und aller danach übernommenen besseren Sätze. |
-
-`evaluations` enthält damit nicht alle geprüften Gewichtssätze. Die
-[Ergebnisdiagramme](#fortschritt-und-ergebnisdiagramme) zeigen dagegen jede
-abgeschlossene Gewichtssatz-Prüfung.
+Das Ergebnis enthält den besten gefundenen Gewichtssatz (`best_weights`)
+und seine mittlere globale Bewertungszahl (`best_mean_global_cost`).
 
 <a id="5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen"></a>
 
 ### 6. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
-Nach dem Ende der Gewichtssuche werden drei Steuerungen miteinander
-verglichen. Dafür werden **andere Seeds als bei der Gewichtssuche** verwendet:
-`BENCHMARK_SEEDS = [101, 102, 103, 104, 105]`. Jede Steuerung führt mit jedem
-dieser fünf Seeds einen vollständigen Produktionslauf aus:
+Zum Abschluss werden drei Steuerungen mit **separaten Test-Seeds**
+verglichen: `BENCHMARK_SEEDS = [101, 102, 103, 104, 105]`.
+Jede Steuerung wird einmal pro Test-Seed simuliert:
 
 | Anzeige im Interface | Verwendete Steuerung |
 | --- | --- |
-| `Random` | Die [Zufallspolicy](#randompolicy-zufällige-vergleichssteuerung) wählt ohne heuristische Scores gleichverteilt unter den verfügbaren Nicht-Warteaktionen. Warten wird nur gewählt, wenn keine solche Aktion verfügbar ist. |
+| `Random` | [Zufällige Nicht-Warteaktion](#randompolicy-zufällige-vergleichssteuerung); Warten nur als Fallback. |
 | `Heuristic (default)` | Die heuristische Steuerung mit dem Standardgewichtssatz `HeuristicWeights()`. |
 | `Heuristic (optimized)` | Dieselbe heuristische Steuerung mit dem besten Gewichtssatz aus der Suche. |
 
 Alle drei Steuerungen verwenden dasselbe Layout, dasselbe Szenario,
 dieselben Test-Seeds sowie dieselben globalen Gewichte und
 Baseline-Referenzwerte. Insgesamt entstehen **15 Testläufe: fünf pro
-Steuerung**. Der in der Suche gefundene Gewichtssatz bleibt bei diesem
-Vergleich unverändert.
+Steuerung**. Der gefundene Gewichtssatz wird dabei nicht verändert.
 
 Im Interface zeigt eine **Tabelle die Mittelwerte** der sieben bewerteten
 Produktionskennzahlen und der globalen Bewertungszahl je Steuerung. Die
 zugehörigen Diagramme zeigen die Ergebnisse **für jeden einzelnen Test-Seed**.
-Damit lässt sich prüfen, ob die Heuristik die Zufallspolicy übertrifft und
-ob der gefundene Gewichtssatz die Standardheuristik verbessert.
-
-Entscheidend ist der Mittelwert der globalen Bewertungszahl über die fünf
-Test-Seeds: **Der kleinere Mittelwert ist besser.** Der Name
-`Heuristic (optimized)` bedeutet nur, dass diese Steuerung den in der Suche
-gefundenen Gewichtssatz verwendet. Ob sie die Standardheuristik und die
-Zufallspolicy übertrifft, zeigt dieser Vergleich.
-
-**Technische Umsetzung:** `_benchmark_policies()` ruft für jede Steuerung
-und jeden Test-Seed den Runner auf: bei der Zufallspolicy über
-`run_policy(RandomPolicy(seed), seed)`, bei den Heuristiken über
-`runner(weights, seed)`. `compare_baseline_optimized()` berechnet daraus
-die Mittelwerte der Vergleichstabelle und zeichnet die Kennzahlen je
-Test-Seed.
-
-**Ergebnis dieses Schritts:** ein Vergleich der drei Steuerungen auf
-separaten Testläufen.
+**Der kleinere Mittelwert der globalen Bewertungszahl ist besser.**
+Ob `Heuristic (optimized)` die anderen Steuerungen tatsächlich übertrifft,
+zeigt erst dieser Vergleich.

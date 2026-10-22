@@ -2625,9 +2625,6 @@ gegenüber A bevorzugt.
 
 Während der Gewichtssuche meldet `progress` in `optimization.py` an die
 Oberfläche, welche Iteration und welcher Gewichtssatz gerade geprüft werden.
-Sobald alle Seed-Läufe eines Gewichtssatzes ausgewertet sind, speichert
-`progress` dessen mittlere globale Bewertungszahl und die Mittelwerte der
-sieben Produktionskennzahlen. Daraus aktualisiert das Interface die Diagramme.
 
 Während der Suche steht oberhalb der Diagramme beispielsweise
 `Optimization: round 1, candidate 9/53`. Das bedeutet: In Iteration `1`

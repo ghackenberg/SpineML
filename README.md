@@ -2641,7 +2641,9 @@ ausgewertet sind. Die Verbindungslinien zeigen nur die Prüfreihenfolge.
 
 Die Kurve **Mean global cost** (mittlere globale Bewertungszahl) zeigt die
 [Gesamtbewertung](#mittelwert-über-die-seeds) jedes geprüften Gewichtssatzes.
-Die Y-Achse enthält seinen `mean_global_cost`; **kleiner ist besser**.
+Jeder Punkt zeigt den Mittelwert der globalen Bewertungszahlen **über alle
+Seeds aus `SEEDS`, jeweils für einen Gewichtssatz**. Dieser Mittelwert heißt
+`mean_global_cost` und steht auf der Y-Achse; **kleiner ist besser**.
 „Kosten“ meint hier die berechnete Bewertungszahl, keinen Geldbetrag.
 
 Die Kurve muss nicht stetig sinken: Sie zeigt alle geprüften Gewichtssätze,

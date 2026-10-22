@@ -173,9 +173,10 @@ def test_progress_records_only_scored_metrics(monkeypatch):
         lambda target, **kwargs: SimpleNamespace(start=target),
     )
     monkeypatch.setattr(optimization, "_benchmark_policies", lambda *args: {})
+    monkeypatch.setattr(optimization, "create_optimizer", lambda model_file: optimizer)
     state = {}
 
-    optimization._start_optimization(state, optimizer)
+    optimization._start_optimization(state, "example.py")
 
     assert state["error"] is None
     assert not state["running"]

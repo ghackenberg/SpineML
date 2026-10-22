@@ -2127,9 +2127,11 @@ die Rechenzeit pro Simulationslauf.
 
 #### Modell und Hintergrundlauf vorbereiten
 
-**Vor dem Klick auf Start optimization:** `create_optimizer()` lädt das
-eingetragene Beispiel und erstellt die benötigten Objekte. Dabei wird noch
-keine Produktion simuliert. Das erste Diagramm zeigt diese Vorbereitung.
+**Beim Klick auf Start optimization:** `_start_optimization()` ruft zuerst
+`create_optimizer()` auf. Diese Funktion lädt das eingetragene Beispiel und
+erstellt einen neuen Optimierer mit Runner und globaler Bewertung.
+Dabei wird noch keine Produktion simuliert.
+Das erste Diagramm zeigt diese Vorbereitung.
 Die Nummern entsprechen den Erklärungen darunter.
 
 ```mermaid
@@ -2195,8 +2197,8 @@ flowchart TD
    Gewichtssuche. Ihr Ablauf wird in den
    [Schritten 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen) erklärt.
 
-**Nach dem Klick auf Start optimization** wird `_start_optimization()`
-aufgerufen. Diese Funktion startet den **Worker-Thread**. Der
+**Nach dem Erstellen des Optimierers** startet `_start_optimization()`
+den **Worker-Thread**. Der
 **Streamlit-Thread für die Oberfläche läuft bereits**.
 
 Der Worker berechnet zuerst die Baseline. **Erst danach** ruft er
@@ -2218,7 +2220,7 @@ config:
       bottom: 20
 ---
 flowchart TB
-    U["<b>Streamlit-Thread: Oberfläche</b><br/>Beim Klick: _start_optimization()<br/>Alte Ergebnisse zurücksetzen<br/><br/>Während der Berechnung: state lesen<br/>Fortschritt und Diagramme aktualisieren<br/><br/>Nach Ende: Ergebnis oder Fehler anzeigen"]
+    U["<b>Streamlit-Thread: Oberfläche</b><br/>Beim Klick: _start_optimization()<br/>Neuen Optimierer mit create_optimizer() erstellen<br/>Alte Ergebnisse zurücksetzen<br/><br/>Während der Berechnung: state lesen<br/>Fortschritt und Diagramme aktualisieren<br/><br/>Nach Ende: Ergebnis oder Fehler anzeigen"]
 
     subgraph Berechnung[" "]
         direction TB

@@ -217,13 +217,9 @@ def _global_evaluation() -> GlobalSimulationEvaluation:
     )
 
 
-# @st.cache_resource sorgt dafür, dass der Optimierer bei einer erneuten
-# Ausführung des Streamlit-Webservers nicht jedes Mal neu erstellt wird.
-@st.cache_resource
 # Erstellt den Optimierer aus dem ausgewählten Beispielmodell.
-def create_optimizer(model_file: str, model_stamp: int):
+def create_optimizer(model_file: str):
     """Lädt ein Beispiel und erstellt den Optimierer mit den sieben globalen Zielen."""
-    del model_stamp
     # Sucht die ausgewählte Beispieldatei und liefert ihren vollständigen Pfad.
     model_path = _resolve_model_path(model_file)
     # Führt die Modelldefinition aus und sammelt ihre globalen Variablen.
@@ -512,7 +508,8 @@ def _benchmark_policies(state, optimizer, optimized_weights):
 
 
 # Bereitet einen neuen Optimierungslauf vor und startet anschließend den Worker-Thread.
-def _start_optimization(state, optimizer):
+def _start_optimization(state, model_file):
+    optimizer = create_optimizer(model_file)
     # Aktualisiert die Werte, die später im Streamlit-Webserver angezeigt werden.
     # Hier werden diese Werte für einen neuen Optimierungslauf zurückgesetzt.
     state.update(
@@ -690,14 +687,6 @@ def _streamlit_app():
     selected_model_file = os.environ.get("SPINEML_MODEL_FILE", EXAMPLE_FILE)
     # Sucht die Beispieldatei und liefert ihren vollständigen Pfad zurück.
     selected_model_path = _resolve_model_path(selected_model_file)
-    # Erstellt den Optimierer für das gefundene Modell.
-    optimizer = create_optimizer(
-        # Übergibt den Modellpfad als Zeichenkette an create_optimizer().
-        str(selected_model_path),
-        # Übergibt den Änderungszeitpunkt als Streamlit-Cache-Schlüssel.
-        selected_model_path.stat().st_mtime_ns,
-    )
-
     st.title("SpineML - heuristic optimization")
     st.caption(f"Example: {selected_model_path.name}")
 
@@ -718,13 +707,13 @@ def _streamlit_app():
 
 
     state = st.session_state.optimization_state
-    # Zeigt den Startbutton und ruft beim Anklicken
-    # _start_optimization(state, optimizer) mit diesen beiden Argumenten auf.
+    # Lädt das Modell und erstellt einen neuen Optimierer nur beim Start.
+    # Eine erneute Anzeige lädt während der Berechnung kein zweites Modell.
     st.button(
         "Start optimization",
         disabled=state["running"],
         on_click=_start_optimization,
-        args=(state, optimizer),
+        args=(state, str(selected_model_path)),
     )
 
     if state["running"]:

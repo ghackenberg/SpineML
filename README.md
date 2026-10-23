@@ -1866,10 +1866,22 @@ Durchschnitt:
 
 `Gesamtscore = Summe(Teilwert × Gewicht) / Summe(zugehörige Gewichte)`
 
-In beide Summen gehen **dieselben verwendeten Kriterien** ein. Ein Teilwert
-von `0` trägt im Zähler zwar `0` bei, sein Gewicht bleibt aber im Nenner
-enthalten. Wird ein Kriterium bei dieser Aktion nicht verwendet, gehen weder
-sein Teilwert noch sein Gewicht ein. Das betrifft beispielsweise die
+**Ein Teilwert von `0` ist eine Bewertung, kein fehlender Wert.** Das
+Kriterium wird weiterhin berücksichtigt: `0 × Gewicht = 0` geht in den
+Zähler ein, und sein Gewicht wird zur Gewichtssumme im Nenner addiert.
+
+**Beispiel:** Zwei verwendete Kriterien haben die Teilwerte `1` und `0`;
+beide haben das Gewicht `1`. Dann gilt:
+
+`Gesamtscore = (1 × 1 + 0 × 1) / (1 + 1) = 0.5`
+
+**Ein nicht verwendetes Kriterium wird dagegen vollständig weggelassen:**
+Die Funktion erhält dafür kein Paar aus Teilwert und Gewicht. Würde im
+Beispiel nur das erste Kriterium verwendet, wäre der Score
+`(1 × 1) / 1 = 1`. Deshalb darf ein Teilwert von `0` nicht einfach wie ein
+fehlendes Kriterium behandelt werden: Das würde den Score verändern.
+
+Ein tatsächlich nicht verwendetes Kriterium ist beispielsweise die
 Werkzeugreserve, wenn die Operation keine Werkzeuglebensdauer verbraucht.
 
 #### Warum unterschiedliche Kriterien kombiniert werden können
@@ -1898,10 +1910,18 @@ Sie hängt auch davon ab, wie groß die Gewichte insgesamt sind. Die Division
 durch die **Gewichtssumme im Nenner** macht deshalb nur die relative
 Wichtigkeit der Teilwerte wirksam:
 
-`Relativer Gewichtsanteil = Gewicht / Summe(zugehörige Gewichte)`
+`Relativer Gewichtsanteil = Gewicht / Summe(aller für diese Aktion verwendeten Gewichte)`
 
-Diese Anteile ergeben zusammen `1`. Die Gewichte selbst müssen sich dagegen
-**nicht zu `1` addieren**.
+Alle Anteile beziehen sich auf **dieselbe Aktion und dieselbe Gewichtssumme**.
+Addiert man die Anteile aller verwendeten Kriterien, ergibt sich rechnerisch:
+
+`Summe(relativer Gewichtsanteile) = Gewichtssumme / Gewichtssumme = 1`
+
+Die ursprünglichen Gewichte und die gewichtete Summe der Teilwerte müssen
+dagegen **nicht `1` ergeben**.
+Bei gerundet dargestellten Anteilen kann die angezeigte Summe abweichen:
+Drei Anteile von jeweils `1/3` ergeben exakt `1`, auf zwei Nachkommastellen
+gerundet aber `0.33 + 0.33 + 0.33 = 0.99`.
 
 Werden alle berücksichtigten Gewichte mit demselben positiven Faktor
 multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
@@ -1910,7 +1930,8 @@ größere Gewichtssumme den Score erhöhen.
 
 **Beispiel:** Die Teilwerte `0.8` und `0.2` erhalten die Gewichte `1.0` und
 `0.5`. Der erste Teilwert zählt damit doppelt so stark wie der zweite.
-Sein relativer Anteil ist `1.0 / 1.5 = 2/3`, der des zweiten Teilwerts `1/3`:
+Die Gewichte selbst ergeben `1.0 + 0.5 = 1.5`. Die relativen Anteile sind
+`1.0 / 1.5 = 2/3` und `0.5 / 1.5 = 1/3`; zusammen ergeben sie `1`:
 
 ```mermaid
 flowchart TD

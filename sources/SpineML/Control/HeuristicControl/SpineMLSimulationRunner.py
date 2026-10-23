@@ -157,7 +157,8 @@ class SpineMLSimulationRunner:
                 completion_time - float(job.order.latest_end_time),
             )
 
-            # Für die Nacharbeitsquote zählt dagegen jeder betroffene Job einmal.
+            # Zählt für die Nacharbeitsquote abgeschlossene Jobs mit mindestens einer Nacharbeit.
+            # Mehrere Nacharbeiten am selben Job erhöhen diesen Zähler trotzdem nur um 1.
             if job.rework_count > 0:
                 rework_job_count += 1
 

@@ -1935,7 +1935,7 @@ flowchart TD
     A --> N["Nenner: Gewichtssumme<br/>1.0 + 0.5 = 1.5"]
     Z --> S["Gesamtscore: Zähler ÷ Nenner<br/>0.9 / 1.5 = 0.6"]
     N --> S
-    S --> B["Zwischen den Teilwerten: 0.2 ≤ 0.6 ≤ 0.8<br/>Damit auch im Bereich von 0 bis 1"]
+    S --> B["Zwischen den Teilwerten:<br/>0.2 ≤ 0.6 ≤ 0.8<br/>Damit auch im Bereich von 0 bis 1"]
 ```
 
 Der Score `0.6` liegt näher am stärker gewichteten Teilwert `0.8`. Die

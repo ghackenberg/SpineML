@@ -236,9 +236,9 @@ class LocalHeuristicWeightOptimizer:
         # Prüft die Gewichtssätze nacheinander; ihre Nummerierung beginnt bei 1.
         for candidate_number, local_weights in enumerate(candidate_list, start=1):
 
-            # Meldet den Prüfungsbeginn über die übergebene Fortschrittsfunktion.
-            # In optimization.py ist das progress(); sie aktualisiert state für die Streamlit-Anzeige.
-            # Angaben: aktuelle Iteration, Nummer dieses Gewichtssatzes und Gesamtzahl der Gewichtssätze.
+            # Meldet Streamlit, welcher Gewichtssatz jetzt mit allen Seeds simuliert und bewertet wird.
+            # Dafür wird progress() aus optimization.py aufgerufen; die Funktion aktualisiert state.
+            # Gemeldet werden die Iteration, die Gewichtssatznummer und die Anzahl der Sätze dieser Iteration.
             # None bedeutet: Für diesen Gewichtssatz liegt noch kein Bewertungsergebnis vor.
             if progress_callback is not None:
                 progress_callback(iteration_number, None, candidate_number, total_candidates)

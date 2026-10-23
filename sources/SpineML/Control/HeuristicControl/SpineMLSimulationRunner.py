@@ -127,7 +127,7 @@ class SpineMLSimulationRunner:
         total_rework_count = 0
 
         for job in jobs:
-            # Ereignisse zählen vollständig, auch mehrfach beim selben Job.
+            # Gesamtanzahl der Defekte und Nacharbeiten über alle Jobs aufsummieren.
             total_defect_count += job.defect_count
             total_rework_count += job.rework_count
             # Prüft, ob der Job noch keinen Abschlusszeitpunkt besitzt.

@@ -1957,9 +1957,11 @@ Durch die Division folgt unmittelbar:
 
 `0 ≤ Gesamtscore ≤ 1`
 
-Dieser Bereich entsteht **durch die Mittelwertbildung**, nicht durch eine
-nachträgliche Begrenzung. Die Aussage bezieht sich auf den Rückgabewert von
-`calculate_action_score()`.
+Wenn alle Teilwerte zwischen `0` und `1` liegen und alle Gewichte positiv
+sind, liegt auch ihr gewichteter Durchschnitt automatisch zwischen `0` und `1`.
+`calculate_action_score()` berechnet diesen Durchschnitt. Es gibt keinen
+zusätzlichen Schritt, der das Ergebnis auf diesen Bereich begrenzt.
+Die Aussage gilt für den Durchschnitt **vor möglichen Strafabzügen**.
 
 **Die Kurve veranschaulicht die Randwerte:** Sind alle verwendeten Teilwerte
 `0`, ergibt sich der Score `0`; sind alle `1`, ergibt sich `1`. Wenn alle

@@ -153,7 +153,7 @@ def test_progress_records_only_scored_metrics(monkeypatch):
     metrics = GlobalSimulationMetrics(
         makespan=10.0, total_tardiness=2.0, total_transport_time=4.0,
         tool_change_time=1.0,
-        total_jobs=10, completed_jobs=10, intact_jobs=8, defect_jobs=4,
+        total_jobs=10, completed_jobs=10, intact_jobs=7, total_defect_count=4,
         rework_job_count=1, scrap_job_count=2, downgraded_job_count=1,
     )
     evaluation = SimpleNamespace(mean_global_cost=13.4, metrics_by_seed=(metrics, metrics))

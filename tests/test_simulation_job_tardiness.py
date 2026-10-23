@@ -14,6 +14,7 @@ def make_job(order, completion_time):
         order=order,
         completed_time=completion_time,
         general_state=SimpleNamespace(get=lambda: "intact"),
+        downgraded=False, defect_count=0, rework_count=0,
     )
 
 

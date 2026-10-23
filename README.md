@@ -2575,12 +2575,20 @@ werden in Stunden erfasst.
   Maschinen für Werkzeugmontage (`mounting`) und -demontage (`unmounting`).
 - **Nacharbeitsquote (`rework_rate`):** Anteil der Jobs mit mindestens einer
   Nacharbeit. Der Zähler `rework_job_count` zählt jeden abgeschlossenen Job
-  mit Nacharbeit einmal, unabhängig von der Anzahl seiner Nacharbeiten.
-- **Ausschussquote (`scrap_rate`):** Ausschussentscheidungen im Verhältnis
-  zur Gesamtzahl der Jobs. `scrap_job_count` summiert dafür die
-  Ausschussentscheidungen abgeschlossener Jobs.
-- **Herabstufungsquote (`downgrade_rate`):** Anteil der herabgestuften Jobs.
-  Ihr Zähler heißt `downgraded_job_count`.
+  mit Nacharbeit einmal. Getrennt davon summiert `total_rework_count` alle
+  gestarteten Nacharbeiten, auch mehrere beim selben Job.
+- **Ausschussquote (`scrap_rate`):** Anteil der abgeschlossenen Jobs mit
+  Endzustand `general_state == "scrap"`. Jeder dieser Jobs erhöht
+  `scrap_job_count` um eins; sein interner Entscheidungszähler wird dafür nicht
+  verwendet.
+- **Herabstufungsquote (`downgrade_rate`):** Anteil der abgeschlossenen Jobs
+  mit `general_state == "intact"` und `downgraded == True`.
+  Ihr Zähler heißt `downgraded_job_count`. Diese Jobs zählen nicht zusätzlich
+  unter `intact_jobs`; dort stehen nur intakte Jobs ohne Herabstufung.
+
+`total_defect_count` summiert alle `job.defect_count`: Drei Defekte bei einem
+Job und zwei bei einem anderen ergeben fünf Defektfälle. Diese Ereigniszahl
+ist keine zusätzliche Kennzahl der globalen Bewertung.
 
 Für alle drei Quoten ist `total_jobs` die Gesamtzahl der Jobs. Die
 [Berechnung der Quoten](#globale-bewertungszahl) folgt im nächsten Abschnitt.
@@ -2619,7 +2627,7 @@ geteilt und die drei Quoten berechnet:
   - **Herabstufungsquote (`downgrade_rate`):**
     `downgraded_job_count / total_jobs`.
 
-  Beispielsweise ergeben `20` Ausschussentscheidungen bei `100` Jobs die
+  Beispielsweise ergeben `20` abgeschlossene Ausschussjobs bei `100` Jobs die
   Ausschussquote `20 / 100 = 0.2`. Diese drei Quoten werden nicht durch
   Baseline-Referenzwerte geteilt. Nacharbeit wird dabei als zusätzlicher
   Aufwand neben den Zeitkennzahlen berücksichtigt.

@@ -119,21 +119,17 @@ class SpineMLSimulationRunner:
         completed_times = []
         total_tardiness = 0.0
         unfinished_jobs = 0
-        rework_job_count = 0.0
-        scrap_job_count = 0.0
-        downgraded_job_count = 0.0
+        rework_job_count = 0
+        scrap_job_count = 0
+        downgraded_job_count = 0
         intact_jobs = 0
-        defect_jobs = 0
+        total_defect_count = 0
+        total_rework_count = 0
 
         for job in jobs:
-            # Prüft, ob dieser Job mindestens einen erkannten Defect hat.
-            if getattr(job, "defect_count", 0) > 0:
-                # Zählt den Job für die globale Defectquote höchstens einmal.
-                defect_jobs += 1
-            # Check whether the job was marked as downgraded.
-            if getattr(job, "downgraded", False):
-                # Count the downgraded job for the global downgrade rate.
-                downgraded_job_count += 1.0
+            # Ereignisse zählen vollständig, auch mehrfach beim selben Job.
+            total_defect_count += job.defect_count
+            total_rework_count += job.rework_count
             # Prüft, ob der Job noch keinen Abschlusszeitpunkt besitzt.
             if job.completed_time is None:
                 # Unfertige Jobs haben noch keinen auswertbaren Abschlusszeitpunkt.
@@ -144,8 +140,15 @@ class SpineMLSimulationRunner:
             # Speichert die Abschlusszeit dieses Jobs für den Makespan.
             completion_time = float(job.completed_time)
             completed_times.append(completion_time)
-            if job.general_state.get() == "intact":
-                intact_jobs += 1
+            # Endzustände getrennt zählen; jeder abgeschlossene Job zählt einmal.
+            final_state = job.general_state.get()
+            if final_state == "intact":
+                if job.downgraded:
+                    downgraded_job_count += 1
+                else:
+                    intact_jobs += 1
+            elif final_state == "scrap":
+                scrap_job_count += 1
 
             # Jeder abgeschlossene Job zählt einzeln gegenüber der Deadline
             # seines Auftrags. Frühe Abschlüsse gleichen keine Verspätung aus.
@@ -154,10 +157,9 @@ class SpineMLSimulationRunner:
                 completion_time - float(job.order.latest_end_time),
             )
 
-            rework_job_count += (
-                1.0 if getattr(job, "rework_count", 0) > 0 else 0.0
-            )
-            scrap_job_count += float(getattr(job, "scrap_count", 0))
+            # Für die Nacharbeitsquote zählt dagegen jeder betroffene Job einmal.
+            if job.rework_count > 0:
+                rework_job_count += 1
 
         if jobs:
             production_start_time = min(
@@ -218,6 +220,7 @@ class SpineMLSimulationRunner:
             total_jobs=len(jobs),
             completed_jobs=len(completed_times),
             intact_jobs=intact_jobs,
-            defect_jobs=defect_jobs,
+            total_defect_count=total_defect_count,
+            total_rework_count=total_rework_count,
             downgraded_job_count=downgraded_job_count,
         )

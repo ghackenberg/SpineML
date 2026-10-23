@@ -263,6 +263,11 @@ def test_real_simulation_checks_machine_risk_without_operation_probability(
     assert metrics.completed_jobs == metrics.total_jobs == 2
     assert metrics.unfinished_jobs == 0
     assert bool(defects) == (probability == 1.0)
+    assert metrics.total_defect_count == len(defects)
+    assert (
+        metrics.intact_jobs + metrics.downgraded_job_count + metrics.scrap_job_count
+        == metrics.completed_jobs
+    )
     assert all(machine.defect_probability == probability for machine in defects)
 
 

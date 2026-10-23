@@ -10,14 +10,15 @@ class GlobalSimulationMetrics:
     total_tardiness: float
     total_transport_time: float = 0.0
     tool_change_time: float = 0.0
-    rework_job_count: float = 0.0
-    scrap_job_count: float = 0.0
+    rework_job_count: int = 0
+    scrap_job_count: int = 0
     unfinished_jobs: int = 0
     total_jobs: int = 0
     completed_jobs: int = 0
     intact_jobs: int = 0
-    defect_jobs: int = 0
-    downgraded_job_count: float = 0.0
+    total_defect_count: int = 0
+    total_rework_count: int = 0
+    downgraded_job_count: int = 0
 
     @property
     # Führt die Funktion mit den übergebenen Werten aus.
@@ -43,11 +44,6 @@ class GlobalSimulationMetrics:
     # Führt die Funktion mit den übergebenen Werten aus.
     def scrap_rate(self) -> float:
         return self.scrap_job_count / self.total_jobs if self.total_jobs else 0.0
-
-    @property
-    # Führt die Funktion mit den übergebenen Werten aus.
-    def defect_rate(self) -> float:
-        return self.defect_jobs / self.total_jobs if self.total_jobs else 0.0
 
     @property
     # Führt die Funktion mit den übergebenen Werten aus.

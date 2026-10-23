@@ -162,6 +162,7 @@ def test_runner_collects_only_the_four_retained_time_metrics():
         order=SimpleNamespace(earliest_start_time=2.0, latest_end_time=10.0),
         completed_time=15.0,
         general_state=SimpleNamespace(get=lambda: "intact"),
+        downgraded=False, defect_count=0, rework_count=0,
     )
     scenario = SimpleNamespace(sim_orders=[SimpleNamespace(sim_jobs=[job])])
 
@@ -189,7 +190,7 @@ def test_relative_metrics_and_readme_example_use_only_scored_objectives():
         makespan=8.0, total_tardiness=2.0, total_transport_time=6.0,
         tool_change_time=1.0,
         rework_job_count=10, scrap_job_count=20, downgraded_job_count=10,
-        total_jobs=100, completed_jobs=100, intact_jobs=80, defect_jobs=40,
+        total_jobs=100, completed_jobs=100, intact_jobs=70, total_defect_count=40,
     )
 
     assert evaluation.metrics_relative_to_baseline(metrics) == pytest.approx({
@@ -207,7 +208,8 @@ def test_relative_metrics_and_readme_example_use_only_scored_objectives():
 
 
 @pytest.mark.parametrize("changes", [
-    {"defect_jobs": 10},
+    {"total_defect_count": 10},
+    {"total_rework_count": 10},
     {"intact_jobs": 0},
     {"completed_jobs": 9, "unfinished_jobs": 1},
 ])

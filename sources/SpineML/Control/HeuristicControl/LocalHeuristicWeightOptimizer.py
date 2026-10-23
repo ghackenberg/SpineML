@@ -56,7 +56,7 @@ class LocalHeuristicWeightOptimizer:
         current_local_weights = initial_local_weights
         # Set the initial relative size of weight changes.
         weight_step_fraction = initial_local_weight_step_fraction
-        # Speichert den besten Kandidaten jeder bisher erfolgreichen Runde.
+        # Speichert den besten Kandidaten jeder bisher erfolgreichen Iteration.
         best_solution_memory = []
         # Enthält zunächst noch keine globale beste Bewertung.
         best_evaluation = None

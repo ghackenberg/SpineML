@@ -2359,7 +2359,7 @@ Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
 | Parameter | Bedeutung |
 | --- | --- |
 | `SEEDS` | Gemeinsame [Seeds](#baseline-technik) (Startwerte für die Zufallszahlengeneratoren) für die [Baseline](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und die Gewichtssuche. |
-| `BENCHMARK_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
+| `TEST_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
 | `ITERATIONS` | Maximale Anzahl der [Iterationen](#5-weitere-iteration-ausführen). |
 | `INITIAL_WEIGHT_STEP` | Anfängliche Schrittweite für das [Erhöhen und Verringern einzelner Gewichte](#2-varianten-des-lokalen-gewichtssatzes-erstellen). |
 | `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Iteration. |
@@ -2871,7 +2871,7 @@ und seine mittlere globale Bewertungszahl (`best_mean_global_cost`).
 ### 6. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
 Zum Abschluss werden drei Steuerungen mit **separaten Test-Seeds**
-verglichen: `BENCHMARK_SEEDS = [101, 102, 103, 104, 105]`.
+verglichen: `TEST_SEEDS = [101, 102, 103, 104, 105]`.
 Jede Steuerung wird einmal pro Test-Seed simuliert:
 
 | Anzeige im Interface | Verwendete Steuerung |

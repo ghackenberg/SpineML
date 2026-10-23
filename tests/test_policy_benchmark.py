@@ -20,8 +20,8 @@ def test_interface_uses_the_seven_selected_production_objectives():
 
 
 def test_benchmark_uses_three_controls_and_held_out_seeds_with_fixed_references(monkeypatch):
-    assert set(optimization.SEEDS).isdisjoint(optimization.BENCHMARK_SEEDS)
-    monkeypatch.setattr(optimization, "BENCHMARK_SEEDS", [101, 102])
+    assert set(optimization.SEEDS).isdisjoint(optimization.TEST_SEEDS)
+    monkeypatch.setattr(optimization, "TEST_SEEDS", [101, 102])
     calls = []
     policies = []
     metrics = GlobalSimulationMetrics(makespan=10, total_tardiness=2)

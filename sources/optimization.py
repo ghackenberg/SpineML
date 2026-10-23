@@ -24,7 +24,7 @@ OPTIMIZATION_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "optimization"
 EXAMPLE_FILE = "example-1.py"
 SEEDS = [1, 2]
 # Nur für den abschließenden Vergleich, nicht für die Gewichtssuche.
-BENCHMARK_SEEDS = [101, 102, 103, 104, 105]
+TEST_SEEDS = [101, 102, 103, 104, 105]
 ITERATIONS = 2
 INITIAL_WEIGHT_STEP = 0.40
 EXPLORATION_CANDIDATES = 3
@@ -499,7 +499,7 @@ def _benchmark_policies(state, optimizer, optimized_weights):
                 state,
                 optimizer,
                 weights,
-                seeds=BENCHMARK_SEEDS,
+                seeds=TEST_SEEDS,
                 phase_name=label,
                 policy_factory=policy_factory,
             )

@@ -211,17 +211,31 @@ class SpineMLSimulationRunner:
             )
 
         return GlobalSimulationMetrics(
+            # Produktionsdauer vom frühesten erlaubten Auftragsstart bis zum letzten Jobabschluss.
+            # Ohne abgeschlossenen Job wird stattdessen das Simulationsende verwendet.
             makespan=makespan,
+            # Summe der positiven Verspätungszeiten aller abgeschlossenen Jobs.
             total_tardiness=total_tardiness,
+            # Summe der Bewegungszeiten aller Roboter in X-, Y- und Z-Richtung.
             total_transport_time=total_transport_time,
+            # Summe der Werkzeug-Montage- und Demontagezeiten aller Maschinen.
             tool_change_time=tool_change_time,
+            # Anzahl abgeschlossener Jobs mit mindestens einer Nacharbeit; jeder Job zählt einmal.
             rework_job_count=rework_job_count,
+            # Anzahl abgeschlossener Jobs mit dem Endzustand 'scrap' (Ausschuss).
             scrap_job_count=scrap_job_count,
+            # Anzahl der Jobs ohne Abschlusszeitpunkt.
             unfinished_jobs=unfinished_jobs,
+            # Gesamtzahl der Jobs im Szenario.
             total_jobs=len(jobs),
+            # Anzahl der Jobs mit einem Abschlusszeitpunkt.
             completed_jobs=len(completed_times),
+            # Anzahl abgeschlossener Jobs mit Endzustand 'intact', ohne Herabstufung.
             intact_jobs=intact_jobs,
+            # Gesamtzahl erkannter Defekte über alle Jobs, auch mehrere Defekte pro Job.
             total_defect_count=total_defect_count,
+            # Summe der Nacharbeitszähler aller Jobs, auch mehrere Nacharbeiten pro Job.
             total_rework_count=total_rework_count,
+            # Anzahl abgeschlossener, herabgestufter Jobs mit Endzustand 'intact'.
             downgraded_job_count=downgraded_job_count,
         )

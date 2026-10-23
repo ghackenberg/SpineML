@@ -64,11 +64,13 @@ class Machine:
         if self.defect_probability is not None:
             return self.defect_probability
 
-        # Eigener Generator: Die Ziehung verändert andere Simulationszufälle nicht.
+        # Kombiniert Seed und Maschinenangaben zu einem Schlüssel in Byteform.
         probability_key = (
             f"machine-defect-probability|{int(seed)}|{self.corridor.layout.name}|"
             f"{self.corridor.name}|{self.name}|{self.left}"
         ).encode("utf-8")
+        # Leitet aus dem Schlüssel einen festen Startwert für einen eigenen Generator ab.
+        # Gleicher Schlüssel bedeutet dadurch dieselbe Zufallszahlenfolge.
         probability_rng = random.Random(
             int.from_bytes(hashlib.sha256(probability_key).digest()[:8], "big")
         )

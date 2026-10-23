@@ -18,7 +18,6 @@ def make_rework_observation(current_time):
         name="operation",
         duration=4.0,
         consumes_life_units=5.0,
-        defect_probability=0.1,
         machine_type=SimpleNamespace(name="machine_type"),
         tool_type=SimpleNamespace(name="tool"),
         consumes_product_type=SimpleNamespace(name="raw"),

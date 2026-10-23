@@ -42,23 +42,23 @@ finished_housing = ProductType("Finished housing", 18, 16, 12, 7)
 finished_bracket = ProductType("Finished bracket", 16, 18, 12, 7)
 polished_part = ProductType("Polished part", 16, 16, 12, 6)
 
-# Duration, tool consumption and defect probability differ between routes.
-# Lower defect risk is a simulation property, not an extra heuristic criterion.
-OperationType("Rough blank A", 3, 8, 0.18, basic, rough_tool, blank_a, base_body)
-OperationType("Precision blank A", 7, 4, 0.08, precision, precision_tool, blank_a, base_body)
-OperationType("Rough blank B", 5, 6, 0.14, basic, milling_tool, blank_b, base_body)
+# Duration and tool consumption differ between routes.
+# Defect probabilities are configured on the individual machines below.
+OperationType("Rough blank A", 3, 8, basic, rough_tool, blank_a, base_body)
+OperationType("Precision blank A", 7, 4, precision, precision_tool, blank_a, base_body)
+OperationType("Rough blank B", 5, 6, basic, milling_tool, blank_b, base_body)
 
-OperationType("Basic housing milling", 8, 8, 0.15, basic, milling_tool, base_body, milled_body)
-OperationType("Precision housing milling", 5, 5, 0.10, precision, precision_tool, base_body, milled_body)
-OperationType("Direct housing from blank B", 12, 9, 0.20, basic, rough_tool, blank_b, milled_body)
+OperationType("Basic housing milling", 8, 8, basic, milling_tool, base_body, milled_body)
+OperationType("Precision housing milling", 5, 5, precision, precision_tool, base_body, milled_body)
+OperationType("Direct housing from blank B", 12, 9, basic, rough_tool, blank_b, milled_body)
 
-OperationType("Basic bracket drilling", 9, 6, 0.14, basic, drill_tool, base_body, drilled_body)
-OperationType("Specialist bracket drilling", 4, 4, 0.08, drilling, drill_tool, base_body, drilled_body)
+OperationType("Basic bracket drilling", 9, 6, basic, drill_tool, base_body, drilled_body)
+OperationType("Specialist bracket drilling", 4, 4, drilling, drill_tool, base_body, drilled_body)
 
-OperationType("Housing finishing", 6, 4, 0.10, finishing, polishing_tool, milled_body, finished_housing)
-OperationType("Bracket finishing", 4, 3, 0.10, finishing, polishing_tool, drilled_body, finished_bracket)
-OperationType("Precision bracket finishing", 7, 2, 0.06, precision, precision_tool, drilled_body, finished_bracket)
-OperationType("Base body polishing", 8, 4, 0.10, finishing, polishing_tool, base_body, polished_part)
+OperationType("Housing finishing", 6, 4, finishing, polishing_tool, milled_body, finished_housing)
+OperationType("Bracket finishing", 4, 3, finishing, polishing_tool, drilled_body, finished_bracket)
+OperationType("Precision bracket finishing", 7, 2, precision, precision_tool, drilled_body, finished_bracket)
+OperationType("Base body polishing", 8, 4, finishing, polishing_tool, base_body, polished_part)
 
 scenario = Scenario("Mixed production - 24 jobs")
 
@@ -80,20 +80,20 @@ far = Corridor("Far corridor", 8, 6, 4, layout)
 
 # Each corridor has all four machine types, but different buffer capacities
 # and machine positions. Input and output capacities are job counts.
-Machine("Near basic", basic, near, True, 2, 2)
-Machine("Near precision", precision, near, True, 3, 2)
-Machine("Near drill", drilling, near, False, 2, 2)
-Machine("Near finishing", finishing, near, False, 2, 2)
+Machine("Near basic", basic, near, True, 2, 2, defect_probability=0.18)
+Machine("Near precision", precision, near, True, 3, 2, defect_probability=0.10)
+Machine("Near drill", drilling, near, False, 2, 2, defect_probability=0.08)
+Machine("Near finishing", finishing, near, False, 2, 2, defect_probability=0.10)
 
-Machine("Middle basic", basic, middle, True, 3, 2)
-Machine("Middle drill", drilling, middle, True, 2, 2)
-Machine("Middle precision", precision, middle, False, 2, 2)
-Machine("Middle finishing", finishing, middle, False, 3, 2)
+Machine("Middle basic", basic, middle, True, 3, 2, defect_probability=0.14)
+Machine("Middle drill", drilling, middle, True, 2, 2, defect_probability=0.06)
+Machine("Middle precision", precision, middle, False, 2, 2, defect_probability=0.06)
+Machine("Middle finishing", finishing, middle, False, 3, 2, defect_probability=0.08)
 
-Machine("Far precision", precision, far, True, 4, 2)
-Machine("Far finishing", finishing, far, True, 3, 2)
-Machine("Far basic", basic, far, False, 4, 2)
-Machine("Far drill", drilling, far, False, 3, 2)
+Machine("Far precision", precision, far, True, 4, 2, defect_probability=0.04)
+Machine("Far finishing", finishing, far, True, 3, 2, defect_probability=0.05)
+Machine("Far basic", basic, far, False, 4, 2, defect_probability=0.08)
+Machine("Far drill", drilling, far, False, 3, 2, defect_probability=0.03)
 
 
 if __name__ == "__main__":

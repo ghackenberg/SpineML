@@ -1,8 +1,8 @@
-"""Example 3B: the same factory with alternative quality routes.
+"""Example 3B: alternative operation durations and lower-risk machines.
 
-The regular Example 3 configuration remains unchanged. Additional operations
-are offered for important product transformations: a fast route with a higher
-defect risk and a slower quality route.
+The layout and orders of Example 3 remain unchanged. Machines in the second
+corridor have lower defect probabilities. Additional operations provide
+alternative durations; defect risk belongs only to the selected machine.
 """
 
 import runpy
@@ -13,11 +13,20 @@ _base = runpy.run_path(
 )
 globals().update(_base)
 
-OperationType("Operation 1 Quality", 5, 4, 0.10, mt1, tt1, pt1, pt2)
-OperationType("Operation 2 Quality", 7, 3, 0.12, mt1, tt2, pt3, pt2)
-OperationType("Operation 3 Quality", 11, 5, 0.10, mt2, tt3, pt2, pt4)
-OperationType("Operation 4 Quality", 6, 6, 0.12, mt2, tt2, pt2, pt5)
-OperationType("Operation 5 Quality", 13, 2, 0.10, mt3, tt1, pt2, pt6)
+OperationType("Operation 1 Alternative", 5, 4, mt1, tt1, pt1, pt2)
+OperationType("Operation 2 Alternative", 7, 3, mt1, tt2, pt3, pt2)
+OperationType("Operation 3 Alternative", 11, 5, mt2, tt3, pt2, pt4)
+OperationType("Operation 4 Alternative", 6, 6, mt2, tt2, pt2, pt5)
+OperationType("Operation 5 Alternative", 13, 2, mt3, tt1, pt2, pt6)
+
+_quality_probabilities = {
+    "Machine 3.2.1": 0.10,
+    "Machine 3.2.2": 0.12,
+    "Machine 3.2.3": 0.10,
+    "Machine 3.2.4": 0.12,
+}
+for _machine in c3_2.machines_left + c3_2.machines_right:
+    _machine.defect_probability = _quality_probabilities[_machine.name]
 
 if __name__ == "__main__":
     simulate(l3, s3, till=sim.inf, animation_speed=5)

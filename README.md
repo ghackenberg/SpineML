@@ -86,6 +86,21 @@ Jobs (einzelne Werkstücke) jedes dieser Lager aufnehmen kann. Bei
 Korridor und Position auf der linken oder rechten Korridorseite. Der
 `MachineType` fasst die möglichen Operationen einer Maschinenklasse zusammen.
 
+#### Defektwahrscheinlichkeit
+
+`defect_probability` wird für jede konkrete Maschine angegeben. Beispielsweise
+bedeutet `defect_probability=0.05` eine Defektwahrscheinlichkeit von fünf Prozent
+bei jeder Bearbeitung auf dieser Maschine. Der Wert gilt für alle Operationen
+der Maschine und muss zwischen `0` und `1` liegen. Maschinen desselben
+`MachineType` können unterschiedliche Werte haben.
+
+Die Operation selbst besitzt keine Defektwahrscheinlichkeit. Ihr Aufruf lautet
+beispielsweise:
+
+```python
+OperationType("Fräsen", 4, 3, cnc_type, milling_tool, blank, finished)
+```
+
 #### Getrennte Maschinenpuffer
 
 `input_storage_capacity` und `output_storage_capacity` legen die Kapazität
@@ -102,10 +117,12 @@ ausgestattet sein. Beispiel mit bereits definierten Typen und einem Korridor:
 Machine(
     "CNC A", cnc_type, corridor, True, 10, 10,
     tool_types=[turning_tool, milling_tool],
+    defect_probability=0.05,
 )
 Machine(
     "CNC B", cnc_type, corridor, False, 10, 10,
     tool_types=[milling_tool],
+    defect_probability=0.20,
 )
 ```
 
@@ -479,11 +496,11 @@ Verarbeitungsdauer.
 Nach Ablauf der Verarbeitungsdauer erzeugt die Maschine einen deterministischen
 Qualitätszufallszahlengenerator. Sein Schlüssel enthält den Simulations-Seed,
 das Szenario, den Auftrag, den Job, die Operation und den `rework_count`.
-Die erste Zufallszahl wird mit `operation.defect_probability` verglichen. Nur
+Die erste Zufallszahl wird mit `self.machine.defect_probability` verglichen. Nur
 bei einem Defekt wird eine zweite Zufallszahl als `defect_severity` erzeugt.
 
 ```python
-defect = quality_rng.random() < operation.defect_probability
+defect = quality_rng.random() < self.machine.defect_probability
 defect_severity = quality_rng.random() if defect else None
 ```
 
@@ -520,11 +537,10 @@ sind dadurch folgende Zufallswerte reproduzierbar:
 - Zufallsauswahl und Exploration des `BaselineActionSelector`.
 
 Die Qualitätsprüfung verwendet einen eigenen `quality_rng`, dessen Startwert
-aus `QUALITY_SEED`, Szenario, Auftrag, Jobnummer, Operation und
-`rework_count` abgeleitet wird. Bei gleichem Schlüssel bleiben Defektentscheidung
-und `defect_severity` gleich, auch wenn der Job auf einer anderen Maschine
-verarbeitet wird. Eine andere Operation oder Nacharbeitsrunde ändert den
-Schlüssel.
+aus `QUALITY_SEED`, Szenario, Auftrag, Jobnummer, Operation und `rework_count`
+abgeleitet wird. Bei gleichem Schlüssel werden dieselben Zufallszahlen gezogen.
+Ob daraus ein Defekt entsteht, hängt von der `defect_probability` der gewählten
+Maschine ab. Eine andere Operation oder Nacharbeitsrunde ändert den Schlüssel.
 
 Der normale Aufruf `simulate(...)` besitzt derzeit kein `seed`-Argument.
 Die hier beschriebene gemeinsame Seed-Vorgabe übernimmt der Runner für die
@@ -2107,8 +2123,9 @@ Die Optimierung wird über das Streamlit-Webinterface gestartet.
 [example-5.py](sources/examples/normal/example-5.py) enthält **24 Jobs aus
 acht Aufträgen**, drei Endprodukte und zwölf Maschinen in drei Seitenkorridoren.
 Zwölf Operationstypen ermöglichen alternative Bearbeitungswege mit zwei oder
-drei Schritten. Operationsdauer, Werkzeugverbrauch, Pufferkapazität und
-Ein- und Auslagerzeiten sind nicht überall gleich. Die Aufträge haben
+drei Schritten. Operationsdauer, Werkzeugverbrauch, Pufferkapazität,
+maschinenabhängige Defektwahrscheinlichkeit sowie Ein- und Auslagerzeiten
+sind nicht überall gleich. Die Aufträge haben
 unterschiedliche Startzeiten und Deadlines.
 
 Für dieses Beispiel in `sources/optimization.py` eintragen:

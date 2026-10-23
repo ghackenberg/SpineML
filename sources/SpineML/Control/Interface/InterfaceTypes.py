@@ -460,7 +460,6 @@ class ConfigurationObjectObserver:
                     "operation_id": operation.name,
                     "duration": operation.duration,
                     "consumed_life_units": operation.consumes_life_units,
-                    "defect_probability": operation.defect_probability,
                     "machine_type_id": operation.machine_type.name,
                     "tool_type_id": operation.tool_type.name,
                     "consumes_product_type_id": operation.consumes_product_type.name,
@@ -477,6 +476,7 @@ class ConfigurationObjectObserver:
                     "left": machine.left,
                     "input_storage_capacity": machine.input_storage_capacity,
                     "output_storage_capacity": machine.output_storage_capacity,
+                    "defect_probability": machine.defect_probability,
                     "dummy_tool_mount_time": machine.dummy_tool_mount_time,
                     "dummy_tool_unmount_time": machine.dummy_tool_unmount_time,
                     "tool_type_ids": [

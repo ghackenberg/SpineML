@@ -54,7 +54,7 @@ def test_complex_example_has_distinct_routes_and_usable_tools(complex_model):
     assert len({operation.duration for operation in operations}) > 4
     assert len({operation.consumes_life_units for operation in operations}) > 3
     for operation in operations:
-        assert 0 < operation.defect_probability < 1
+        assert not hasattr(operation, "defect_probability")
         assert 0 < operation.consumes_life_units <= operation.tool_type.total_life_units
         eligible = [
             machine for machine in machines
@@ -62,6 +62,9 @@ def test_complex_example_has_distinct_routes_and_usable_tools(complex_model):
         ]
         assert len(eligible) == 3
         assert all(operation.tool_type in machine.tool_types for machine in eligible)
+        assert len({machine.defect_probability for machine in eligible}) > 1
+
+    assert all(0 < machine.defect_probability < 1 for machine in machines)
 
     for intermediate in (
         complex_model["base_body"], complex_model["milled_body"],

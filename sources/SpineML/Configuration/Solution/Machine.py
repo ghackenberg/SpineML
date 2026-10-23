@@ -17,8 +17,13 @@ class Machine:
         input_storage_capacity: int,
         output_storage_capacity: int,
         tool_types: list[ToolType] | None = None,
-
+        *,
+        defect_probability: float,
     ) -> None:
+
+        self.defect_probability = float(defect_probability)
+        if not 0.0 <= self.defect_probability <= 1.0:
+            raise ValueError("Machine defect_probability must be between 0 and 1.")
 
         self.name = name
         self.machine_type = machine_type

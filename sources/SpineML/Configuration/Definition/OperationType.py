@@ -7,12 +7,20 @@ class OperationType:
     from .ProductType import ProductType
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
-    def __init__(self, name: str, duration: int, consumes_life_units: int, defect_probability: float, machine_type: MachineType, tool_type: ToolType, consumes_product_type: ProductType, produces_product_type: ProductType) -> None:
+    def __init__(
+        self,
+        name: str,
+        duration: int,
+        consumes_life_units: int,
+        machine_type: MachineType,
+        tool_type: ToolType,
+        consumes_product_type: ProductType,
+        produces_product_type: ProductType,
+    ) -> None:
         
         self.name = name
         self.duration = duration
         self.consumes_life_units = consumes_life_units
-        self.defect_probability = defect_probability
         self.machine_type = machine_type
         self.tool_type = tool_type
         self.consumes_product_type = consumes_product_type

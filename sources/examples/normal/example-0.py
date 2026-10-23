@@ -26,19 +26,19 @@ pt8 = ProductType('PolishingStage3', 13, 18, 13, 8)
 pt9 = ProductType('PolishingStage4', 13, 18, 13, 8)
 
 
-OperationType('PrePolishRawWorkpiece', 1, 3, 0.05, mt1, tt1, pt1, pt6)
+OperationType('PrePolishRawWorkpiece', 1, 3, mt1, tt1, pt1, pt6)
 
-OperationType('GrindRawWorkpiece', 1, 10, 0.20, mt2, tt2, pt1, pt3)
-OperationType('PrePolishGroundWorkpiece', 1, 3, 0.05, mt1, tt1, pt3, pt6)
+OperationType('GrindRawWorkpiece', 1, 10, mt2, tt2, pt1, pt3)
+OperationType('PrePolishGroundWorkpiece', 1, 3, mt1, tt1, pt3, pt6)
 
-OperationType('MillRawWorkpiece', 1, 10, 0.10, mt3, tt3, pt1, pt4)
-OperationType('GrindMilledWorkpiece', 1, 10, 0.10, mt2, tt2, pt4, pt5)
-OperationType('PrePolishMilledAndGroundWorkpiece', 1, 3, 0.05, mt1, tt1, pt5, pt6)
+OperationType('MillRawWorkpiece', 1, 10, mt3, tt3, pt1, pt4)
+OperationType('GrindMilledWorkpiece', 1, 10, mt2, tt2, pt4, pt5)
+OperationType('PrePolishMilledAndGroundWorkpiece', 1, 3, mt1, tt1, pt5, pt6)
 
-OperationType('PolishingStage1Fine', 1, 4, 0.05, mt1, tt4, pt6, pt7)
-OperationType('PolishingStage2Coarse', 1, 5, 0.05, mt1, tt5, pt7, pt8)
-OperationType('PolishingStage3Soft', 1, 4, 0.05, mt1, tt6, pt8, pt9)
-OperationType('PolishingStage4Hard', 1, 5, 0.05, mt1, tt7, pt9, pt2)
+OperationType('PolishingStage1Fine', 1, 4, mt1, tt4, pt6, pt7)
+OperationType('PolishingStage2Coarse', 1, 5, mt1, tt5, pt7, pt8)
+OperationType('PolishingStage3Soft', 1, 4, mt1, tt6, pt8, pt9)
+OperationType('PolishingStage4Hard', 1, 5, mt1, tt7, pt9, pt2)
 
 
 s1 = Scenario('ExampleScenarioWithThreeProductionRoutes')
@@ -61,12 +61,13 @@ Machine(
     10,
     10,
     tool_types=[tt1, tt4, tt5, tt6, tt7],
+    defect_probability=0.05,
 )
-Machine('PolishingMachine B', mt1, c1_1, False, 10, 10, tool_types=[tt1])
-Machine('GrindingMachine A', mt2, c1_1, True, 10, 10)
-Machine('GrindingMachine B', mt2, c1_1, False, 10, 10)
-Machine('MillingMachine A', mt3, c1_1, True, 10, 10)
-Machine('MillingMachine B', mt3, c1_1, False, 10, 10)
+Machine('PolishingMachine B', mt1, c1_1, False, 10, 10, tool_types=[tt1], defect_probability=0.05)
+Machine('GrindingMachine A', mt2, c1_1, True, 10, 10, defect_probability=0.20)
+Machine('GrindingMachine B', mt2, c1_1, False, 10, 10, defect_probability=0.10)
+Machine('MillingMachine A', mt3, c1_1, True, 10, 10, defect_probability=0.10)
+Machine('MillingMachine B', mt3, c1_1, False, 10, 10, defect_probability=0.10)
 
 
 simulate(l1, s1, True)

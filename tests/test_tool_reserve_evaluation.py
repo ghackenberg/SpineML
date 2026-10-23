@@ -18,7 +18,6 @@ def make_observation(action_type, remaining_life, consumed_life):
         name="operation",
         duration=4.0,
         consumes_life_units=consumed_life,
-        defect_probability=0.0,
         machine_type=SimpleNamespace(name="machine_type"),
         tool_type=SimpleNamespace(name="tool"),
         consumes_product_type=SimpleNamespace(name="raw"),

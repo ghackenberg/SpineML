@@ -4,7 +4,7 @@ import salabim as sim
 import matplotlib.pyplot as plt
 import salabim as sim
 
-from ..Configuration import Machine, ToolType
+from ..Configuration import Machine, OperationType, ToolType
 from ..Control import SimulationBridge
 
 from .SimOrderJob import SimOrderJob
@@ -288,23 +288,7 @@ class SimMachine(sim.Component):
 
         self.state.set("returning")
 
-        defect_severity = None
-
-        # Bei gleichem Seed und Kontext erhält der Job in jedem Lauf dieselbe Defektentscheidung.
-        quality_key = (
-            f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
-            f"{job.number}|{operation.name}|{job.rework_count}"
-        ).encode("utf-8")
-
-        # Erzeugt aus dem quality_key einen reproduzierbaren Zufallszahlengenerator.
-        quality_rng = random.Random(
-            int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
-        )
-
-        # Die erste Zufallszahl entscheidet anhand der Wahrscheinlichkeit über einen Defekt.
-        if quality_rng.random() < operation.defect_probability:
-            # Die zweite Zufallszahl bestimmt den Schweregrad des Defekts.
-            defect_severity = quality_rng.random()
+        defect_severity = self._sample_defect_severity(job, operation)
 
         # Markiert den Job als defekt, wenn ein relevanter Defekt festgestellt wurde.
         if defect_severity is not None and defect_severity >= 0.001:
@@ -353,6 +337,21 @@ class SimMachine(sim.Component):
         job.location = action.payload["target_store"].name()
 
         self.current_job = None
+
+    def _sample_defect_severity(
+        self, job: SimOrderJob, operation: OperationType,
+    ) -> float | None:
+        """Prüft einen Bearbeitungsvorgang mit dem Risiko der konkreten Maschine."""
+        quality_key = (
+            f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
+            f"{job.number}|{operation.name}|{job.rework_count}"
+        ).encode("utf-8")
+        quality_rng = random.Random(
+            int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
+        )
+        if quality_rng.random() < self.machine.defect_probability:
+            return quality_rng.random()
+        return None
 
     # Führt die Funktion mit den übergebenen Werten aus.
     def utilization(self):

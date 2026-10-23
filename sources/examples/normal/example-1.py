@@ -17,9 +17,9 @@ pt3 = ProductType('Product type 3', 14, 15, 15, 6)
 pt4 = ProductType('Product type 4', 33, 12, 22, 17)
 
 
-OperationType('Operation 1', 1, 5, 0.15,mt1, tt1, pt1, pt2)
-OperationType('Operation 2', 1, 4, 0.20, mt2, tt2, pt4, pt1)
-OperationType('Operation 3', 1, 6, 0.11, mt3, tt3, pt3, pt4)
+OperationType('Operation 1', 1, 5, mt1, tt1, pt1, pt2)
+OperationType('Operation 2', 1, 4, mt2, tt2, pt4, pt1)
+OperationType('Operation 3', 1, 6, mt3, tt3, pt3, pt4)
 
 
 s1 = Scenario('Scenario 1')
@@ -45,20 +45,20 @@ c3_2 = Corridor("Corridor 3.2", 300, 1, 1, l3)
 c3_3 = Corridor("Corridor 3.3", 200, 1, 1, l3)
 
 
-Machine('Machine 1.1.1', mt3, c1_1, True, 10, 10)
-Machine('Machine 1.1.2', mt2, c1_1, True, 10, 10)
-Machine('Machine 1.1.3', mt1, c1_1, False, 10, 10)
-Machine('Machine 1.2.1', mt3, c1_2, True, 10, 10)
-Machine('Machine 1.2.2', mt2, c1_2, True, 10, 10)
-Machine('Machine 1.2.3', mt1, c1_2, False, 10, 10)
+Machine('Machine 1.1.1', mt3, c1_1, True, 10, 10, defect_probability=0.11)
+Machine('Machine 1.1.2', mt2, c1_1, True, 10, 10, defect_probability=0.20)
+Machine('Machine 1.1.3', mt1, c1_1, False, 10, 10, defect_probability=0.15)
+Machine('Machine 1.2.1', mt3, c1_2, True, 10, 10, defect_probability=0.11)
+Machine('Machine 1.2.2', mt2, c1_2, True, 10, 10, defect_probability=0.20)
+Machine('Machine 1.2.3', mt1, c1_2, False, 10, 10, defect_probability=0.15)
 
-Machine('Machine 2.1.1', mt3, c2_1, True, 10, 10)
-Machine('Machine 2.1.2', mt2, c2_1, True, 10, 10)
-Machine('Machine 2.2.1', mt1, c2_2, True, 10, 10)
+Machine('Machine 2.1.1', mt3, c2_1, True, 10, 10, defect_probability=0.11)
+Machine('Machine 2.1.2', mt2, c2_1, True, 10, 10, defect_probability=0.20)
+Machine('Machine 2.2.1', mt1, c2_2, True, 10, 10, defect_probability=0.15)
 
-Machine('Machine 3.1.1', mt1, c3_1, True, 10, 10)
-Machine('Machine 3.2.1', mt3, c3_2, True, 10, 10)
-Machine('Machine 3.3.1', mt2, c3_3, True, 10, 10)
+Machine('Machine 3.1.1', mt1, c3_1, True, 10, 10, defect_probability=0.15)
+Machine('Machine 3.2.1', mt3, c3_2, True, 10, 10, defect_probability=0.11)
+Machine('Machine 3.3.1', mt2, c3_3, True, 10, 10, defect_probability=0.20)
 
 
 simulate(l1, s1)

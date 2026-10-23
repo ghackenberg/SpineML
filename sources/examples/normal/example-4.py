@@ -42,9 +42,9 @@ for i in range(NUM_CORRIDORS):
 
 for i in range(NUM_CORRIDORS):
     for j in range(NUM_MACHINES_LEFT):
-        Machine(f'Machine 1.{i + 1}.{j + 1}.left', mt1, CORRIDORS[i], True, 10, 10)
+        Machine(f'Machine 1.{i + 1}.{j + 1}.left', mt1, CORRIDORS[i], True, 10, 10, defect_probability=0.10)
     for j in range(NUM_MACHINES_RIGHT):
-        Machine(f'Machine 1.{i + 1}.{j + 1}.right', mt1, CORRIDORS[i], False, 10, 10)
+        Machine(f'Machine 1.{i + 1}.{j + 1}.right', mt1, CORRIDORS[i], False, 10, 10, defect_probability=0.10)
 
 
 simulate(l1, scenario1, True)

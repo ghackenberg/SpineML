@@ -23,13 +23,13 @@ def small_runner(monkeypatch):
         tool = configuration.ToolType("tool", 1, 1, 100)
         raw = configuration.ProductType("raw", 1, 1, 1, 1)
         finished = configuration.ProductType("finished", 1, 1, 1, 1)
-        configuration.OperationType("operation", 2, 1, 0.0, machine_type, tool, raw, finished)
+        configuration.OperationType("operation", 2, 1, machine_type, tool, raw, finished)
         scenario = configuration.Scenario("scenario")
         configuration.Order("order", 2, 0, 100, finished, scenario)
         layout = configuration.Layout("layout", 1, 1, 10)
         corridor = configuration.Corridor("corridor", 10, 1, 1, layout)
-        configuration.Machine("machine A", machine_type, corridor, True, 2, 2)
-        configuration.Machine("machine B", machine_type, corridor, False, 2, 2)
+        configuration.Machine("machine A", machine_type, corridor, True, 2, 2, defect_probability=0.0)
+        configuration.Machine("machine B", machine_type, corridor, False, 2, 2, defect_probability=0.0)
         yield SpineMLSimulationRunner(layout, scenario, till=1000)
     finally:
         for registry, original in zip(registries, previous):

@@ -60,14 +60,14 @@ class LocalHeuristicWeightOptimizer:
         best_solution_memory = []
         # Enthält zunächst noch keine globale beste Bewertung.
         best_evaluation = None
-        # Zählt aufeinanderfolgende Runden ohne Verbesserung.
-        rounds_without_improvement = 0
-        # Zählt erfolglose Runden seit der letzten Verbesserung für den Abbruch.
-        total_rounds_without_improvement = 0
+        # Zählt aufeinanderfolgende Iterationen ohne Verbesserung.
+        iterations_without_improvement = 0
+        # Zählt erfolglose Iterationen seit der letzten Verbesserung für den Abbruch.
+        total_iterations_without_improvement = 0
         # Erzeugt reproduzierbare Zufallskandidaten für die Exploration.
         exploration_rng = random.Random(0)
 
-        # Durchläuft die festgelegten Optimierungsrunden (je Runde werden
+        # Durchläuft die festgelegten Iterationen (je Iteration werden
         # weight candidates erzeugt, simuliert und verglichen) von 1 bis iterations.
         for iteration_number in range(1, iterations + 1):
             
@@ -96,45 +96,45 @@ class LocalHeuristicWeightOptimizer:
                 progress_callback=progress_callback,
             )
 
-            # Übernimmt das beste WeightEvaluation-Objekt dieser Runde; der lokale
+            # Übernimmt das beste WeightEvaluation-Objekt dieser Iteration; der lokale
             # weight set steht darin unter iteration_best.weights.
             iteration_best = iteration_result.best_evaluation
 
             # Prüft, ob erstmals ein Gesamtbester vorliegt oder die aktuelle
-            # Runde eine kleinere mittlere weighted Summe erreicht.
+            # Iteration eine kleinere mittlere weighted Summe erreicht.
             if (
                 best_evaluation is None
                 or iteration_best.mean_global_cost
                 < best_evaluation.mean_global_cost
             ):
-                # Übernimmt den besten Kandidaten der aktuellen Runde als Gesamtbesten.
+                # Übernimmt den besten Kandidaten der aktuellen Iteration als Gesamtbesten.
                 best_evaluation = iteration_best
                 # Speichert diese verbesserte Lösung im Verlauf der Optimierung.
                 best_solution_memory.append(iteration_best)
-                # Verwendet dessen weight set als Ausgangspunkt für die nächste Runde.
+                # Verwendet dessen weight set als Ausgangspunkt für die nächste Iteration.
                 current_local_weights = iteration_best.weights
                 # Verkleinert die Änderungsschritte für eine genauere lokale Suche.
                 weight_step_fraction /= 2.0
-                # Setzt den Zähler für aufeinanderfolgende erfolglose Runden zurück.
-                rounds_without_improvement = 0
+                # Setzt den Zähler für aufeinanderfolgende erfolglose Iterationen zurück.
+                iterations_without_improvement = 0
                 # Setzt auch den Abbruchzähler nach einer Verbesserung zurück.
-                total_rounds_without_improvement = 0
+                total_iterations_without_improvement = 0
             else:
-                # Zählt erfolglose Runden bis zum nächsten Neustart.
-                rounds_without_improvement += 1
-                # Zählt erfolglose Runden bis zum endgültigen Abbruch;
+                # Zählt erfolglose Iterationen bis zum nächsten Neustart.
+                iterations_without_improvement += 1
+                # Zählt erfolglose Iterationen bis zum endgültigen Abbruch;
                 # dieser Zähler wird bei einem Neustart nicht zurückgesetzt.
-                total_rounds_without_improvement += 1
-                # Prüft, ob die maximal erlaubte Anzahl erfolgloser Runden erreicht ist.
+                total_iterations_without_improvement += 1
+                # Prüft, ob die maximal erlaubte Anzahl erfolgloser Iterationen erreicht ist.
                 if (
                     stop_after_no_improvement is not None
-                    and total_rounds_without_improvement
+                    and total_iterations_without_improvement
                     >= stop_after_no_improvement
                 ):
                     # Beendet die Optimierung wegen ausbleibender Verbesserung.
                     break
                 # Prüft, ob ein Neustart der lokalen Suche ausgelöst werden soll.
-                if rounds_without_improvement >= restart_after_no_improvement:
+                if iterations_without_improvement >= restart_after_no_improvement:
                     # Verwendet die zuletzt gespeicherte verbesserte Lösung als Neustartpunkt.
                     if best_solution_memory:
                         remembered_solution = best_solution_memory[-1]
@@ -146,8 +146,8 @@ class LocalHeuristicWeightOptimizer:
                         )[0]
                     # Setzt die Suchschrittweite für den Neustart auf den Anfangswert zurück.
                     weight_step_fraction = initial_local_weight_step_fraction
-                    # Beginnt die Zählung erfolgloser Runden für den Neustart von vorn.
-                    rounds_without_improvement = 0
+                    # Beginnt die Zählung erfolgloser Iterationen für den Neustart von vorn.
+                    iterations_without_improvement = 0
 
         if best_evaluation is None:
             raise ValueError("iterations muss mindestens 1 sein.")

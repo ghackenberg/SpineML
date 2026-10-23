@@ -2070,8 +2070,7 @@ heuristische Steuerung im Mittel bessere Produktionsergebnisse erzielt.**
 
 Das Diagramm zeigt den Ablauf von der Vorbereitung bis zum Vergleich der
 Steuerungen. Die Abschnitte darunter erklären die Schritte in derselben
-Reihenfolge. Eine **Iteration ist eine Suchrunde**, in der die Schritte
-2 bis 5 einmal durchlaufen werden.
+Reihenfolge. Eine **Iteration umfasst einen Durchlauf der Schritte 2 bis 5**.
 
 ```mermaid
 ---
@@ -2698,7 +2697,7 @@ Während der Gewichtssuche meldet `progress` in `optimization.py` an die
 Oberfläche, welche Iteration und welcher Gewichtssatz gerade geprüft werden.
 
 Während der Suche steht oberhalb der Diagramme beispielsweise
-`Optimization: round 1, candidate 9/53`. Das bedeutet: In Iteration `1`
+`Optimization: iteration 1, candidate 9/53`. Das bedeutet: In Iteration `1`
 wird gerade der neunte von `53` Gewichtssätzen geprüft. Die Fortschrittsanzeige
 bezieht sich auf die **aktuelle Iteration**, nicht auf die gesamte Optimierung.
 
@@ -2792,12 +2791,12 @@ eine Verbesserung; ein gleicher Wert zählt nicht.**
 
 Die beiden Zähler steuern die Suche bei ausbleibender Verbesserung:
 
-- **Neustart-Zähler (`rounds_without_improvement`):** Zählt Iterationen ohne
+- **Neustart-Zähler (`iterations_without_improvement`):** Zählt Iterationen ohne
   Verbesserung seit der letzten Verbesserung oder dem letzten Neustart.
   Bei `2` (`RESTART_AFTER_NO_IMPROVEMENT`) wird ein Neustart ausgelöst:
   Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurücksetzen, diesen Zähler auf `0` setzen.
   Die nächste Iteration prüft größere Änderungen am bisherigen besten Satz.
-- **Abbruch-Zähler (`total_rounds_without_improvement`):** Zählt die
+- **Abbruch-Zähler (`total_iterations_without_improvement`):** Zählt die
   aufeinanderfolgenden Iterationen ohne Verbesserung. **Ein Neustart setzt
   ihn nicht zurück.** Bei `4` (`STOP_AFTER_NO_IMPROVEMENT`) endet die Suche;
   ein weiterer Neustart wird dann nicht mehr ausgeführt.

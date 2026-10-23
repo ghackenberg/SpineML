@@ -181,6 +181,7 @@ def test_progress_records_only_scored_metrics(monkeypatch):
     assert state["error"] is None
     assert not state["running"]
     assert state["costs"] == [13.4]
+    assert state["phase"] == "Optimization: iteration 1, candidate 1/1"
     assert len(state["metrics"]) == 1
     row = state["metrics"][0]
     assert set(row) == {"Candidate", *optimization.SCORED_METRICS}

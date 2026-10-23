@@ -100,7 +100,7 @@ def test_close_but_different_weight_values_are_not_rounded_or_merged():
     assert len(calls) == 4
 
 
-def test_default_first_round_evaluates_53_sets_instead_of_54_entries():
+def test_default_first_iteration_evaluates_53_sets_instead_of_54_entries():
     optimizer, calls = make_optimizer()
     initial = HeuristicWeights()
     neighbors = optimizer.neighboring_weights(initial, 0.4)
@@ -117,7 +117,7 @@ def test_default_first_round_evaluates_53_sets_instead_of_54_entries():
     assert result.evaluations[0].weights is initial
 
 
-def test_combined_duplicates_are_removed_per_round_without_cross_round_cache(monkeypatch):
+def test_combined_duplicates_are_removed_per_iteration_without_cross_iteration_cache(monkeypatch):
     optimizer, calls = make_optimizer()
     initial = HeuristicWeights()
     progress = []
@@ -145,7 +145,7 @@ def test_combined_duplicates_are_removed_per_round_without_cross_round_cache(mon
     assert result.best_weights is initial
 
 
-def test_two_default_sized_rounds_can_have_53_then_54_distinct_candidates():
+def test_two_default_sized_iterations_can_have_53_then_54_distinct_candidates():
     optimizer, calls = make_optimizer()
     target = optimizer.random_local_weight_candidates(3, random.Random(0))[0]
     progress = []

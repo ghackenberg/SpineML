@@ -543,7 +543,7 @@ def _start_optimization(state, model_file):
         state["candidate"] = candidate
         state["total_candidates"] = total_candidates
         state["phase"] = (
-            f"Optimization: round {iteration}, "
+            f"Optimization: iteration {iteration}, "
             f"candidate {candidate}/{total_candidates}"
         )
 
@@ -614,19 +614,19 @@ def _start_optimization(state, model_file):
                 # Verwendet diese Seeds für jeden getesteten weight set.
                 seeds=SEEDS,
 
-                # Legt die maximale Anzahl der Optimierungsrunden fest.
+                # Legt die maximale Anzahl der Iterationen fest.
                 iterations=ITERATIONS,
 
                 # Set the initial relative size of weight changes.
                 initial_local_weight_step_fraction=INITIAL_WEIGHT_STEP,
 
-                # Legt fest, wie viele zusätzliche Kandidaten pro Runde getestet werden.
+                # Legt fest, wie viele zusätzliche Kandidaten pro Iteration getestet werden.
                 exploration_candidate_count=EXPLORATION_CANDIDATES,
 
-                # Startet nach dieser Anzahl erfolgloser Runden erneut.
+                # Startet nach dieser Anzahl erfolgloser Iterationen erneut.
                 restart_after_no_improvement=RESTART_AFTER_NO_IMPROVEMENT,
 
-                # Beendet die Suche nach dieser Anzahl erfolgloser Runden.
+                # Beendet die Suche nach dieser Anzahl erfolgloser Iterationen.
                 stop_after_no_improvement=STOP_AFTER_NO_IMPROVEMENT,
                 
                 # Aktualisiert den Streamlit-Webserver über den aktuellen Fortschritt.

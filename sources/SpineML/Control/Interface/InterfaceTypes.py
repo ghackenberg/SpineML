@@ -303,6 +303,7 @@ class SimulationObjectObserver:
             "left": machine.machine.left,
             "state": machine.state.get(),
             "processing_speed_factor": machine.processing_speed_factor,
+            "defect_probability": machine.defect_probability,
             "is_idle": machine.current_job is None and machine.state.get() == "waiting",
             "has_current_job": machine.current_job is not None,
             "can_process_current_job": (

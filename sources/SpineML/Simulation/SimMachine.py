@@ -29,6 +29,8 @@ class SimMachine(sim.Component):
         super().__init__(*args, **kwargs)
 
         self.machine = machine
+        # Einmal pro Lauf bestimmen; der Wert bleibt für alle Bearbeitungen gleich.
+        self.defect_probability = machine.resolve_defect_probability(self.QUALITY_SEED)
         # Szenarioweites maximales Produktgewicht und -volumen.
         self.max_product_weight = float(max_product_weight)
         self.max_product_volume = float(max_product_volume)
@@ -349,7 +351,7 @@ class SimMachine(sim.Component):
         quality_rng = random.Random(
             int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
         )
-        if quality_rng.random() < self.machine.defect_probability:
+        if quality_rng.random() < self.defect_probability:
             return quality_rng.random()
         return None
 

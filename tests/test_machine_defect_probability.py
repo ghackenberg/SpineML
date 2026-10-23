@@ -1,4 +1,5 @@
 import importlib
+import random
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,7 +9,10 @@ import optimization
 from SpineML import Configuration as configuration
 from SpineML.Control.GeneralControl import RandomPolicy
 from SpineML.Control.HeuristicControl import HeuristicWeights, SpineMLSimulationRunner
-from SpineML.Control.Interface.InterfaceTypes import ConfigurationObjectObserver
+from SpineML.Control.Interface.InterfaceTypes import (
+    ConfigurationObjectObserver,
+    SimulationObjectObserver,
+)
 from SpineML.Simulation.SimMachine import SimMachine
 from SpineML.Simulation.SimOrderJob import SimOrderJob
 
@@ -89,10 +93,13 @@ def test_invalid_machine_probability_is_rejected_before_registration(machine_mod
     assert configuration.MACHINES == before
 
 
-def test_probability_must_be_configured_on_machine_not_operation(machine_model):
+def test_probability_is_optional_on_machine_and_not_allowed_on_operation(machine_model):
     model = machine_model
-    with pytest.raises(TypeError, match="defect_probability"):
-        configuration.Machine("missing", model.machine_type, model.corridor, True, 2, 2)
+    machine = configuration.Machine(
+        "automatic", model.machine_type, model.corridor, True, 2, 2,
+    )
+    assert machine.defect_probability is None
+    assert 0 <= machine.resolve_defect_probability(seed=101) < 1
     with pytest.raises(TypeError, match="defect_probability"):
         configuration.OperationType(
             "invalid", 2, 1, model.machine_type, model.tool, model.raw, model.finished,
@@ -100,15 +107,55 @@ def test_probability_must_be_configured_on_machine_not_operation(machine_model):
         )
 
 
-def test_configuration_observer_publishes_machine_risk_not_operation_risk(machine_model):
+@pytest.mark.parametrize("seed", [1, 2, 101])
+def test_explicit_machine_probability_is_independent_of_seed(machine_model, seed):
+    assert machine_model.machines[0].resolve_defect_probability(seed) == 0.05
+    assert machine_model.machines[1].resolve_defect_probability(seed) == 0.35
+
+
+def test_automatic_machine_probability_depends_only_on_seed_and_machine(machine_model):
+    first, second = machine_model.machines
+    first.defect_probability = None
+    second.defect_probability = None
+    random_state = random.getstate()
+
+    probability = first.resolve_defect_probability(seed=101)
+    other_machine_probability = second.resolve_defect_probability(seed=101)
+    other_seed_probability = first.resolve_defect_probability(seed=102)
+
+    assert 0 <= probability < 1
+    assert probability == first.resolve_defect_probability(seed=101)
+    assert probability != other_machine_probability
+    assert probability != other_seed_probability
+    assert random.getstate() == random_state
+    assert first.defect_probability is None
+    assert second.defect_probability is None
+
+
+def test_explicit_zero_does_not_trigger_random_probability(machine_model, monkeypatch):
+    def unexpected_random(*args):
+        raise AssertionError("An explicit probability must not be replaced by a random one")
+
+    machine_model.machines[0].defect_probability = 0.0
+    module = importlib.import_module("SpineML.Configuration.Solution.Machine")
+    monkeypatch.setattr(module.random, "Random", unexpected_random)
+
+    assert machine_model.machines[0].resolve_defect_probability(seed=101) == 0.0
+
+
+@pytest.mark.parametrize("second_probability", [0.35, None])
+def test_configuration_observer_publishes_machine_risk_not_operation_risk(
+    machine_model, second_probability,
+):
     model = machine_model
+    model.machines[1].defect_probability = second_probability
     snapshot = ConfigurationObjectObserver.build_policy_configuration_model(
         [model.raw, model.finished], model.operations, model.machines,
         [model.tool], [model.corridor], [model.layout],
     )
 
     assert snapshot["machines_by_id"]["machine A"]["defect_probability"] == 0.05
-    assert snapshot["machines_by_id"]["machine B"]["defect_probability"] == 0.35
+    assert snapshot["machines_by_id"]["machine B"]["defect_probability"] == second_probability
     assert all(
         "defect_probability" not in operation
         for operation in snapshot["operations_by_id"].values()
@@ -116,7 +163,10 @@ def test_configuration_observer_publishes_machine_risk_not_operation_risk(machin
 
 
 def quality_context(model, machine):
-    component = SimpleNamespace(machine=machine, QUALITY_SEED=101)
+    component = SimpleNamespace(
+        machine=machine, QUALITY_SEED=101,
+        defect_probability=machine.resolve_defect_probability(seed=101),
+    )
     job = SimpleNamespace(
         scenario=model.scenario, order=model.order, number=0, rework_count=0,
     )
@@ -163,6 +213,7 @@ def test_same_processing_context_reuses_draws_when_machine_choice_changes(machin
     SimMachine._sample_defect_severity(component, job, operation)
     SimMachine._sample_defect_severity(component, job, operation)
     component.machine = machine_model.machines[1]
+    component.defect_probability = component.machine.resolve_defect_probability(seed=101)
     SimMachine._sample_defect_severity(component, job, operation)
     job.rework_count += 1
     SimMachine._sample_defect_severity(component, job, operation)
@@ -213,6 +264,38 @@ def test_real_simulation_checks_machine_risk_without_operation_probability(
     assert metrics.unfinished_jobs == 0
     assert bool(defects) == (probability == 1.0)
     assert all(machine.defect_probability == probability for machine in defects)
+
+
+def test_real_simulation_supports_fixed_and_seeded_auto_probabilities(machine_model, monkeypatch):
+    model = machine_model
+    model.machines[1].defect_probability = None
+    runner = SpineMLSimulationRunner(model.layout, model.scenario, till=1000)
+    sampled_by_run = []
+    collect = runner.collect_global_metrics
+
+    def capture_probabilities(layout, scenario, end_time):
+        sampled = {}
+        for machine in layout.simMachines():
+            observed = SimulationObjectObserver.observe_machine(machine, end_time)
+            assert observed["defect_probability"] == machine.defect_probability
+            sampled[machine.machine.name] = machine.defect_probability
+        sampled_by_run.append(sampled)
+        return collect(layout, scenario, end_time)
+
+    monkeypatch.setattr(runner, "collect_global_metrics", capture_probabilities)
+    first = runner(HeuristicWeights(), seed=101)
+    different_seed = runner(HeuristicWeights(), seed=102)
+    repeated = runner(HeuristicWeights(), seed=101)
+    random_metrics = runner.run_policy(RandomPolicy(seed=101), seed=101)
+
+    assert first == repeated
+    for metrics in (first, different_seed, repeated, random_metrics):
+        assert metrics.completed_jobs == metrics.total_jobs == 2
+    assert all(sampled["machine A"] == 0.05 for sampled in sampled_by_run)
+    assert sampled_by_run[0] == sampled_by_run[2] == sampled_by_run[3]
+    assert sampled_by_run[0]["machine B"] != sampled_by_run[1]["machine B"]
+    assert sampled_by_run[0]["machine B"] == model.machines[1].resolve_defect_probability(101)
+    assert model.machines[1].defect_probability is None
 
 
 @pytest.mark.parametrize("filename", [

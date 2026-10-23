@@ -88,11 +88,30 @@ Korridor und Position auf der linken oder rechten Korridorseite. Der
 
 #### Defektwahrscheinlichkeit
 
-`defect_probability` wird für jede konkrete Maschine angegeben. Beispielsweise
-bedeutet `defect_probability=0.05` eine Defektwahrscheinlichkeit von fünf Prozent
-bei jeder Bearbeitung auf dieser Maschine. Der Wert gilt für alle Operationen
-der Maschine und muss zwischen `0` und `1` liegen. Maschinen desselben
-`MachineType` können unterschiedliche Werte haben.
+Für `defect_probability` gibt es zwei Möglichkeiten:
+
+- **Direkt angeben:** Beispielsweise legt `defect_probability=0.05` fünf Prozent
+  Defektwahrscheinlichkeit pro Bearbeitung fest. Dieser Wert bleibt unabhängig
+  vom Seed gleich und muss zwischen `0` und `1` liegen.
+- **Weglassen oder `None` angeben:** `Machine.resolve_defect_probability(seed)`
+  erzeugt beim Aufbau der `SimMachine` einen gleichverteilten Zufallswert in
+  `[0, 1)`. Derselbe Seed liefert für dieselbe Maschine denselben Wert.
+
+Ohne direkte Angabe genügt beispielsweise:
+
+```python
+Machine("CNC automatisch", cnc_type, corridor, True, 10, 10)
+```
+
+Die `SimMachine` übernimmt den festen oder zufälligen Wert als
+`self.defect_probability`. Er bleibt während des gesamten Laufs unverändert
+und gilt für alle Bearbeitungen dieser Maschine. Ein anderer Seed kann einen
+anderen zufälligen Wert liefern; ein ausdrücklich angegebener Wert bleibt gleich.
+Maschinen desselben `MachineType` können unterschiedliche Werte haben.
+
+Im Konfigurationsmodell kennzeichnet `None` die automatische Auswahl. Die
+Laufzeitbeobachtung der Maschine enthält unter `defect_probability` den
+tatsächlich verwendeten Zahlenwert.
 
 Die Operation selbst besitzt keine Defektwahrscheinlichkeit. Ihr Aufruf lautet
 beispielsweise:
@@ -496,11 +515,11 @@ Verarbeitungsdauer.
 Nach Ablauf der Verarbeitungsdauer erzeugt die Maschine einen deterministischen
 Qualitätszufallszahlengenerator. Sein Schlüssel enthält den Simulations-Seed,
 das Szenario, den Auftrag, den Job, die Operation und den `rework_count`.
-Die erste Zufallszahl wird mit `self.machine.defect_probability` verglichen. Nur
+Die erste Zufallszahl wird mit `self.defect_probability` verglichen. Nur
 bei einem Defekt wird eine zweite Zufallszahl als `defect_severity` erzeugt.
 
 ```python
-defect = quality_rng.random() < self.machine.defect_probability
+defect = quality_rng.random() < self.defect_probability
 defect_severity = quality_rng.random() if defect else None
 ```
 
@@ -535,6 +554,11 @@ sind dadurch folgende Zufallswerte reproduzierbar:
   Zeiteinheiten.
 - `SimRobot.movement_speed_multiplier`: Neuer Faktor für jede Achsenbewegung.
 - Zufallsauswahl und Exploration des `BaselineActionSelector`.
+- Automatische Defektwahrscheinlichkeiten: `Machine.resolve_defect_probability()`
+  verwendet einen eigenen Generator aus Seed und Maschinenidentität. Feste
+  Eingaben werden dabei nicht verändert. Die Ziehung erfolgt unabhängig von der
+  Reihenfolge, in der die Maschinen aufgebaut werden, und verändert die anderen
+  Zufallszahlengeneratoren nicht.
 
 Die Qualitätsprüfung verwendet einen eigenen `quality_rng`, dessen Startwert
 aus `QUALITY_SEED`, Szenario, Auftrag, Jobnummer, Operation und `rework_count`

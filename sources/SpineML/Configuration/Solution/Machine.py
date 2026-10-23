@@ -1,3 +1,7 @@
+import hashlib
+import random
+
+
 class Machine:
 
     """Representation of machines."""
@@ -18,11 +22,16 @@ class Machine:
         output_storage_capacity: int,
         tool_types: list[ToolType] | None = None,
         *,
-        defect_probability: float,
+        defect_probability: float | None = None,
     ) -> None:
 
-        self.defect_probability = float(defect_probability)
-        if not 0.0 <= self.defect_probability <= 1.0:
+        self.defect_probability = (
+            None if defect_probability is None else float(defect_probability)
+        )
+        if (
+            self.defect_probability is not None
+            and not 0.0 <= self.defect_probability <= 1.0
+        ):
             raise ValueError("Machine defect_probability must be between 0 and 1.")
 
         self.name = name
@@ -49,6 +58,21 @@ class Machine:
             corridor.machines_right.append(self)
 
         MACHINES.append(self)
+
+    def resolve_defect_probability(self, seed: int) -> float:
+        """Liefert den festen Wert oder eine reproduzierbare Zufallswahrscheinlichkeit."""
+        if self.defect_probability is not None:
+            return self.defect_probability
+
+        # Eigener Generator: Die Ziehung verändert andere Simulationszufälle nicht.
+        probability_key = (
+            f"machine-defect-probability|{int(seed)}|{self.corridor.layout.name}|"
+            f"{self.corridor.name}|{self.name}|{self.left}"
+        ).encode("utf-8")
+        probability_rng = random.Random(
+            int.from_bytes(hashlib.sha256(probability_key).digest()[:8], "big")
+        )
+        return probability_rng.random()
 
     # Führt die Funktion mit den übergebenen Werten aus.
     def __repr__(self) -> str:

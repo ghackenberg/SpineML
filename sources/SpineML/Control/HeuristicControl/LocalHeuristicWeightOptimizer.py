@@ -243,8 +243,10 @@ class LocalHeuristicWeightOptimizer:
             if progress_callback is not None:
                 progress_callback(iteration_number, None, candidate_number, total_candidates)
 
-            # Führt für diesen Gewichtssatz einen vollständigen Simulationslauf pro Seed aus
-            # und berechnet den Mittelwert der globalen Bewertungszahlen.
+            # Für diesen einen festen Gewichtssatz: einen vollständigen Produktionslauf pro Seed ausführen.
+            # Für jeden Lauf eine globale Bewertungszahl berechnen.
+            # Danach den Durchschnitt dieser Bewertungszahlen über alle Seeds bilden.
+            # evaluation.mean_global_cost enthält diesen Durchschnitt für diesen einen Gewichtssatz.
             evaluation = self.evaluate_local_weights_across_seeds(
                 local_weights,
                 seed_values,

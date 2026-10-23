@@ -102,7 +102,7 @@ class LocalHeuristicWeightOptimizer:
             # Den zugehörigen Gewichtssatz enthält iteration_best.weights.
             iteration_best = iteration_result.best_evaluation
 
-            # Übernimmt den besten Gewichtssatz dieser Iteration erstmals oder bei kleinerem Mittelwert über alle Seeds.
+            # Vergleicht den besten Gewichtssatz dieser Iteration mit dem besten aus vorherigen Iterationen.
             if (
                 best_evaluation is None
                 or iteration_best.mean_global_cost

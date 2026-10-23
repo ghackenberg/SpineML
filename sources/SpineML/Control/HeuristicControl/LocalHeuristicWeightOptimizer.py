@@ -227,8 +227,8 @@ class LocalHeuristicWeightOptimizer:
         # Hält dieselben Seeds für alle Gewichtssatzprüfungen verfügbar.
         seed_values = tuple(seeds)
         evaluations = []
-        # Prüft identische vollständige Gewichtssätze nur einmal.
-        # Die Reihenfolge ihres ersten Vorkommens bleibt erhalten.
+        # Entfernt doppelte vollständige Gewichtssätze aus der Kandidatenauswahl.
+        # Das erste Vorkommen jedes Gewichtssatzes bleibt in der ursprünglichen Reihenfolge erhalten.
         candidate_list = tuple(dict.fromkeys(local_weight_candidates))
         # Anzahl der unterschiedlichen Gewichtssätze in diesem Aufruf.
         total_candidates = len(candidate_list)

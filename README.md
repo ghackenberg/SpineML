@@ -1923,11 +1923,6 @@ Bei gerundet dargestellten Anteilen kann die angezeigte Summe abweichen:
 Drei Anteile von jeweils `1/3` ergeben exakt `1`, auf zwei Nachkommastellen
 gerundet aber `0.33 + 0.33 + 0.33 = 0.99`.
 
-Werden alle berücksichtigten Gewichte mit demselben positiven Faktor
-multipliziert, bleibt der gewichtete Durchschnitt gleich. Die relativen
-Wichtigkeiten ändern sich dadurch nicht. Ohne die Division würde allein die
-größere Gewichtssumme den Score erhöhen.
-
 **Beispiel:** Die Teilwerte `0.8` und `0.2` erhalten die Gewichte `1.0` und
 `0.5`. Der erste Teilwert zählt damit doppelt so stark wie der zweite.
 Die Gewichte selbst ergeben `1.0 + 0.5 = 1.5`. Die relativen Anteile sind

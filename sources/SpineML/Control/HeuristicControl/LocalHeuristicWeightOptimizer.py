@@ -143,9 +143,11 @@ class LocalHeuristicWeightOptimizer:
                         current_local_weights = remembered_solution.weights
                     # Ohne gespeicherte beste Bewertung dient ein Zufallssatz als Ausgangspunkt.
                     else:
-                        current_local_weights = self.random_local_weight_candidates(
-                            1, exploration_rng
-                        )[0]
+                        random_weight_sets = self.random_local_weight_candidates(
+                            candidate_count=1,
+                            rng=exploration_rng,
+                        )
+                        current_local_weights = random_weight_sets[0]
                     # Setzt die Schrittweite auf ihren Anfangswert zurück.
                     weight_step_fraction = initial_local_weight_step_fraction
                     # Neustart-Zähler zurück auf 0; der Abbruch-Zähler zählt weiter.

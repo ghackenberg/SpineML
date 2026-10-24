@@ -40,9 +40,9 @@ class RandomPolicy(Policy):
 
             object_observation = PolicyObservation(snapshot, object_id)
             actions = self.action_generator.generate_actions(object_observation)
-            # Derselbe Job darf innerhalb einer Entscheidung nur einmal gepickt werden.
             available_actions = [
                 action for action in actions
+                # Jobs in selected_job_ids sind bereits zugeteilt; kein zweiter Roboter darf sie aufnehmen.
                 if not (
                     action["action_type"].startswith("pick_")
                     and action["payload"]["selected_job_id"] in selected_job_ids

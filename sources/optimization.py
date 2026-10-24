@@ -591,16 +591,11 @@ def _start_optimization(state, model_file):
             # Aktualisiert die Statusanzeige: Jetzt wird zuerst die Baseline berechnet.
             state["phase"] = "Calculating baseline with original weights ..."
         
-            # hier liefert die Methode eine Zeile mit globalen Kennzahlen pro Seed.
+            # Berechnet die Baseline-Referenzwerte aus Läufen mit dem Standardgewichtssatz.
             _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
-                # Übergibt den Streamlit-Webserver-Zustand für angezeigten Fortschritt,
-                # Phase, Kennzahlen und Fehlermeldungen.
                 state,
-                # Übergibt den Optimierer, der die Simulation ausführt und bewertet.
                 optimizer,
-                # Erzeugt den unveränderten Standard-weight set als Vergleichsbasis.
                 HeuristicWeights(),
-                # Berechnet aus der Baseline die Referenzwerte für die spätere relative Skalierung.
                 calculate_reference_values=True,
             )
 

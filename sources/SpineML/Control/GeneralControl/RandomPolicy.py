@@ -52,7 +52,11 @@ class RandomPolicy(Policy):
                 action for action in available_actions
                 if not is_wait_action(action["action_type"])
             ]
-            candidates = productive_actions or available_actions
+            if productive_actions:
+                candidates = productive_actions
+            else:
+                candidates = available_actions
+
             if not candidates:
                 continue
 

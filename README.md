@@ -880,29 +880,40 @@ und Policy.
 
 ### Warum die Policy IDs verwendet
 
-- **Objekt eindeutig bezeichnen:** Die ID kennzeichnet das Ziel einer
-  Aktion innerhalb des jeweiligen Registers.
-- **Steuerung entkoppeln:** Die Policy erhält Daten über die Komponente,
-  nicht das Salabim-Objekt selbst. Dadurch bleibt die Steuerung von der
-  konkreten Simulationsimplementierung getrennt.
-- **Datenaustausch erleichtern:** Zustandsdaten und IDs lassen sich
-  einfacher speichern oder übertragen als laufende Simulationsobjekte.
+- **Ziel:** Die Policy soll anhand von Zustandsdaten entscheiden, ohne
+  direkt mit den laufenden Salabim-Komponenten zu arbeiten. Die echten
+  Objekte bleiben auf der Simulationsseite; die Policy bezeichnet sie über IDs.
+- **Vorteil:** Eine andere Policy kann dieselben Daten empfangen und
+  Entscheidungen über dieselbe Schnittstelle zurückgeben. Sie muss dafür
+  die Salabim-Komponenten nicht selbst kennen oder verändern.
 
-Konfigurations- und Simulationsobjekte werden dabei getrennt aufgelöst:
+**Beispiel: Die Policy wählt die Maschine `Near basic`.**
 
-- `selected_machine_id: "CNC A"` wird im Maschinenregister zur konfigurierten
-  `Machine` mit dem Namen `"CNC A"`.
-- Die Ziel-ID `"SimMachine:CNC A:left"` bezeichnet dagegen die ausführende
-  `SimMachine`-Komponente.
-- `target_store_id: "CNC A in"` bezeichnet den echten Salabim-Eingangspuffer
-  dieser Maschine.
+1. **Policy gibt die ID zurück:** Im Aktions-Payload steht
+   `selected_machine_id: "Near basic"`.
+2. **Bridge sucht das Objekt:** Ihre Nachschlagetabelle
+   `machines_by_id` ordnet dieser ID das konfigurierte `Machine`-Objekt zu.
+3. **Bridge übergibt das Objekt an die Simulation:** In der ausführbaren
+   Aktion steht anschließend `selected_machine` mit diesem Objekt anstelle
+   von `selected_machine_id`. Der ausführende Roboter kann die gewählte
+   Maschine damit am Job speichern.
 
-- **Zuordnungen festlegen:** `policy_payload_id_mappings()` in
-  `InterfaceTypes.py` beschreibt, welche ID-Felder zu welchen Registern
-  gehören.
-- **Ausführbare Aktionen erzeugen:** `create_simulation_actions()` ersetzt
-  die ID-Felder durch die zugehörigen Objektfelder, beispielsweise
-  `selected_machine_id` durch `selected_machine`.
+**Die beiden Funktionen im Code:**
+
+- `policy_payload_id_mappings()` in `InterfaceTypes.py` legt fest, welche
+  Nachschlagetabelle zu einem ID-Feld gehört. Für `selected_machine_id`
+  ist das beispielsweise `machines_by_id`.
+- `create_simulation_actions()` in `SimulationBridge.py` verwendet diese
+  Zuordnung: ID nachschlagen, Objekt in den Payload einsetzen und eine
+  `SimulationAction` für die ausführende Komponente erstellen.
+
+**Maschinenauswahl, Aktionsempfänger und Puffer unterscheiden:**
+
+| ID-Angabe | Was bezeichnet sie? |
+| --- | --- |
+| `selected_machine_id: "Near basic"` | Die konfigurierte Maschine, die für die Bearbeitung ausgewählt wurde. |
+| `target_id: "SimMachine:Near basic:left"` | Die ausführende Maschinenkomponente, wenn eine Aktion an diese Maschine geschickt wird. |
+| `target_store_id: "Near basic in"` | Den Eingangspuffer, in dem ein Job abgelegt oder aus dem er aufgenommen werden soll. |
 
 ### Zustände melden und Aktionen empfangen
 

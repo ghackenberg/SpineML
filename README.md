@@ -272,146 +272,133 @@ Erweiterungen gegenüber `main`:
   Simulationszeiteinheit warten. Eine Abschlussaktion mit
   `finish_process=True` beendet seinen Prozess.
 
-#### Herkunft und Aktualisierung der Jobattribute
+<a id="herkunft-und-aktualisierung-der-jobattribute"></a>
 
-Das Diagramm zeigt alle 29 eigenen Attribute aus dem Konstruktor von
-`SimOrderJob`. Die Pfeile zeigen, woher ihre Werte stammen beziehungsweise
-wodurch sie im Ablauf aktualisiert werden.
+#### Wie Steuerung und Simulation die Jobdaten ändern
+
+- **Die Steuerung entscheidet:** Welche Operation soll auf welcher Maschine
+  ausgeführt werden? Soll ein defekter Job nachgearbeitet oder herabgestuft
+  werden?
+- **Die Simulation führt aus:** Roboter transportieren den Job, Maschinen
+  bearbeiten ihn. Dabei werden seine gespeicherten Daten aktualisiert.
+- **Der Job entscheidet nicht selbst:** Er speichert die Auswahl und die
+  Ergebnisse. Außerdem führt er seine empfangenen Aktionen aus, etwa
+  Freigabe, Warten oder Abschluss.
+
+**Beispiel aus `example-5.py`:** Die Steuerung wählt die Operation
+`Rough blank A` (Schruppen) auf der Maschine `Near basic`. Aus dem Rohteil
+`Blank A` wird bei erfolgreicher Bearbeitung ein `Base body` (Grundkörper).
 
 ```mermaid
 ---
 config:
   flowchart:
     wrappingWidth: 360
-    rankSpacing: 40
+    rankSpacing: 30
     nodeSpacing: 20
 ---
-flowchart LR
-    Aufbau["Aufbau der Simulation<br/>Konfiguration und Objektbezüge"]
-    Policy["Steuerung<br/>wählt Aktionen und ihre Vorgaben"]
-    Simulation["Ausführung in der Simulation<br/>Maschinen, Roboter und Job"]
+flowchart TD
+    A["1. Steuerung wählt die nächste Verarbeitung<br/>Operation: Rough blank A (Schruppen)<br/>Maschine: Near basic"]
+    B["2. Roboter speichert die empfangene Auswahl am Job<br/>selected_operation: Rough blank A<br/>selected_machine: Near basic"]
+    C["3. Job ist auf Near basic geladen<br/>Steuerung wählt process_machine_job"]
+    D["4. Maschine führt die Bearbeitung aus<br/>Near basic schruppt den Job"]
+    E["5. Maschine schreibt das erfolgreiche Ergebnis in die Jobdaten<br/>processing_state: Base body (Grundkörper)<br/>general_state: intact<br/>selected_operation = None<br/>selected_machine = None"]
 
-    subgraph Job["SimOrderJob: speichert Daten und führt Aktionen aus"]
-        Basis["Grunddaten und Verbindungen<br/>layout<br/>scenario<br/>order<br/>number<br/>store_start<br/>bridge"]
-        Vorgaben["Vorgaben der Steuerung<br/>released<br/>due_state<br/>downgraded<br/>downgrade_product_type"]
-        Gemeinsam["Steuerungsvorgaben und Ausführungszustand<br/>queue_priority<br/>selected_operation<br/>selected_machine<br/>processing_state<br/>general_state<br/>defect_recovery_strategy<br/>recovery_in_progress"]
-        Ergebnisse["Erfasste Ausführungsergebnisse<br/>location<br/>completed_time<br/>defect_detected_time<br/>defect_operation<br/>defect_machine<br/>defect_product_state_before<br/>defect_product_state_target<br/>defect_severity"]
-        Zaehler["Zähler und Prozessabschluss<br/>defect_count<br/>rework_count<br/>scrap_count<br/>process_finished"]
-    end
+    A -->|"Auswahl über die Bridge an den Roboter"| B
+    B -->|"Transport und Maschinen-Pick"| C
+    C -->|"Bearbeitungsaktion über die Bridge"| D
+    D --> E
 
-    Aufbau --> Basis
-    Policy -->|"Werte im Aktions-Payload"| Vorgaben
-    Policy -->|"Auswahl, Zustand und Strategie vorgeben"| Gemeinsam
-    Simulation -->|"übernehmen, aktualisieren oder zurücksetzen"| Gemeinsam
-    Simulation -->|"Transport und Bearbeitung erfassen"| Ergebnisse
-    Simulation -->|"Aktionen und Defekte verbuchen"| Zaehler
+    classDef steuerung fill:#e8f0fe,stroke:#3467c2,color:#111111
+    classDef roboter fill:#e7f4e4,stroke:#4c8540,color:#111111
+    classDef maschine fill:#fff1dc,stroke:#b77a26,color:#111111
+    class A,C steuerung
+    class B roboter
+    class D,E maschine
 ```
 
-- **Steuerung entscheidet:** Sie bestimmt die Aktion und ihre Vorgaben.
-  Der Job wählt selbst keine Operation, Maschine oder Defektstrategie aus.
-- **Gemeinsame Aktualisierung:** Die Steuerung gibt beispielsweise die
-  nächste Maschine vor; nach der Bearbeitung wird diese Auswahl
-  zurückgesetzt. Den Produktzustand setzt die Steuerung bei der Freigabe
-  und die Maschine nach einer erfolgreichen Bearbeitung.
-- **Ausführung verbuchen:** Defekte und empfangene Nacharbeits- oder
-  Ausschussaktionen erhöhen die entsprechenden Zähler. Eine Abschlussaktion
-  setzt `process_finished=True`.
-- **Details nachlesen:** Die folgenden Abschnitte erklären die Bedeutung
-  der einzelnen Attribute.
+- **Warum wird die Auswahl gelöscht?** Diese Bearbeitung ist erledigt.
+  `None` bedeutet, dass noch keine nächste Operation und Maschine gewählt
+  sind. Die Steuerung kann nun die nächste Verarbeitung auswählen.
+- **Was wird als Auswahl gespeichert?** `selected_operation` und
+  `selected_machine` verweisen auf die gewählten Objekte. Im Diagramm
+  stehen zur besseren Lesbarkeit ihre Namen.
+- **Warum ändern beide Seiten Jobdaten?** Die Steuerung liefert zum Beispiel
+  die Maschinenauswahl; die Simulation speichert diese Auswahl und setzt sie
+  nach der Bearbeitung zurück. Das sind unterschiedliche Aufgaben.
 
 #### Laufzeitstatus eines `SimOrderJob`
 
-- **Entscheidungsdaten übernehmen:** Der Aktions-Payload enthält die von der
-  Steuerung vorgegebenen Werte. Der Job speichert diese Werte, statt selbst
-  eine Operation, Maschine oder Defektstrategie auszuwählen.
-- **Ausführungsergebnisse speichern:** Maschinen und Roboter aktualisieren
-  die betroffenen Jobdaten während ihrer Ausführung, beispielsweise den
-  Produktzustand nach einer Bearbeitung oder die Abschlusszeit.
+Die folgenden Tabellen enthalten alle 29 eigenen Attribute aus dem
+Konstruktor. Sie nennen für jedes Attribut, wer es setzt oder ändert.
+
+##### Beim Erzeugen des Jobs
+
+`SimOrder` übergibt diese sechs Werte an den Konstruktor von `SimOrderJob`:
+
+| Attribut | Was wird beim Erzeugen gespeichert? |
+| --- | --- |
+| `layout` | Das Layout, in dem der Job produziert wird. |
+| `scenario` | Das Szenario mit den Produktionsaufträgen. |
+| `order` | Der Auftrag dieses Jobs. |
+| `number` | Die laufende Jobnummer innerhalb des Auftrags. |
+| `store_start` | Der Startlager-Store. |
+| `bridge` | Die Verbindung zur Steuerung. |
 
 ##### Freigabe, Standort und Abschluss
 
-- `released`: Freigabe für die Produktion, anfangs `False`. Die Aktion
-  `release_job` übergibt den Wert und legt den Job im Startlager ab.
-- `queue_priority`: Von der Steuerung übergebene Priorität für das Ablegen
-  in Stores. Bei der heuristischen Steuerung berechnet der Evaluator sie vor
-  einem Pick aus der aktuellen Deadline; die `RandomPolicy` verwendet `0.0`.
-  Der Job berechnet diesen Wert nicht selbst.
-- `location`: Standort des Jobs, zum Beispiel Store oder beladener Roboter.
-  Die ausführende Komponente aktualisiert ihn nach dem Transport.
-- `completed_time`: Zeitpunkt, den `SimRobotMain` mit `mark_finished()` auf
-  dem Weg ins Endlager speichert. Im aktuellen Code erfolgt dies vor der
-  abschließenden Einlagerungszeit und dem eigentlichen Ablegen im Endlager.
-  Dieser Zeitpunkt wird für Terminstatus und Makespan verwendet.
-- `due_state`: Terminstatus `"on-time"` oder `"late"`; anfangs `None`.
-  `create_completion_actions_for_job()` vergleicht `completed_time` mit der
-  `latest_end_time` des Auftrags und übergibt den Status mit `complete_job`.
-- `process_finished`: Wird durch `finish_process=True` auf `True` gesetzt.
-  Der Job beendet seine Prozessschleife; der `SimCompletionWatcher` verwendet
-  dieses Flag zur Erkennung des Simulationsendes.
+| Attribut | Wer setzt oder ändert den Wert? | Bedeutung |
+| --- | --- | --- |
+| `released` | Der Job übernimmt die Freigabe aus `release_job` der Steuerung. | Anfangs `False`, nach der Freigabe `True`. |
+| `queue_priority` | Die Steuerung liefert die Priorität; Job, Roboter oder Maschine übernehmen sie. | Reihenfolge beim Ablegen in Stores. Die Heuristik verwendet den Termindruck, die `RandomPolicy` den Wert `0.0`. |
+| `location` | Job, Roboter und Maschine speichern ihren jeweiligen Ablage- oder Ladeort am Job. | Aktueller gespeicherter Standort. |
+| `completed_time` | `SimRobotMain` ruft beim Transport zum Endlager `job.mark_finished()` auf. | Gespeicherte Abschlusszeit; im Code vor der letzten Einlagerungszeit und dem tatsächlichen Ablegen im Endlager. |
+| `due_state` | Die Steuerung vergleicht `completed_time` mit der Auftragsdeadline und übergibt das Ergebnis mit `complete_job`. | Anfangs `None`, später `"on-time"` oder `"late"`. |
+| `process_finished` | Der Job setzt das Flag beim Empfang von `finish_process=True`. | Sein Prozess endet; der `SimCompletionWatcher` erkennt daran den Jobabschluss. |
 
 ##### Produktzustand und nächste Verarbeitung
 
-- `processing_state`: Aktueller Produktzustand als Name eines Produkttyps.
-  Anfangs steht hier `"unconfigured"`. Bei der Freigabe setzt die Steuerung
-  den Startprodukttyp; nach erfolgreicher Verarbeitung setzt `SimMachine`
-  den von der Operation erzeugten Produkttyp.
-- `selected_operation`: Von der Steuerung ausgewählte nächste Operation.
-- `selected_machine`: Für diese Operation ausgewählte konkrete `Machine`.
-  Diese Auswahl bestimmt auch das Transportziel. Nach der Verarbeitung setzt
-  `SimMachine` beide Auswahlfelder auf `None`.
+| Attribut | Wer setzt oder ändert den Wert? | Bedeutung |
+| --- | --- | --- |
+| `processing_state` | Der Job übernimmt den Startprodukttyp aus der Freigabeaktion. Nach erfolgreicher Bearbeitung setzt die Maschine den erzeugten Produkttyp. Defektaktionen können den Produktzustand ebenfalls vorgeben. | Aktueller Produkttyp, zum Beispiel Rohteil oder Grundkörper; anfangs `"unconfigured"`. |
+| `selected_operation` | Die Steuerung wählt die Operation; Job oder Roboter speichern die Auswahl. Nach der Bearbeitung setzt die Maschine sie auf `None`. | Die als Nächstes auszuführende Operation. |
+| `selected_machine` | Die Steuerung wählt die Maschine; Job oder Roboter speichern die Auswahl. Nach der Bearbeitung setzt die Maschine sie auf `None`. | Zielmaschine für diese Operation und den zugehörigen Transport. |
 
 ##### Qualität und Herabstufung
 
-- `general_state`: Qualitätsstatus `"intact"`, `"defect"` oder `"scrap"`.
-  `mark_defective()` setzt ihn auf `"defect"`. Ein intaktes
-  Verarbeitungsergebnis setzt ihn auf `"intact"`; eine Ausschussaktion
-  setzt ihn auf `"scrap"`.
-- `downgraded`: Zusätzliche Qualitätsmarkierung, anfangs `False`. Bei
-  `downgrade_product` wird sie auf `True` gesetzt. Der Job erhält keine
-  weitere normale Produktionsroute und wird zum Endlager transportiert.
-- `downgrade_product_type`: Produkttyp für den herabgestuften Job. Verwendet
-  wird der Produkttyp, den die letzte fehlerhafte Operation erzeugen sollte.
-  Das kann ein Zwischenprodukt sein und muss nicht das Auftragsziel sein.
+| Attribut | Wer setzt oder ändert den Wert? | Bedeutung |
+| --- | --- | --- |
+| `general_state` | Die Maschine meldet ein intaktes oder defektes Ergebnis. Der Job übernimmt außerdem die von der Steuerung gewählte Ausschuss- oder Herabstufungsaktion. | `"intact"`, `"defect"` oder `"scrap"`. |
+| `downgraded` | Der Job übernimmt `True` aus der Aktion `downgrade_product`. | Der Job wurde herabgestuft und wird ohne weitere normale Bearbeitung zum Endlager gebracht. |
+| `downgrade_product_type` | Die Steuerung übergibt mit `downgrade_product` den vorgesehenen Produkttyp der fehlerhaften Operation. | Der bei der Herabstufung übernommene Produkttyp. Das kann ein Zwischenprodukt sein. |
 
-- **Beispiel:** Eine Polieroperation liefert ein qualitativ unzureichendes
-  Ergebnis. Bei Herabstufung wird der Job als „poliert“ gespeichert und
-  zusätzlich mit `downgraded=True` markiert. Sein `general_state` lautet
-  danach `"intact"`; die geringere Qualität bleibt durch `downgraded`
-  erkennbar.
+- **Beispiel:** Nach einer misslungenen Polieroperation kann die Steuerung
+  herabstufen. Dann speichert der Job den vorgesehenen Produkttyp „poliert“,
+  `general_state="intact"` und `downgraded=True`. Das zusätzliche Flag
+  kennzeichnet die geringere Qualität.
 
 ##### Defektdaten und Nacharbeit
 
-Bei einem relevanten Defekt ruft `SimMachine` die Methode
-`job.mark_defective()` auf. Diese speichert:
+- **Defekt erkennen:** Nach der Bearbeitung prüft `SimMachine`, ob ein
+  relevanter Defekt vorliegt. Ab Schweregrad `0.001` ruft sie
+  `job.mark_defective()` auf und übergibt die Defektdaten.
+- **Reaktion auswählen:** Der [ActionGenerator](#actiongenerator) erzeugt
+  die möglichen Defektaktionen. Die Steuerung wählt eine davon; der Job
+  führt sie aus.
 
-- `defect_detected_time`: Simulationszeit der Defekterkennung.
-- `defect_operation` und `defect_machine`: verursachende Operation und Maschine.
-- `defect_product_state_before`: Produkttyp vor der fehlerhaften Operation.
-- `defect_product_state_target`: Produkttyp, den diese Operation erzeugen
-  sollte; nicht automatisch das endgültige Auftragsziel.
-- `defect_severity`: Schweregrad des Defekts. `SimMachine` erfasst einen
-  Defekt ab `0.001`. Welche Defektaktionen angeboten werden, bestimmt der
-  [ActionGenerator](#actiongenerator), nicht der Job selbst.
-- **Produktzustand bei der Defektbehandlung:** Im Defektfall bleibt
-  `processing_state` zunächst beim Zustand vor der Operation. Eine
-  Nacharbeitsaktion übergibt `defect_product_state_before`; eine
-  Herabstufungsaktion übergibt `defect_product_state_target`.
-
-Weitere Felder steuern die Defektbehandlung:
-
-- `defect_recovery_strategy`: Gewählte Strategie, etwa
-  `"rework_on_defect_machine"`, `"rework_on_alternative_machine"`,
-  `"downgrade"` oder `"scrap"`. Bei einem neuen Defekt wird die alte
-  Strategie gelöscht.
-- `recovery_in_progress`: Während Transport und Ausführung einer gewählten
-  Nacharbeit `True`. `SimMachine` setzt es nach dieser Operation auf
-  `False`, auch wenn erneut ein Defekt entsteht.
-- `defect_count`: Anzahl der bei diesem Job erkannten Defekte.
-- `rework_count`: Anzahl ausgewählter Nacharbeiten. Der Job erhöht den
-  Zähler beim Empfang einer Nacharbeitsaktion, nicht erst beim Beginn der
-  Bearbeitung. Der Wert geht auch in den Schlüssel für reproduzierbare
-  Qualitätsentscheidungen ein.
-- `scrap_count`: Anzahl der Ausschussentscheidungen; einmal pro Job.
+| Attribut | Wer setzt oder ändert den Wert? | Bedeutung |
+| --- | --- | --- |
+| `defect_detected_time` | `job.mark_defective()` beim Aufruf durch die Maschine. | Zeitpunkt der Defekterkennung. |
+| `defect_operation` | `job.mark_defective()` übernimmt die Operation von der Maschine. | Operation, bei der der letzte Defekt entstand. |
+| `defect_machine` | `job.mark_defective()` übernimmt die verursachende Maschine. | Maschine, auf der der letzte Defekt entstand. |
+| `defect_product_state_before` | Die Maschine übergibt den Eingangsprodukttyp der fehlerhaften Operation. | Produktzustand, auf den die Nacharbeitsaktion den Job zurücksetzt. |
+| `defect_product_state_target` | Die Maschine übergibt den vorgesehenen Ausgangsprodukttyp der fehlerhaften Operation. | Produktzustand, den die Herabstufungsaktion übernimmt; nicht automatisch das Auftragsziel. |
+| `defect_severity` | Die Maschine ermittelt den Schweregrad und übergibt ihn an `job.mark_defective()`. | Schweregrad des letzten Defekts. |
+| `defect_recovery_strategy` | Die Steuerung wählt die Strategie; Job oder Roboter speichern sie. Die Simulation löscht sie bei einem neuen Defekt oder nach erfolgreicher Nacharbeit. | Nacharbeit auf derselben oder einer anderen Maschine, Herabstufung oder Ausschuss. |
+| `recovery_in_progress` | Job oder Main-Roboter setzen es bei gewählter Nacharbeit auf `True`. Die Maschine setzt es nach der Nacharbeitsoperation auf `False`. | Kennzeichnet den laufenden Nacharbeitstransport und die Nachbearbeitung. |
+| `defect_count` | `job.mark_defective()` erhöht den Zähler. | Anzahl erkannter Defekte dieses Jobs. |
+| `rework_count` | Job oder Main-Roboter erhöhen den Zähler beim Übernehmen der gewählten Nacharbeit. | Anzahl ausgewählter Nacharbeiten, nicht erst begonnener Bearbeitungen. Der Zähler geht auch in den Schlüssel der Qualitätszufallszahlen ein. |
+| `scrap_count` | Der Job erhöht den Zähler beim Empfang von `job_scrap`. | Anzahl der Ausschussentscheidungen; einmal pro Job. |
 
 #### UML-Zustandsdiagramm eines Jobs
 

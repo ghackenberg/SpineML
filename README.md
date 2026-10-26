@@ -672,9 +672,9 @@ duration *= self.processing_variation
 
 - **Maschinengeschwindigkeit berücksichtigen:** Ein größerer
   `processing_speed_factor` verkürzt die Bearbeitungsdauer.
-- **Dauervariation berücksichtigen:** Der einmal pro Maschine gezogene
-  `processing_variation`-Wert skaliert jede ihrer Bearbeitungsdauern. Er wird
-  nicht für jede Operation neu gezogen.
+- **Dauervariation berücksichtigen:** Die berechnete Bearbeitungsdauer wird
+  mit `processing_variation` multipliziert. Dieser Faktor wird einmal pro
+  Maschine gezogen und bleibt während des Laufs gleich.
 
 #### Defektprüfung und Recovery
 

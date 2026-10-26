@@ -164,5 +164,21 @@ Machine("Far drill", drilling, far, False, 3, 2, tool_types=[drill_tool], defect
 
 # Startet nur beim direkten Ausführen der Datei, nicht beim Laden durch die Optimierung.
 if __name__ == "__main__":
+    # Produktionswege vom Rohteil zum bestellten Endprodukt:
+    # Fertiges Gehäuse:
+    # Rohteil A -> Grundkörper -> Gefräster Körper -> Fertiges Gehäuse.
+    # Rohteil B -> Grundkörper -> Gefräster Körper -> Fertiges Gehäuse.
+    # Rohteil B -> Gefräster Körper -> Fertiges Gehäuse.
+
+    # Fertiger Halter:
+    # Rohteil A -> Grundkörper -> Gebohrter Körper -> Fertiger Halter.
+    # Rohteil B -> Grundkörper -> Gebohrter Körper -> Fertiger Halter.
+
+    # Poliertes Teil:
+    # Rohteil A -> Grundkörper -> Poliertes Teil.
+    # Rohteil B -> Grundkörper -> Poliertes Teil.
+
+    # Dieselbe Produktfolge kann mit unterschiedlichen Operationen und Maschinen ausgeführt werden.
+
     # Startet die Simulation mit Visualisierung, ohne festes Zeitlimit und mit Animationsgeschwindigkeit 5.
     simulate(layout, scenario, till=sim.inf, animation_speed=5)

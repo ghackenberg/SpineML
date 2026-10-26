@@ -364,8 +364,7 @@ Weitere Felder steuern die Defektbehandlung:
   Zähler beim Empfang einer Nacharbeitsaktion, nicht erst beim Beginn der
   Bearbeitung. Der Wert geht auch in den Schlüssel für reproduzierbare
   Qualitätsentscheidungen ein.
-- `scrap_count`: Anzahl der Ausschussentscheidungen; im regulären Ablauf
-  höchstens eine pro Job.
+- `scrap_count`: Anzahl der Ausschussentscheidungen; einmal pro Job.
 
 #### UML-Zustandsdiagramm eines Jobs
 

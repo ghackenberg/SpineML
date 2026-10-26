@@ -344,14 +344,19 @@ class SimMachine(sim.Component):
         self, job: SimOrderJob, operation: OperationType,
     ) -> float | None:
         """Prüft einen Bearbeitungsvorgang mit dem Risiko der konkreten Maschine."""
+        # Kombiniert Seed, Szenario, Auftrag, Jobnummer, Operation und Nacharbeitszähler.
         quality_key = (
             f"{self.QUALITY_SEED}|{job.scenario.name}|{job.order.name}|"
             f"{job.number}|{operation.name}|{job.rework_count}"
         ).encode("utf-8")
+        # Bildet einen SHA-256-Fingerabdruck und nutzt dessen erste 8 Bytes als Startwert.
+        # Derselbe Schlüssel erzeugt dadurch dieselbe Zufallszahlenfolge.
         quality_rng = random.Random(
             int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
         )
+        # Die erste Zufallszahl entscheidet anhand des Maschinenrisikos über einen Defekt.
         if quality_rng.random() < self.defect_probability:
+            # Die zweite Zufallszahl bestimmt den Defektschweregrad.
             return quality_rng.random()
         return None
 

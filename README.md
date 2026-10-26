@@ -1086,23 +1086,39 @@ Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
 
 **Job:**
 
-- `completed_time` vorhanden und `due_state` noch nicht gesetzt
-  - `complete_job` setzt den Terminstatus und übergibt `finish_process=True`.
-- `general_state == "defect"` → `create_defect_actions_for_job()`:
-  - Laufende Nacharbeit (`recovery_in_progress == True`) → nur `wait_job`.
-  - Schweregrad außerhalb von `0.001 <= defect_severity < 0.6`
-    → nur `job_scrap`.
-  - Schweregrad im Nacharbeitsbereich → mögliche Nacharbeitsaktionen,
-    `downgrade_product` und `wait_job`.
-- `released == False`
-  - `release_job` und zusätzlich `wait_job`.
-- Alle anderen Jobzustände
-  - `wait_job`.
+1. **Abschlusszeit vorhanden, Terminstatus noch offen:** Bei
+   `completed_time is not None` und `due_state is None` wird `complete_job`
+   erzeugt. Die Aktion übergibt den Terminstatus und `finish_process=True`.
+2. **Job ist defekt:** Bei `general_state == "defect"` ruft der Generator
+   `create_defect_actions_for_job()` auf. Diese Methode prüft nacheinander:
 
-- **Herabgestufte Jobs:** Sie erhalten zunächst `wait_job`, bis ihre
-  Abschlussaktion ansteht. Bei der Routen- und Transportgenerierung führt
-  `downgraded=True` zum Transport ins Endlager statt zur nächsten normalen
-  Operation.
+   - **Nacharbeit wurde bereits gewählt:** Bei
+     `recovery_in_progress == True` wird für den Job nur `wait_job`
+     erzeugt. Transport und Bearbeitung der gewählten Nacharbeit werden
+     durch Roboter- und Maschinenaktionen ausgeführt; der Job soll keine
+     zweite Defektstrategie erhalten.
+   - **Sonst: Defekt ist nicht nacharbeitbar:** Liegt der Schweregrad
+     außerhalb von `0.001 <= defect_severity < 0.6`, wird nur `job_scrap`
+     erzeugt.
+   - **Sonst: Defekt ist nacharbeitbar:** Folgende Kandidaten werden
+     gemeinsam zur Auswahl angeboten:
+
+     - `job_rework_on_defect_machine`: Nacharbeit auf derselben Maschine,
+       sofern die Defektmaschine verfügbar ist.
+     - `job_rework_on_alternative_machine`: Nacharbeit auf einer anderen
+       Maschine, je gefundener Alternativroute.
+     - `downgrade_product`: Den Job herabstufen.
+     - `wait_job`: Die Entscheidung zunächst aufschieben.
+
+3. **Job ist noch nicht freigegeben:** Bei `released == False` werden
+   `release_job` und `wait_job` angeboten.
+4. **Keiner der vorherigen Fälle trifft zu:** Es wird nur `wait_job`
+   angeboten.
+
+- **Herabgestufte Jobs:** Nach der Herabstufung erhält der Job zunächst
+  `wait_job`, bis seine Abschlussaktion ansteht. Für den Transport erzeugt
+  der Generator Roboteraktionen zum Endlager. `downgraded=True` verhindert
+  dabei eine weitere normale Bearbeitungsroute.
 
 Für Roboter und Maschinen gelten folgende Zustandsregeln:
 

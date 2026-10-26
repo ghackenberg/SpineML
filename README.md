@@ -437,13 +437,15 @@ Erweiterungen gegenüber `main`:
 
 - **Genau den ausgewählten Job aufnehmen:**
   `take_selected_job_from_store()` entnimmt den im Aktions-Payload angegebenen
-  Job. Ist er nicht mehr im Store, wird kein Ersatzjob ausgewählt.
+  Job.
 - **Geschwindigkeit schwanken lassen:** Jeder Aufruf von `move_x`, `move_y`
   oder `move_z` zieht einen neuen Faktor zwischen `0.95` und `1.05`.
   Die effektive Geschwindigkeit ist `Grundgeschwindigkeit × Zufallsfaktor`.
-- **Bewegungsdaten bereitstellen:** Der Roboter speichert den aktuellen
-  Geschwindigkeitsfaktor und die effektive Bewegungsgeschwindigkeit. Nach
-  einer Bewegung wird die Geschwindigkeit auf `0.0` gesetzt.
+- **Aktuelle Geschwindigkeit speichern:** `effective_movement_speed()`
+  speichert den Zufallsfaktor in `movement_speed_multiplier`. `move_x()`,
+  `move_y()` und `move_z()` speichern die effektive Geschwindigkeit in
+  `movement_speed`. Am Ende der Bewegung setzen sie diesen Wert auf `0.0`:
+  Der Roboter steht; seine Grundgeschwindigkeit bleibt unverändert.
 
 ### `SimRobotMain.py`
 

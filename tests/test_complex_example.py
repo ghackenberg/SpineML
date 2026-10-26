@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 import runpy
 
@@ -77,6 +78,27 @@ def test_complex_example_has_distinct_routes_and_usable_tools(complex_model):
         complex_model["drilled_body"],
     ):
         assert len(intermediate.producing_operations) >= 2
+
+
+def test_all_machines_declare_their_tool_types_explicitly(complex_model):
+    tree = ast.parse(EXAMPLE_PATH.read_text(encoding="utf-8"))
+    machine_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "Machine"
+    ]
+    assert len(machine_calls) == 12
+    for call in machine_calls:
+        tool_list = next(
+            (keyword.value for keyword in call.keywords if keyword.arg == "tool_types"),
+            None,
+        )
+        assert isinstance(tool_list, ast.List)
+        assert tool_list.elts
+
+    for machine in configuration.MACHINES:
+        assert machine.tool_types == machine.machine_type.computeToolTypes()
 
 
 def test_every_order_has_an_acyclic_route_to_raw_material(complex_model):

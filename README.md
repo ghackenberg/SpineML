@@ -68,16 +68,14 @@ Die Modellwahl und die Ergebnisdiagramme sind unter
 
 ## Fabrikkonfiguration
 
-Die Konfiguration beschreibt, welche Produkttypen, Operationen, Werkzeuge,
-Maschinen und Aufträge zur Fabrik gehören. Die Klassen liegen unter
+Dieser Abschnitt beschreibt die Erweiterungen der Fabrikkonfiguration
+gegenüber `main`. Die Klassen liegen unter
 [sources/SpineML/Configuration](sources/SpineML/Configuration).
 
 ### `Layout.py`
 
-`Layout` beschreibt die Fabrik und enthält ihre Korridore. Die Werte
-`storage_out_time` und `storage_in_time` legen die Aus- und Einlagerungszeiten
-am Start- beziehungsweise Endlager fest. `storage_capacity` bestimmt, wie viele
-Jobs (einzelne Werkstücke) jedes dieser Lager aufnehmen kann. Bei
+`Layout` wurde um `storage_capacity` erweitert. Dieser Wert bestimmt, wie viele
+Jobs (einzelne Werkstücke) Start- und Endlager jeweils aufnehmen können. Bei
 `storage_capacity=10` haben Start- und Endlager jeweils zehn Plätze.
 
 ### `Machine.py`
@@ -166,21 +164,6 @@ Schutzwerkzeugs fest und sind keine Argumente des Konstruktors.
 Der getrennte Abschlussprozess `SimMachineShutdown` kann später wieder das
 Schutzwerkzeug montieren. Wann er tatsächlich ausgeführt wird, ist im
 [Abschnitt zum Simulationskern](#diskrete-simulation) beschrieben.
-
-### Szenarien und Aufträge
-
-Ein `Scenario` enthält mehrere `Order`-Objekte (Aufträge). Ein Auftrag legt
-einen Zielprodukttyp, die Menge und seine Zeitvorgaben fest:
-
-- `quantity`: Anzahl der zu erzeugenden Jobs.
-- `product_type`: Zielprodukttyp für alle Jobs dieses Auftrags.
-- `earliest_start_time`: frühester Freigabezeitpunkt.
-- `latest_end_time`: Deadline dieses Auftrags; sie gilt für alle zugehörigen
-  Jobs und nicht für das gesamte Szenario.
-
-Ein Auftrag bestellt einen Produkttyp in einer bestimmten Menge. Mehrere
-Aufträge können denselben Produkttyp bestellen und unterschiedliche Deadlines
-haben.
 
 ## Diskrete Simulation
 

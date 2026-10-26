@@ -164,29 +164,29 @@ Machine("Far drill", drilling, far, False, 3, 2, tool_types=[drill_tool], defect
 
 # Startet nur beim direkten Ausführen der Datei, nicht beim Laden durch die Optimierung.
 if __name__ == "__main__":
-    # Produktionswege: Produkt -> Operation -> Produkt; "oder" kennzeichnet alternative Operationen.
+    # Produktionswege: Produkt -> (Operation) -> Produkt; "oder" kennzeichnet alternative Operationen.
     # Fertiges Gehäuse:
     # Rohteil A -> (Schruppen oder Präzisionsbearbeitung) -> Grundkörper
     #           -> (Fräsen oder Präzisionsfräsen) -> Gefräster Körper
-    #           -> Endbearbeitung -> Fertiges Gehäuse.
-    # Rohteil B -> Schruppen -> Grundkörper
+    #           -> (Endbearbeitung) -> Fertiges Gehäuse.
+    # Rohteil B -> (Schruppen) -> Grundkörper
     #           -> (Fräsen oder Präzisionsfräsen) -> Gefräster Körper
-    #           -> Endbearbeitung -> Fertiges Gehäuse.
-    # Rohteil B -> Direktbearbeitung -> Gefräster Körper
-    #           -> Endbearbeitung -> Fertiges Gehäuse.
+    #           -> (Endbearbeitung) -> Fertiges Gehäuse.
+    # Rohteil B -> (Direktbearbeitung) -> Gefräster Körper
+    #           -> (Endbearbeitung) -> Fertiges Gehäuse.
 
     # Fertiger Halter:
     # Rohteil A -> (Schruppen oder Präzisionsbearbeitung) -> Grundkörper
-    #           -> Bohren (Grundbearbeitungsmaschine oder Bohrmaschine) -> Gebohrter Körper
+    #           -> (Bohren auf der Grundbearbeitungsmaschine oder auf der Bohrmaschine) -> Gebohrter Körper
     #           -> (Endbearbeitung oder Präzisions-Endbearbeitung) -> Fertiger Halter.
-    # Rohteil B -> Schruppen -> Grundkörper
-    #           -> Bohren (Grundbearbeitungsmaschine oder Bohrmaschine) -> Gebohrter Körper
+    # Rohteil B -> (Schruppen) -> Grundkörper
+    #           -> (Bohren auf der Grundbearbeitungsmaschine oder auf der Bohrmaschine) -> Gebohrter Körper
     #           -> (Endbearbeitung oder Präzisions-Endbearbeitung) -> Fertiger Halter.
 
     # Poliertes Teil:
     # Rohteil A -> (Schruppen oder Präzisionsbearbeitung) -> Grundkörper
-    #           -> Polieren -> Poliertes Teil.
-    # Rohteil B -> Schruppen -> Grundkörper -> Polieren -> Poliertes Teil.
+    #           -> (Polieren) -> Poliertes Teil.
+    # Rohteil B -> (Schruppen) -> Grundkörper -> (Polieren) -> Poliertes Teil.
 
     # Dieselbe Produktfolge kann mit unterschiedlichen Operationen und Maschinen ausgeführt werden.
 

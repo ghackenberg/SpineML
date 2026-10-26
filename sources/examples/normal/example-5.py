@@ -28,14 +28,30 @@ finishing = MachineType("Finishing")
 
 # Schruppwerkzeug: Montagezeit 3, Demontagezeit 2, Lebensdauer 48 Einheiten.
 rough_tool = ToolType("Roughing tool", 3, 2, 48)
+# Rohteil A -> Schruppen -> Grundkörper.
+# Rohteil B -> Direktbearbeitung -> Gefräster Körper.
+
 # Fräswerkzeug: Montagezeit 2, Demontagezeit 2, Lebensdauer 32 Einheiten.
 milling_tool = ToolType("Milling tool", 2, 2, 32)
+# Rohteil B -> Schruppen -> Grundkörper.
+# Grundkörper -> Fräsen -> Gefräster Körper.
+
 # Präzisionswerkzeug: Montagezeit 3, Demontagezeit 3, Lebensdauer 36 Einheiten.
 precision_tool = ToolType("Precision tool", 3, 3, 36)
+# Rohteil A -> Präzisionsbearbeitung -> Grundkörper.
+# Grundkörper -> Präzisionsfräsen -> Gefräster Körper.
+# Gebohrter Körper -> Präzisions-Endbearbeitung -> Fertiger Halter.
+
 # Bohrwerkzeug: Montagezeit 1, Demontagezeit 2, Lebensdauer 28 Einheiten.
 drill_tool = ToolType("Drill tool", 1, 2, 28)
+# Grundkörper -> Bohren auf der Grundbearbeitungsmaschine -> Gebohrter Körper.
+# Grundkörper -> Bohren auf der Bohrmaschine -> Gebohrter Körper.
+
 # Polierwerkzeug: Montagezeit 2, Demontagezeit 2, Lebensdauer 40 Einheiten.
 polishing_tool = ToolType("Polishing tool", 2, 2, 40)
+# Gefräster Körper -> Endbearbeitung -> Fertiges Gehäuse.
+# Gebohrter Körper -> Endbearbeitung -> Fertiger Halter.
+# Grundkörper -> Polieren -> Poliertes Teil.
 
 # Rohteil A: Länge 12, Breite 12, Tiefe 12, Gewicht 5.
 blank_a = ProductType("Blank A", 12, 12, 12, 5)

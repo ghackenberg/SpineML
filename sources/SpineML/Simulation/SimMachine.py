@@ -20,9 +20,9 @@ class SimMachine(sim.Component):
         x: float,
         y: float,
         *args,
-        # Größtes Produktgewicht aller Aufträge im Szenario.
+        # Größtes Gewicht der Auftragsziele und ihrer Roh- und Zwischenprodukte.
         max_product_weight: float,
-        # Größtes Produktvolumen aller Aufträge im Szenario.
+        # Größtes Volumen der Auftragsziele und ihrer Roh- und Zwischenprodukte.
         max_product_volume: float,
         **kwargs,
     ):
@@ -254,7 +254,8 @@ class SimMachine(sim.Component):
 
                 remaining_life_units_before_operation = total_life_units
 
-        product = job.order.product_type
+        # Verwendet das Werkstück vor dieser Bearbeitung, nicht das bestellte Endprodukt.
+        product = operation.consumes_product_type
         volume = product.length * product.width * product.depth
 
         # Verhältnis des Produktgewichts zum größten Produktgewicht im Szenario (0 bis 1).

@@ -16,7 +16,18 @@ class SimLayout(sim.Component):
         self.layout = layout
         self.bridge = bridge
 
-        products = [order.product_type for order in scenario.orders]
+        # Erfasst die Auftragsziele und alle vorgeschalteten Roh- und Zwischenprodukte.
+        products = set()
+        pending_products = [order.product_type for order in scenario.orders]
+        while pending_products:
+            product = pending_products.pop()
+            if product in products:
+                continue
+            products.add(product)
+            pending_products.extend(
+                operation.consumes_product_type
+                for operation in product.producing_operations
+            )
 
         self.max_product_weight = max(
             float(product.weight) for product in products

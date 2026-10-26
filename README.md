@@ -193,11 +193,12 @@ Erweiterungen gegenüber `main`:
 
 - **Start- und Endlager begrenzen:** Beide Stores verwenden jetzt
   `layout.storage_capacity` als maximale Anzahl aufnehmbarer Jobs.
-- **Bezugsgrößen für die Bearbeitungsdauer bestimmen:** Aus den
-  Zielprodukttypen der Aufträge werden das maximale Gewicht
-  (`max_product_weight`) und Volumen (`max_product_volume`) ermittelt. Diese
-  Werte werden über die Korridore und Korridorarme an die Maschinen
-  weitergegeben. Dort dienen sie der
+- **Bezugsgrößen für die Bearbeitungsdauer bestimmen:** Ausgehend von den
+  Zielprodukttypen der Aufträge werden über die erzeugenden Operationen
+  auch alle vorgeschalteten Roh- und Zwischenprodukttypen gesammelt. Aus
+  diesen Produkttypen werden das maximale Gewicht (`max_product_weight`)
+  und Volumen (`max_product_volume`) ermittelt. Die Werte werden über die
+  Korridore und Korridorarme an die Maschinen weitergegeben und dienen der
   [Berechnung der größenabhängigen Bearbeitungsdauer](#verarbeitungsdauer).
 - **Bridge weitergeben:** Beim Erzeugen der `SimCorridor`-Komponenten und
   des `SimRobotMain` wird dieselbe `SimulationBridge` übergeben, damit diese
@@ -567,7 +568,8 @@ Erweiterungen gegenüber `main`:
 - **Registrierung bei der Bridge:** Jede `SimMachine` registriert sich selbst
   unter ihrer eigenen ID und meldet dabei auch `store_in` und `store_out` an.
 - **Bezugsgrößen:** `max_product_weight` und `max_product_volume` sind das
-  größte Gewicht und Volumen der Zielprodukttypen aller Aufträge. Sie dienen
+  größte Gewicht und Volumen der Auftragsziele und aller Roh- und
+  Zwischenprodukttypen auf deren definierten Herstellungswegen. Sie dienen
   der Größenanpassung der Bearbeitungsdauer.
 - **Werkzeugausstattung:** `self.tool_types` ist eine eigene Kopie der
   Werkzeugliste der konkreten `Machine`.
@@ -643,17 +645,20 @@ Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
 
 #### Verarbeitungsdauer
 
-- **Verwendetes Produkt:** Die Größenberechnung verwendet den Zielprodukttyp
-  des Auftrags (`job.order.product_type`), nicht den aktuellen
-  Zwischenprodukttyp.
+- **Verwendetes Produkt:** Die Größenberechnung verwendet den
+  Eingangsprodukttyp der ausgeführten Operation
+  (`operation.consumes_product_type`). Damit zählen Gewicht und Volumen
+  des Werkstücks vor dieser Bearbeitung, nicht die des bestellten Endprodukts.
 - **Bezugsgrößen:** Das Produktgewicht wird ins Verhältnis zu
   `max_product_weight` gesetzt, das Volumen zu `max_product_volume`. Beide
   Maximalwerte werden von `SimLayout` ermittelt und können zu
-  unterschiedlichen Zielprodukttypen gehören.
+  unterschiedlichen Produkttypen gehören. Berücksichtigt werden die
+  Auftragsziele sowie alle Roh- und Zwischenprodukttypen auf ihren
+  definierten Herstellungswegen.
 - **Größenfaktor berechnen:**
 
 ```python
-product = job.order.product_type
+product = operation.consumes_product_type
 volume = product.length * product.width * product.depth
 weight_ratio = float(product.weight) / self.max_product_weight
 volume_ratio = float(volume) / self.max_product_volume

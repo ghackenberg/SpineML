@@ -241,9 +241,6 @@ Erweiterungen gegenüber `main`:
 
 - **Bridge an die Jobs weitergeben:** Jeder erzeugte Job erhält die
   `SimulationBridge`, damit er Aktionen von der Steuerung anfordern kann.
-- **Produktzustände auswerten:** Die Auftragsdarstellung verwendet den
-  `processing_state` der Jobs anstelle des bisherigen allgemeinen `state`.
-  `SimOrder` trifft selbst keine Steuerungsentscheidungen.
 
 ### `SimOrderJob.py`
 

@@ -48,7 +48,7 @@ Die folgenden Befehle werden aus dem Projektordner ausgeführt.
 ### Normale Simulation
 
 ```powershell
-python sources/examples/normal/example-0.py
+python sources/examples/normal/example-5.py
 ```
 
 Die Beispieldatei definiert Fabrik und Aufträge und startet
@@ -62,7 +62,7 @@ python -m streamlit run sources/optimization.py
 ```
 
 Im Browser startet **Start optimization** den Vergleich verschiedener
-Gewichtssätze. Ohne andere Modellvorgabe wird `example-1.py` verwendet.
+Gewichtssätze. Als Produktionsbeispiel wird `example-5.py` verwendet.
 Die Modellwahl und die Ergebnisdiagramme sind unter
 [Optimierung starten](#optimierung-starten) erklärt.
 
@@ -2140,26 +2140,24 @@ Suche nach einem geeigneten Gewichtssatz starten.
 
 Die Optimierung wird über das Streamlit-Webinterface gestartet.
 
-1. Das gewünschte Beispiel direkt oben in
-   [sources/optimization.py](sources/optimization.py) bei `EXAMPLE_FILE`
-   eintragen. Standardmäßig ist `example-1.py` eingestellt. Für Beispiel 0
-   wird die Zeile geändert zu:
+1. In [sources/optimization.py](sources/optimization.py) ist das verbleibende
+   Produktionsbeispiel bereits eingestellt:
 
    ```python
-   EXAMPLE_FILE = "example-0.py"
+   EXAMPLE_FILE = "example-5.py"
    ```
 
-2. Die Datei speichern und den Webserver aus dem Projektordner starten:
+2. Den Webserver aus dem Projektordner starten:
 
    ```console
    python -m streamlit run sources/optimization.py
    ```
 
 3. Oben im Interface steht der geladene Dateiname, in diesem Fall
-   `Example: example-0.py`. Auf **Start optimization** klicken.
+   `Example: example-5.py`. Auf **Start optimization** klicken.
    Danach startet die Optimierung.
 
-#### Größeres Beispiel für den Steuerungsvergleich
+#### Produktionsbeispiel für den Steuerungsvergleich
 
 [example-5.py](sources/examples/normal/example-5.py) enthält **24 Jobs aus
 acht Aufträgen**, drei Endprodukte und zwölf Maschinen in drei Seitenkorridoren.
@@ -2168,12 +2166,6 @@ drei Schritten. Operationsdauer, Werkzeugverbrauch, Pufferkapazität,
 maschinenabhängige Defektwahrscheinlichkeit sowie Ein- und Auslagerzeiten
 sind nicht überall gleich. Die Aufträge haben
 unterschiedliche Startzeiten und Deadlines.
-
-Für dieses Beispiel in `sources/optimization.py` eintragen:
-
-```python
-EXAMPLE_FILE = "example-5.py"
-```
 
 Die Steuerungen können damit unterschiedliche Jobs, Maschinen und
 Bearbeitungswege auswählen. Ob der gefundene Gewichtssatz bessere Ergebnisse

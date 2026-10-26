@@ -21,7 +21,7 @@ SOURCES_DIRECTORY = Path(__file__).parent.resolve()
 EXAMPLES_DIRECTORY = SOURCES_DIRECTORY / "examples"
 NORMAL_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "normal"
 OPTIMIZATION_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "optimization"
-EXAMPLE_FILE = "example-1.py"
+EXAMPLE_FILE = "example-5.py"
 SEEDS = [1, 2]
 # Nur für den abschließenden Vergleich, nicht für die Gewichtssuche.
 TEST_SEEDS = [101, 102, 103, 104, 105]

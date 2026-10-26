@@ -303,10 +303,7 @@ def test_real_simulation_supports_fixed_and_seeded_auto_probabilities(machine_mo
     assert model.machines[1].defect_probability is None
 
 
-@pytest.mark.parametrize("filename", [
-    "example-0.py", "example-1.py", "example-2.py", "example-3.py",
-    "example-3b-quality.py", "example-5.py",
-])
+@pytest.mark.parametrize("filename", ["example-5.py"])
 def test_working_examples_use_machine_probabilities(machine_model, filename):
     path = (
         Path(__file__).resolve().parents[1]

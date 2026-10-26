@@ -13,6 +13,12 @@ EXAMPLE_PATH = (
 )
 
 
+def test_only_example_five_is_available_and_selected_by_default():
+    examples_directory = EXAMPLE_PATH.parents[1]
+    assert sorted(examples_directory.rglob("example*.py")) == [EXAMPLE_PATH]
+    assert optimization.EXAMPLE_FILE == EXAMPLE_PATH.name
+
+
 @pytest.fixture
 def complex_model():
     registry_names = (

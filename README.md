@@ -222,38 +222,66 @@ Erweiterungen gegenüber `main`:
   `max_product_weight` und `max_product_volume` für die
   [Berechnung ihrer Bearbeitungsdauer](#verarbeitungsdauer).
 
-### `SimOrder.py` und `SimOrderJob.py`
+### `SimOrder.py`
 
-`SimOrder` erzeugt für jedes einzelne bestellte Produktstück eine eigene
-`SimOrderJob`-Komponente. Ein `SimOrderJob` beschreibt deshalb genau ein
-Werkstück.
+`SimOrder` erzeugt für jedes bestellte Produktstück eine eigene
+`SimOrderJob`-Komponente. Diese Job-Erzeugung war bereits in `main` vorhanden.
 
-Die Steuerung entscheidet über die `SimulationBridge`, welche Operation auf
-welcher Maschine ausgeführt wird. Der Job speichert diese Auswahl und seinen
-aktuellen Zustand.
+Erweiterungen gegenüber `main`:
 
-Über Aktionen kann die Steuerung den Job freigeben oder warten lassen,
-Nacharbeit auf einer Maschine oder einer alternativen Maschine anfordern, den
-Job herabstufen, ihn als Ausschuss markieren oder ihn abschließen. Dafür werden
-unter anderem die Aktionen `release_job`, `wait_job`,
-`job_rework_on_defect_machine`, `job_rework_on_alternative_machine`,
-`downgrade_product`, `job_scrap` und `complete_job` verwendet.
+- **Bridge an die Jobs weitergeben:** Jeder erzeugte Job erhält die
+  `SimulationBridge`, damit er Aktionen von der Steuerung anfordern kann.
+- **Produktzustände auswerten:** Die Auftragsdarstellung verwendet den
+  `processing_state` der Jobs anstelle des bisherigen allgemeinen `state`.
+  `SimOrder` trifft selbst keine Steuerungsentscheidungen.
 
-### Laufzeitstatus eines `SimOrderJob`
+### `SimOrderJob.py`
 
-`SimOrderJob` speichert den Zustand eines einzelnen Werkstücks. Die
-Steuerung liefert Entscheidungen im Aktions-Payload (den zusätzlichen Daten
-einer Aktion); Maschinen und Roboter aktualisieren die Ergebnisse ihrer
-Ausführung direkt am Job.
+`SimOrderJob` beschreibt ein einzelnes Werkstück. In `main` wurden seine
+vollständige Operationsfolge und Maschinenroute bei der Erzeugung zufällig
+ausgewählt. Der Job wurde anschließend direkt im Startlager abgelegt.
 
-#### Freigabe, Standort und Abschluss
+Erweiterungen gegenüber `main`:
+
+- **Job bei der Bridge registrieren:** Jeder Job meldet sich selbst unter
+  einer ID aus Auftragsname und Jobnummer an.
+- **Aktionen von der Steuerung empfangen:** Der Job fordert über
+  `bridge.request_action(self)` eine Aktion an und empfängt sie über
+  `bridge.action(self)`. Er legt seine Route nicht mehr selbst zufällig fest.
+- **Freigabe ausführen:** `release_job` übergibt den Startprodukttyp und die
+  Freigabedaten. Der Job wartet gegebenenfalls bis zum übergebenen
+  Freigabezeitpunkt und legt sich im angegebenen Startlager ab.
+- **Nächste Verarbeitung speichern:** `selected_operation` und
+  `selected_machine` enthalten die von der Steuerung ausgewählte nächste
+  Operation und Maschine.
+- **Zustände getrennt verwalten:** Produktzustand, Qualität und Terminstatus
+  werden getrennt gespeichert. Zusätzlich werden Freigabe, Standort,
+  Priorität und Abschlusszeit festgehalten.
+- **Defektbehandlung ausführen:** Der Job übernimmt die gewählte Nacharbeit
+  auf derselben oder einer alternativen Maschine, Herabstufung oder
+  Ausschussentscheidung. Er speichert Defektdaten, Strategie und Zähler;
+  die Strategieauswahl erfolgt in der Steuerung.
+- **Warten und Abschluss ausführen:** `wait_job` lässt den Job eine
+  Simulationszeiteinheit warten. Eine Abschlussaktion mit
+  `finish_process=True` beendet seinen Prozess.
+
+#### Laufzeitstatus eines `SimOrderJob`
+
+- **Entscheidungsdaten übernehmen:** Der Aktions-Payload enthält die von der
+  Steuerung vorgegebenen Werte. Der Job speichert diese Werte, statt selbst
+  eine Operation, Maschine oder Defektstrategie auszuwählen.
+- **Ausführungsergebnisse speichern:** Maschinen und Roboter aktualisieren
+  die betroffenen Jobdaten während ihrer Ausführung, beispielsweise den
+  Produktzustand nach einer Bearbeitung oder die Abschlusszeit.
+
+##### Freigabe, Standort und Abschluss
 
 - `released`: Freigabe für die Produktion, anfangs `False`. Die Aktion
   `release_job` übergibt den Wert und legt den Job im Startlager ab.
-- `queue_priority`: Prioritätswert, den der Evaluator vor einem Pick aus der
-  aktuellen Deadline berechnet. Roboter und Maschine übernehmen ihn aus dem
-  Payload und verwenden ihn beim Ablegen in Stores. Welcher Job gepickt wird,
-  entscheidet die Policy anhand der Kandidatenscores.
+- `queue_priority`: Von der Steuerung übergebene Priorität für das Ablegen
+  in Stores. Bei der heuristischen Steuerung berechnet der Evaluator sie vor
+  einem Pick aus der aktuellen Deadline; die `RandomPolicy` verwendet `0.0`.
+  Der Job berechnet diesen Wert nicht selbst.
 - `location`: Standort des Jobs, zum Beispiel Store oder beladener Roboter.
   Die ausführende Komponente aktualisiert ihn nach dem Transport.
 - `completed_time`: Zeitpunkt, den `SimRobotMain` mit `mark_finished()` auf
@@ -267,7 +295,7 @@ Ausführung direkt am Job.
   Der Job beendet seine Prozessschleife; der `SimCompletionWatcher` verwendet
   dieses Flag zur Erkennung des Simulationsendes.
 
-#### Produktzustand und nächste Verarbeitung
+##### Produktzustand und nächste Verarbeitung
 
 - `processing_state`: Aktueller Produktzustand als Name eines Produkttyps.
   Anfangs steht hier `"unconfigured"`. Bei der Freigabe setzt die Steuerung
@@ -278,7 +306,7 @@ Ausführung direkt am Job.
   Diese Auswahl bestimmt auch das Transportziel. Nach der Verarbeitung setzt
   `SimMachine` beide Auswahlfelder auf `None`.
 
-#### Qualität und Herabstufung
+##### Qualität und Herabstufung
 
 - `general_state`: Qualitätsstatus `"intact"`, `"defect"` oder `"scrap"`.
   `mark_defective()` setzt ihn auf `"defect"`. Ein intaktes
@@ -291,12 +319,13 @@ Ausführung direkt am Job.
   wird der Produkttyp, den die letzte fehlerhafte Operation erzeugen sollte.
   Das kann ein Zwischenprodukt sein und muss nicht das Auftragsziel sein.
 
-Beispiel: Eine Polieroperation liefert ein qualitativ unzureichendes Ergebnis.
-Bei Herabstufung wird der Job als „poliert“ gespeichert und zusätzlich mit
-`downgraded=True` markiert. Sein `general_state` lautet danach `"intact"`;
-die geringere Qualität bleibt durch `downgraded` erkennbar.
+- **Beispiel:** Eine Polieroperation liefert ein qualitativ unzureichendes
+  Ergebnis. Bei Herabstufung wird der Job als „poliert“ gespeichert und
+  zusätzlich mit `downgraded=True` markiert. Sein `general_state` lautet
+  danach `"intact"`; die geringere Qualität bleibt durch `downgraded`
+  erkennbar.
 
-#### Defektdaten und Nacharbeit
+##### Defektdaten und Nacharbeit
 
 Bei einem relevanten Defekt ruft `SimMachine` die Methode
 `job.mark_defective()` auf. Diese speichert:
@@ -306,14 +335,13 @@ Bei einem relevanten Defekt ruft `SimMachine` die Methode
 - `defect_product_state_before`: Produkttyp vor der fehlerhaften Operation.
 - `defect_product_state_target`: Produkttyp, den diese Operation erzeugen
   sollte; nicht automatisch das endgültige Auftragsziel.
-- `defect_severity`: Schweregrad des Defekts. Ab `0.001` wird ein Defekt
-  erfasst; im Bereich `0.001 <= defect_severity < 0.6` kann die Steuerung
-  Nacharbeit oder Herabstufung anbieten. Ab `0.6` erzeugt sie nur Ausschuss.
-
-Im Defektfall bleibt `processing_state` zunächst beim Zustand vor der
-Operation. Eine Nacharbeitsaktion setzt ihn auf
-`defect_product_state_before`; eine Herabstufungsaktion setzt ihn auf
-`defect_product_state_target`.
+- `defect_severity`: Schweregrad des Defekts. `SimMachine` erfasst einen
+  Defekt ab `0.001`. Welche Defektaktionen angeboten werden, bestimmt der
+  [ActionGenerator](#actiongenerator), nicht der Job selbst.
+- **Produktzustand bei der Defektbehandlung:** Im Defektfall bleibt
+  `processing_state` zunächst beim Zustand vor der Operation. Eine
+  Nacharbeitsaktion übergibt `defect_product_state_before`; eine
+  Herabstufungsaktion übergibt `defect_product_state_target`.
 
 Weitere Felder steuern die Defektbehandlung:
 
@@ -325,17 +353,19 @@ Weitere Felder steuern die Defektbehandlung:
   Nacharbeit `True`. `SimMachine` setzt es nach dieser Operation auf
   `False`, auch wenn erneut ein Defekt entsteht.
 - `defect_count`: Anzahl der bei diesem Job erkannten Defekte.
-- `rework_count`: Anzahl gestarteter Nacharbeiten. Der Wert geht auch in den
-  Schlüssel für reproduzierbare Qualitätsentscheidungen ein.
+- `rework_count`: Anzahl ausgewählter Nacharbeiten. Der Job erhöht den
+  Zähler beim Empfang einer Nacharbeitsaktion, nicht erst beim Beginn der
+  Bearbeitung. Der Wert geht auch in den Schlüssel für reproduzierbare
+  Qualitätsentscheidungen ein.
 - `scrap_count`: Anzahl der Ausschussentscheidungen; im regulären Ablauf
   höchstens eine pro Job.
 
 #### UML-Zustandsdiagramm eines Jobs
 
-Das Diagramm zeigt den fachlichen Ablauf eines Werkstücks. Bezeichnungen wie
-`processing` und `completed` fassen mehrere Codefelder zusammen und sind
-keine zusätzlichen Werte von `processing_state`. Die Produktnamen hängen vom
-jeweiligen Modell ab.
+- **Darstellung:** Das Diagramm zeigt den fachlichen Ablauf eines Werkstücks.
+- **Abgrenzung zum Code:** `processing` und `completed` fassen mehrere
+  Codefelder zusammen und sind keine zusätzlichen Werte von
+  `processing_state`. Die Produktnamen hängen vom jeweiligen Modell ab.
 
 ```mermaid
 stateDiagram-v2
@@ -354,78 +384,120 @@ stateDiagram-v2
     completed --> [*]
 ```
 
-`downgraded` ist als eigener Ablaufzustand sichtbar. Im Code wird die
-Herabstufung durch `downgraded=True` und den übernommenen Produktzustand
-gespeichert.
+- **Herabstufung im Code:** Der Diagrammzustand `downgraded` entspricht der
+  Markierung `downgraded=True` zusammen mit dem übernommenen Produktzustand.
 
-### `SimRobot.py`, `SimRobotMain.py` und `SimRobotCorridorArm.py`
+### `SimRobot.py`
 
-`SimRobot` stellt die gemeinsame Bewegungslogik für X, Y und Z bereit. Die
-Unterklassen `SimRobotMain` und `SimRobotCorridorArm` führen die von der
-Steuerung ausgewählten Pick- und Place-Aktionen aus (Job aufnehmen und
-ablegen) und melden ihre Lade- und Bewegungszustände.
+`SimRobot` stellt die gemeinsame Bewegungslogik für X, Y und Z sowie die
+Positionsdarstellung bereit. Diese Funktionen waren bereits in `main`
+vorhanden.
 
-#### Aktionen und Bewegung
+Erweiterungen gegenüber `main`:
 
-- **Registrierung bei der Bridge:** `SimRobotMain` registriert sich selbst
-  zusammen mit Start- und Endlager. Jeder `SimRobotCorridorArm` registriert
-  sich selbst unter seiner eigenen ID.
-- **Aktionen der Steuerung:**
-  - Main-Roboter: `pick_main_robot`, `place_main_robot`, `wait_main_robot`.
-  - Korridorarm: `pick_corridor_arm_robot`, `place_corridor_arm_robot`,
-    `wait_corridor_arm_robot`.
-- **Simulationskern:** Führt den Transport des im Payload ausgewählten Jobs
-  aus. Die Roboter wählen keinen Ersatzjob und keine neue Route. Die feste
-  Grundgeschwindigkeit wird in `SimRobotMain.py` auf `2.0` und in
-  `SimRobotCorridorArm.py` auf `1.5` gesetzt.
-- **Seed/Reproduzierbarkeit:** `SimRobot.py` erzeugt bei jedem Aufruf von
-  `move_x`, `move_y` oder `move_z` einen neuen Faktor zwischen `0.95` und
-  `1.05`. Die effektive Geschwindigkeit berechnet sich als
-  `Grundgeschwindigkeit × Zufallsfaktor`. Dadurch sind die
-  Geschwindigkeitsschwankungen und die Bewegungsdauer für X, Y und Z bei
-  gleicher Konfiguration und gleichem Seed im `SpineMLSimulationRunner`
-  reproduzierbar.
-- **Zustandsmeldung:** Nach Pick und Place werden Jobstandort, Beladung und
-  Roboterzustand über die Bridge gemeldet. Beim Ablegen im Endlager wird
-  außerdem `completed_time` gesetzt.
+- **Genau den ausgewählten Job aufnehmen:**
+  `take_selected_job_from_store()` entnimmt den im Aktions-Payload angegebenen
+  Job. Ist er nicht mehr im Store, wird kein Ersatzjob ausgewählt.
+- **Geschwindigkeit schwanken lassen:** Jeder Aufruf von `move_x`, `move_y`
+  oder `move_z` zieht einen neuen Faktor zwischen `0.95` und `1.05`.
+  Die effektive Geschwindigkeit ist `Grundgeschwindigkeit × Zufallsfaktor`.
+- **Bewegungsdaten bereitstellen:** Der Roboter speichert den aktuellen
+  Geschwindigkeitsfaktor und die effektive Bewegungsgeschwindigkeit. Nach
+  einer Bewegung wird die Geschwindigkeit auf `0.0` gesetzt.
+
+### `SimRobotMain.py`
+
+Der Main-Roboter transportiert Jobs zwischen Startlager, Korridoren und
+Endlager. Diese Transportaufgabe war bereits in `main` vorhanden.
+
+Erweiterungen gegenüber `main`:
+
+- **Bei der Bridge registrieren:** Der Roboter meldet sich selbst zusammen
+  mit Start- und Endlager an.
+- **Aktionen statt festem Transportablauf ausführen:** Er fordert Aktionen
+  an und führt `pick_main_robot`, `place_main_robot` oder `wait_main_robot`
+  aus. Job, Transportziel sowie Ein- und Auslagerzeiten kommen aus dem
+  Aktions-Payload.
+- **Auswahl und Beladung speichern:** `current_job` enthält den geladenen
+  Job. Der Roboter übernimmt die von der Steuerung vorgegebene Priorität
+  sowie gegebenenfalls die nächste Operation und Maschine.
+- **Bewegungsgeschwindigkeit festlegen:** Die Grundgeschwindigkeit beträgt
+  jetzt `2.0`; die Schwankung pro Achsenbewegung berechnet `SimRobot`.
+- **Abschlusszeit erfassen:** Beim Transport zum Endlager ruft der Roboter
+  `job.mark_finished()` auf. Das geschieht nach dem Absenken, aber vor der
+  letzten Einlagerungszeit und dem tatsächlichen Ablegen im Endlager.
+- **Ablage melden:** Nach dem Ablegen aktualisiert er die betroffenen Daten
+  und benachrichtigt die Bridge mit `notify_state_change()`.
+
+### `SimRobotCorridorArm.py`
+
+Der Korridorroboter transportiert Jobs zwischen Korridor- und Maschinenpuffern.
+Diese Transportaufgabe war bereits in `main` vorhanden.
+
+Erweiterungen gegenüber `main`:
+
+- **Bei der Bridge registrieren:** Jeder Roboter meldet sich selbst unter
+  einer ID aus Korridorname und Korridorseite an.
+- **Aktionen von der Steuerung ausführen:** Er fordert Aktionen an und führt
+  `pick_corridor_arm_robot`, `place_corridor_arm_robot` oder
+  `wait_corridor_arm_robot` aus. Job, Ziel und Lagerzeiten werden übergeben;
+  der Roboter bestimmt keine eigene Route.
+- **Auswahl und Beladung speichern:** Der Roboter verwaltet `current_job`
+  und übernimmt die im Payload vorgegebenen Jobdaten, beispielsweise die
+  Priorität und die ausgewählte Maschine.
+- **Bewegungsgeschwindigkeit festlegen:** Die Grundgeschwindigkeit beträgt
+  jetzt `1.5`; die Schwankung pro Achsenbewegung berechnet `SimRobot`.
+- **Ablage melden:** Nach dem Ablegen aktualisiert er die betroffenen Daten
+  und benachrichtigt die Bridge mit `notify_state_change()`.
 
 ### `SimMachine.py`
 
-`SimMachine` simuliert genau eine konfigurierte `Machine`. Die Steuerung
-bestimmt Job, Operation, Maschine und Werkzeug; `SimMachine` führt die
-ausgewählte Aktion aus. Dabei berücksichtigt sie Pufferkapazitäten,
-Werkzeugwechsel, Werkzeuglebensdauer, Verarbeitungsdauer und Qualität.
+`SimMachine` simuliert genau eine konfigurierte `Machine`. Maschinenpuffer,
+Werkzeugwechsel und Werkzeuglebensdauer waren bereits in `main` vorhanden.
+Die Bearbeitungsdauer entsprach dort unmittelbar `operation.duration`.
+
+Erweiterungen gegenüber `main`:
+
+- **Steuerung und Ausführung trennen:** Die Maschine fordert Aktionen über
+  die Bridge an und führt getrennte Pick-, Verarbeitungs- und Warteaktionen
+  aus. Sie wählt Job, Operation und Werkzeug nicht mehr selbst aus.
+- **Kapazitäten und Ausstattung übernehmen:** Die Puffer verwenden die
+  konfigurierten Kapazitäten; die Werkzeugliste stammt von der konkreten
+  `Machine`. Neu ist auch der Zustand mit montiertem Schutzwerkzeug.
+- **Bearbeitungsdauer erweitern:** Produktgröße, Maschinengeschwindigkeit
+  und ein maschinenspezifischer Variationsfaktor beeinflussen die Dauer.
+- **Qualität prüfen:** Nach jeder Bearbeitung wird mit der
+  Defektwahrscheinlichkeit dieser Maschine geprüft, ob ein Defekt entsteht.
+  Das Ergebnis wird am Job gespeichert; die Steuerung wählt die Reaktion.
 
 #### Aufbau und Laufzeitdaten
 
-- `self.machine` verweist auf die Fabrikkonfiguration der Maschine.
-- `store_in` und `store_out` sind getrennte Eingangs- und Ausgangspuffer mit
-  den konfigurierten Kapazitäten.
+- **Konfiguration:** `self.machine` verweist auf die konfigurierte Maschine.
+- **Puffer:** `store_in` und `store_out` sind getrennte Eingangs- und
+  Ausgangspuffer mit den konfigurierten Kapazitäten.
 - **Registrierung bei der Bridge:** Jede `SimMachine` registriert sich selbst
   unter ihrer eigenen ID und meldet dabei auch `store_in` und `store_out` an.
-- `max_product_weight` und `max_product_volume` sind die größten Werte aller
-  Produkte im Szenario. Sie werden für die Größenanpassung der
-  Verarbeitungsdauer verwendet.
-- `self.tool_types` ist eine eigene Kopie der Werkzeugliste der konkreten
-  `Machine`. Dadurch kann die Simulation ihre Laufzeitliste unabhängig von der
-  Fabrikkonfiguration verwalten. Für jeden Werkzeugtyp verwaltet
-  `SimMachine` vier Werte:
-  `remaining_life_units` ist der aktuelle Restwert,
-  `remaining_life_units_t` dessen gültiger Simulationszeitpunkt,
-  `remaining_life_units_next` der erwartete Restwert nach der laufenden
-  Operation und `remaining_life_units_next_t` der Zeitpunkt, an dem dieser
-  erwartete Wert erreicht wird.
-- Zu Beginn gilt `self.dummy_tool_mounted = True`, während
-  `self.tool_type = None` und `self.current_job = None` sind. Das bedeutet:
-  Das Schutzwerkzeug ist montiert, aber noch kein Produktionswerkzeug und kein
-  Job geladen.
-- `self.processing_speed_factor` entsteht aus dem Basiswert `1.0` und einem
-  einmaligen Zufallsfaktor zwischen `0.45` und `2.0`. `self.processing_variation`
-  wird einmalig zufällig zwischen `0.90` und `1.10` erzeugt und multipliziert
-  später die Verarbeitungsdauer. `self.startup_delay` wird einmalig zwischen
-  `0` und `4` Zeiteinheiten erzeugt und nur vor der ersten Verarbeitung
-  angewendet; `_startup_delay_applied` verhindert eine Wiederholung bei
-  weiteren Jobs.
+- **Bezugsgrößen:** `max_product_weight` und `max_product_volume` sind das
+  größte Gewicht und Volumen der Zielprodukttypen aller Aufträge. Sie dienen
+  der Größenanpassung der Bearbeitungsdauer.
+- **Werkzeugausstattung:** `self.tool_types` ist eine eigene Kopie der
+  Werkzeugliste der konkreten `Machine`.
+- **Werkzeuglebensdauer:** Pro Werkzeugtyp werden vier Werte verwaltet:
+  - `remaining_life_units`: aktueller Restwert.
+  - `remaining_life_units_t`: Simulationszeitpunkt dieses Restwerts.
+  - `remaining_life_units_next`: erwarteter Restwert nach der Operation.
+  - `remaining_life_units_next_t`: erwarteter Abschlusszeitpunkt der Operation.
+- **Anfangszustand:** `dummy_tool_mounted=True` bedeutet, dass das
+  Schutzwerkzeug montiert ist. `tool_type=None` und `current_job=None`
+  bedeuten, dass noch kein Produktionswerkzeug und kein Job geladen sind.
+- **Maschinengeschwindigkeit:** Einmal beim Erzeugen der Maschine wird
+  `machine.processing_speed_factor` mit einem Zufallsfaktor zwischen `0.45`
+  und `2.0` multipliziert. Dieser Wert bleibt für den Lauf unverändert.
+- **Dauervariation:** `processing_variation` wird einmal pro Maschine
+  zwischen `0.90` und `1.10` gezogen und skaliert jede ihrer Bearbeitungsdauern.
+- **Anlaufverzögerung:** `startup_delay` wird einmal zwischen `0` und `4`
+  Zeiteinheiten gezogen. Sie wird nur vor der ersten Bearbeitung angewendet;
+  `_startup_delay_applied` verhindert ihre Wiederholung.
 
 #### Prozess und Aktionen
 
@@ -443,19 +515,15 @@ Der Prozess läuft wiederholt ab:
 5. Bei `wait_machine` wartet sie eine Simulationszeiteinheit und fordert
    anschließend eine neue Aktion an.
 
-Die Maschine wählt weder selbst einen Job noch eine Operation oder ein
-Werkzeug. Fehlt der ausgewählte Job im angegebenen Store, wird die Pick-Aktion
-ohne Verarbeitung beendet.
+- **Keine Ersatzwahl:** Fehlt der ausgewählte Job im angegebenen Store,
+  wird die Pick-Aktion beendet, ohne einen anderen Job aufzunehmen.
 
 #### Werkzeugwechsel und Lebensdauer
 
-Die `process_machine_job`-Payload enthält unter anderem `operation`,
-`tool_type`, `total_life_units`, `consumed_life_units`,
-`remaining_life_units_before_operation`, `tool_setup_action` und
-`target_store`.
+Der Aktions-Payload von `process_machine_job` liefert die auszuführende
+Operation, das Werkzeug und die benötigten Ausführungsdaten:
 
-Die Lebensdauer- und Zielwerte bedeuten:
-
+- `operation` und `tool_type`: ausgewählte Operation und Werkzeugtyp.
 - `total_life_units`: vollständige Lebensdauer des verwendeten Werkzeugs.
 - `consumed_life_units`: Lebensdauer, die die aktuelle Operation verbraucht.
 - `remaining_life_units_before_operation`: verbleibende Lebensdauer vor Beginn
@@ -475,107 +543,95 @@ Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
 - `replace_tool_same_type`: Das verbrauchte Werkzeug wird entfernt und durch
   ein Werkzeug desselben Typs ersetzt.
 
-Wenn die verbleibende Lebensdauer für den Verbrauch der Operation nicht
-ausreicht, wird beim Werkzeugwechsel ein neues Werkzeug mit
-`total_life_units` angenommen. Nach der Operation wird die Lebensdauer um
-`consumed_life_units` reduziert. Während der Verarbeitung wird der erwartete
-Restwert anhand der geplanten Dauer geführt. Nach dem Abschluss wird er auf den
-tatsächlichen Restwert gesetzt.
+- **Werkzeug ersetzen:** Reicht die verbleibende Lebensdauer für die
+  Operation nicht aus, wird beim Werkzeugwechsel ein neues Werkzeug mit
+  `total_life_units` angenommen.
+- **Verbrauch verbuchen:** Nach der Operation wird die Lebensdauer um
+  `consumed_life_units` reduziert.
+- **Anzeige aktualisieren:** Während der Verarbeitung wird der erwartete
+  Restwert anhand der geplanten Dauer geführt. Nach dem Abschluss entspricht
+  er dem tatsächlichen Restwert.
 
 #### Verarbeitungsdauer
 
-Die Größenberechnung verwendet den Zielprodukttyp des Auftrags
-(`job.order.product_type`). `SimLayout` ermittelt die maximalen Gewichte und
-Volumina aus diesen Produkttypen aller Aufträge. Das größte Gewicht und das
-größte Volumen können zu unterschiedlichen Produkttypen gehören.
-
-Zuerst werden relative Größenwerte gebildet:
+- **Verwendetes Produkt:** Die Größenberechnung verwendet den Zielprodukttyp
+  des Auftrags (`job.order.product_type`), nicht den aktuellen
+  Zwischenprodukttyp.
+- **Bezugsgrößen:** Das Produktgewicht wird ins Verhältnis zu
+  `max_product_weight` gesetzt, das Volumen zu `max_product_volume`. Beide
+  Maximalwerte werden von `SimLayout` ermittelt und können zu
+  unterschiedlichen Zielprodukttypen gehören.
+- **Größenfaktor berechnen:**
 
 ```python
-weight_ratio = product.weight / max_product_weight
-volume_ratio = product_volume / max_product_volume
+product = job.order.product_type
+volume = product.length * product.width * product.depth
+weight_ratio = float(product.weight) / self.max_product_weight
+volume_ratio = float(volume) / self.max_product_volume
 size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
 ```
 
-Bei positiven Produktgrößen liegen die Verhältnisse zwischen `0` und `1`;
-damit liegt `size_factor` zwischen `1.0` und `2.0`.
-Die endgültige Dauer wird danach so berechnet:
+- **Wirkung des Größenfaktors:** Bei positiven Produktgrößen liegen die
+  Verhältnisse zwischen `0` und `1`. Der Faktor liegt damit zwischen `1.0`
+  und `2.0` und verlängert die konfigurierte Operationsdauer.
+- **Bearbeitungsdauer berechnen:**
 
 ```python
-duration = operation.duration * size_factor / processing_speed_factor
-duration *= processing_variation
+duration = operation.duration * size_factor / self.processing_speed_factor
+duration *= self.processing_variation
 ```
 
-Damit beeinflussen die Operationsdauer, die Produktgröße, die
-Maschinengeschwindigkeit und eine kleine zufällige Laufzeitabweichung die
-Verarbeitungsdauer.
+- **Maschinengeschwindigkeit berücksichtigen:** Ein größerer
+  `processing_speed_factor` verkürzt die Bearbeitungsdauer.
+- **Dauervariation berücksichtigen:** Der einmal pro Maschine gezogene
+  `processing_variation`-Wert skaliert jede ihrer Bearbeitungsdauern. Er wird
+  nicht für jede Operation neu gezogen.
 
 #### Defektprüfung und Recovery
 
-Nach Ablauf der Verarbeitungsdauer erzeugt die Maschine einen deterministischen
-Qualitätszufallszahlengenerator. Sein Schlüssel enthält den Simulations-Seed,
-das Szenario, den Auftrag, den Job, die Operation und den `rework_count`.
-Die erste Zufallszahl wird mit `self.defect_probability` verglichen. Nur
-bei einem Defekt wird eine zweite Zufallszahl als `defect_severity` erzeugt.
+- **Maschinenrisiko übernehmen:** `self.defect_probability` wird beim
+  Erzeugen der `SimMachine` einmal bestimmt und gilt während des Laufs für
+  alle Bearbeitungen dieser Maschine.
+- **Nach jeder Bearbeitung prüfen:** Nach Ablauf der Bearbeitungsdauer wird
+  `_sample_defect_severity(job, operation)` aufgerufen, auch nach einer
+  Nacharbeit.
+- **Zufallszahlen reproduzierbar erzeugen:** Seed, Szenario, Auftrag,
+  Jobnummer, Operation und `rework_count` bilden den Schlüssel. Aus dessen
+  SHA-256-Fingerabdruck wird der Startwert eines eigenen Zufallsgenerators
+  abgeleitet. Derselbe Schlüssel liefert dieselbe Zufallszahlenfolge.
+- **Defekt und Schweregrad bestimmen:** Die erste Zufallszahl wird mit der
+  Defektwahrscheinlichkeit der Maschine verglichen. Nur wenn sie kleiner
+  ist, wird eine zweite Zufallszahl als Schweregrad zurückgegeben:
 
 ```python
-defect = quality_rng.random() < self.defect_probability
-defect_severity = quality_rng.random() if defect else None
+if quality_rng.random() < self.defect_probability:
+    return quality_rng.random()
+return None
 ```
 
-Bei gleichem Seed und gleichem Kontext entstehen dadurch dieselbe
-Defektentscheidung und derselbe Schweregrad. Ein relevanter Defekt ab
-`0.001` wird mit `job.mark_defective()` gespeichert. Dabei werden Operation,
-Maschine, Produktzustand vor der Operation, Zielzustand und Schweregrad im Job
-festgehalten. Der bisherige `processing_state` bleibt im Defektfall erhalten.
-Ohne relevanten Defekt setzt die Maschine `processing_state` auf den von der
-Operation erzeugten Produkttyp und `general_state` auf `"intact"`.
-
-Nach abgeschlossener Nacharbeit wird
-`recovery_in_progress` zurückgesetzt. Die alte Auswahl von Operation und
-Maschine wird gelöscht, damit die Steuerung die nächste Aktion neu bestimmen
-kann. Die Auswahl der Recovery-Strategie selbst kommt aus der Steuerung; die
-Simulation speichert sie nur und entfernt eine erledigte Rework-Strategie.
-
-#### Seed und Reproduzierbarkeit
-
-Ein Seed ist der Startwert eines Zufallszahlengenerators. Der
-`SpineMLSimulationRunner` setzt vor jedem Lauf `random.seed(seed)`,
-`sim.Environment(random_seed=seed)` und `SimMachine.QUALITY_SEED`.
-
-Bei gleicher Konfiguration, gleichem Seed und demselben Entscheidungsablauf
-sind dadurch folgende Zufallswerte reproduzierbar:
-
-- `SimMachine.processing_speed_factor`: Basiswert der `Machine` multipliziert
-  mit einem einmaligen Zufallsfaktor aus `0.45` bis `2.0`.
-- `SimMachine.processing_variation`: Einmaliger Faktor aus `0.90` bis
-  `1.10`, der die Verarbeitungsdauer multipliziert.
-- `SimMachine.startup_delay`: Einmalige Anlaufverzögerung aus `0` bis `4`
-  Zeiteinheiten.
-- `SimRobot.movement_speed_multiplier`: Neuer Faktor für jede Achsenbewegung.
-- Zufallsauswahl und Exploration des `BaselineActionSelector`.
-- Automatische Defektwahrscheinlichkeiten: `Machine.resolve_defect_probability()`
-  verwendet einen eigenen Generator aus Seed und Maschinenidentität. Feste
-  Eingaben werden dabei nicht verändert. Die Ziehung erfolgt unabhängig von der
-  Reihenfolge, in der die Maschinen aufgebaut werden, und verändert die anderen
-  Zufallszahlengeneratoren nicht.
-
-Die Qualitätsprüfung verwendet einen eigenen `quality_rng`, dessen Startwert
-aus `QUALITY_SEED`, Szenario, Auftrag, Jobnummer, Operation und `rework_count`
-abgeleitet wird. Bei gleichem Schlüssel werden dieselben Zufallszahlen gezogen.
-Ob daraus ein Defekt entsteht, hängt von der `defect_probability` der gewählten
-Maschine ab. Eine andere Operation oder Nacharbeitsrunde ändert den Schlüssel.
-
-Der normale Aufruf `simulate(...)` besitzt derzeit kein `seed`-Argument.
-Die hier beschriebene gemeinsame Seed-Vorgabe übernimmt der Runner für die
-Optimierung.
+- **Relevanten Defekt speichern:** Bei einem Schweregrad ab `0.001` ruft die
+  Maschine `job.mark_defective()` auf. Operation, Maschine, Produktzustände
+  und Schweregrad werden im Job gespeichert; sein bisheriger
+  `processing_state` bleibt erhalten.
+- **Intaktes Ergebnis speichern:** Bei `None` oder einem Schweregrad unter
+  `0.001` erhält der Job den von der Operation erzeugten Produktzustand und
+  `general_state="intact"`.
+- **Nacharbeit abschließen:** Nach einer Nacharbeitsoperation wird
+  `recovery_in_progress=False` gesetzt, auch wenn erneut ein Defekt entsteht.
+  Eine erledigte Nacharbeitsstrategie wird bei intaktem Ergebnis entfernt;
+  bei einem neuen Defekt löscht `mark_defective()` die bisherige Strategie.
+- **Zuständigkeit abgrenzen:** Die Maschine erzeugt und speichert das
+  Qualitätsergebnis. Welche Defektstrategie danach gewählt wird, entscheidet
+  die Steuerung.
 
 #### Abschluss der Verarbeitung und Zustände
 
-Nach der Verarbeitung wird der Job mit seiner Priorität in den im Payload
-genannten Zielstore gelegt und seine `location` wird aktualisiert. Danach wird
-`current_job` auf `None` gesetzt; die Maschine ist wieder frei und meldet ihren
-neuen Zustand mit der nächsten `request_action()`-Anfrage.
+- **Auswahl zurücksetzen:** Nach der Bearbeitung werden `selected_operation`
+  und `selected_machine` des Jobs auf `None` gesetzt.
+- **Job ablegen:** Die Maschine legt ihn mit seiner Priorität im übergebenen
+  Zielstore ab und aktualisiert seine `location`.
+- **Maschine freigeben:** `current_job` wird auf `None` gesetzt. Mit der
+  nächsten `request_action()`-Anfrage wird wieder eine Aktion angefordert.
 
 Die wichtigsten Maschinenzustände sind:
 
@@ -586,26 +642,12 @@ Die wichtigsten Maschinenzustände sind:
 - `working`: Die Operation wird ausgeführt.
 - `returning`: Die Verarbeitung ist beendet und der Job wird abgelegt.
 
-`SimMachineShutdown` kann als eigene, einmalige Salabim-Komponente das
-Produktionswerkzeug entfernen und wieder das Schutzwerkzeug montieren. Die
-eigene Komponente trennt diesen einmaligen Ablauf von der wiederholten
-Jobverarbeitung in der `while`-Schleife von `SimMachine`.
-
-Im aktuellen `SpineMLSimulationRunner` wird der Abschlussprozess nicht
-gestartet. Auch `simulate()` überspringt ihn, wenn der
-`SimCompletionWatcher` den Lauf beendet hat. Die Klasse allein bewirkt daher
-keinen automatischen Werkzeugwechsel am Ende jedes Laufs.
-
-Die globale Kennzahl `tool_change_time` addiert tatsächlich ausgeführte
-Montage- und Demontagezeiten. Der Makespan verwendet die gespeicherten
-Jobabschlusszeiten; ein separat ausgeführter Werkzeugabschluss verlängert
-diese nicht.
-
 #### UML-Zustandsdiagramm von `SimMachine`
 
-Das Diagramm zeigt die Zustände der Maschine während eines normalen
-Simulationslaufs. Die Jobauswahl erfolgt weiterhin durch die Steuerung über
-die `SimulationBridge`.
+- **Darstellung:** Das Diagramm zeigt die Maschinenzustände während eines
+  normalen Simulationslaufs.
+- **Jobauswahl:** Die Steuerung bestimmt über die `SimulationBridge`,
+  welcher Job geladen und verarbeitet wird.
 
 ```mermaid
 stateDiagram-v2
@@ -637,26 +679,82 @@ stateDiagram-v2
     end note
 ```
 
-### `SimScenario.py` und `SimCompletionWatcher`
+### `SimMachineShutdown` in `SimMachine.py`
 
-`SimScenario` erzeugt für jeden Auftrag eine `SimOrder`-Komponente.
-`SimOrder` erzeugt die einzelnen `SimOrderJob`-Komponenten und reicht die
-`SimulationBridge` an sie weiter. Die Jobs registrieren sich selbst bei der
-Bridge; `SimOrder` benötigt keine eigenen Steuerungsaktionen.
+Diese zusätzliche Salabim-Komponente ist neu gegenüber `main`. Sie führt
+einen einmaligen Werkzeugabschluss aus, getrennt von der wiederholten
+Jobverarbeitung in `SimMachine`.
 
-Zusätzlich erzeugt `SimScenario` den unabhängigen `SimCompletionWatcher`,
-der das Ende der Jobprozesse überwacht.
+- **Produktionswerkzeug entfernen:** Falls eines montiert ist, wird es unter
+  Berücksichtigung seiner Demontagezeit entfernt.
+- **Schutzwerkzeug montieren:** Anschließend wird das Schutzwerkzeug mit
+  `dummy_tool_mount_time` montiert. Ist es bereits montiert, ist nichts zu tun.
+- **Tatsächlichen Aufruf beachten:** Der `SpineMLSimulationRunner` startet
+  diesen Prozess derzeit nicht. `simulate()` startet ihn nur bei
+  `till == sim.inf`, wenn der erste Simulationslauf ohne Stopp durch den
+  `SimCompletionWatcher` zurückkehrt. Er wird daher nicht automatisch nach
+  jedem Produktionslauf ausgeführt.
+- **Kennzahlen abgrenzen:** `tool_change_time` enthält nur tatsächlich
+  ausgeführte Montage- und Demontagezeiten. Ein separat ausgeführter
+  Werkzeugabschluss verändert die gespeicherten Jobabschlusszeiten und damit
+  den daraus berechneten Makespan nicht.
+
+### `SimScenario.py`
+
+`SimScenario` erzeugt für jeden Auftrag eine `SimOrder`-Komponente. Dieser
+Aufbau war bereits in `main` vorhanden.
+
+Erweiterungen gegenüber `main`:
+
+- **Bridge weitergeben:** Jeder `SimOrder` erhält dieselbe
+  `SimulationBridge` und reicht sie an seine Jobs weiter.
+- **Produktionsende überwachen lassen:** Nach dem Erzeugen der Aufträge
+  wird ein `SimCompletionWatcher` angelegt, der die Jobabschlüsse überwacht.
+
+### `SimCompletionWatcher` in `SimScenario.py`
+
+Der Watcher ist eine neue, eigenständige Salabim-Komponente. Er überwacht,
+wann alle Jobprozesse abgeschlossen sind, und beendet dann den Lauf.
 
 #### Automatisches Simulationsende
 
-`SimScenario` erstellt beim Aufbau des Szenarios den
-`SimCompletionWatcher`. Der Watcher ist eine Salabim-`sim.Component`; seine
-`process()`-Methode läuft als Simulationsprozess. Sie sammelt einmalig alle
-Jobs aus den erzeugten Aufträgen und prüft regelmäßig, ob jeder Job das Flag
-`process_finished=True` besitzt. Das Flag wird durch eine Abschlussaktion mit
-`finish_process=True` gesetzt. Sobald alle Jobs abgeschlossen sind, löst der
-Watcher `sim.SimulationStopped` aus. Der Simulationsrunner fängt dieses Signal
-ab und sammelt anschließend die globalen Kennzahlen.
+1. **Jobs sammeln:** Der Konstruktor sammelt einmalig die Jobs aus den
+   erzeugten Aufträgen.
+2. **Abschlussflags prüfen:** Der eigene `process()`-Ablauf prüft in
+   Abständen von einer Simulationszeiteinheit, ob alle Jobs
+   `process_finished=True` besitzen. Dieses Flag setzt der Job beim Empfang
+   einer Abschlussaktion mit `finish_process=True`.
+3. **Simulation stoppen:** Ist die Jobliste nicht leer und sind alle
+   Jobprozesse abgeschlossen, löst der Watcher `sim.SimulationStopped` aus.
+   Der Stopp erfolgt bei der nächsten Prüfung der Flags.
+4. **Ergebnisse auswerten:** Der Simulationsrunner fängt dieses Signal ab
+   und sammelt anschließend die Produktionskennzahlen.
+
+### Seed und Reproduzierbarkeit
+
+Ein Seed ist der Startwert eines Zufallszahlengenerators. Die gemeinsame
+Seed-Vorgabe übernimmt der `SpineMLSimulationRunner`, nicht eine der oben
+beschriebenen Aufbauklassen.
+
+- **Seed vor dem Lauf setzen:** Der Runner setzt `random.seed(seed)`,
+  `sim.Environment(random_seed=seed)` und `SimMachine.QUALITY_SEED`.
+- **Maschinenfaktoren wiederholen:** Geschwindigkeit, Dauervariation und
+  Anlaufverzögerung werden einmal pro Maschine gezogen. Gleiche
+  Konfiguration und gleicher Seed liefern dieselben Anfangswerte.
+- **Bewegungsschwankungen wiederholen:** Für jede Achsenbewegung wird ein
+  neuer Faktor gezogen. Bei gleichem Seed und gleichem Entscheidungsablauf
+  ist die Folge dieser Ziehungen reproduzierbar.
+- **Automatisches Maschinenrisiko bestimmen:**
+  `Machine.resolve_defect_probability()` verwendet einen eigenen Generator
+  aus Seed und Maschinenidentität. Ein ausdrücklich vorgegebener Wert wird
+  nicht verändert.
+- **Qualitätsprüfung wiederholen:** Derselbe Kontextschlüssel liefert
+  dieselben Qualitätszufallszahlen. Der Vergleich mit dem Risiko der
+  ausgewählten Maschine ist unter
+  [Defektprüfung und Recovery](#defektprüfung-und-recovery) beschrieben.
+- **Normalen Start unterscheiden:** `simulate(...)` besitzt derzeit kein
+  `seed`-Argument. Die hier beschriebene Seed-Vorgabe erfolgt über den Runner
+  bei der Optimierung.
 
 ## SimulationBridge
 

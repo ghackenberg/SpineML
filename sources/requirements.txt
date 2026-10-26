@@ -17,6 +17,3 @@ altair
 # Numerical/video support used by the simulation environment
 numpy
 opencv-python
-
-# Development/test support (not needed to run the application)
-pytest

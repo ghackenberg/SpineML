@@ -22,11 +22,6 @@ dependencies = [
     "altair",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest",
-]
-
 [tool.setuptools]
 package-dir = {"" = "sources"}
 

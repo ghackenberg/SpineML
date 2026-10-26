@@ -649,12 +649,16 @@ Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
   Eingangsprodukttyp der ausgeführten Operation
   (`operation.consumes_product_type`). Damit zählen Gewicht und Volumen
   des Werkstücks vor dieser Bearbeitung, nicht die des bestellten Endprodukts.
-- **Bezugsgrößen:** Das Produktgewicht wird ins Verhältnis zu
-  `max_product_weight` gesetzt, das Volumen zu `max_product_volume`. Beide
-  Maximalwerte werden von `SimLayout` ermittelt und können zu
-  unterschiedlichen Produkttypen gehören. Berücksichtigt werden die
-  Auftragsziele sowie alle Roh- und Zwischenprodukttypen auf ihren
+- **Berücksichtigte Produkttypen:** Die bestellten Endprodukte aller
+  Aufträge im Szenario sowie alle Roh- und Zwischenprodukttypen auf ihren
   definierten Herstellungswegen.
+- **`max_product_weight`:** Größtes Gewicht unter diesen Produkttypen.
+  Das Gewicht des gerade bearbeiteten Werkstücks wird durch diesen Wert geteilt.
+- **`max_product_volume`:** Größtes Volumen unter diesen Produkttypen.
+  Das Volumen des gerade bearbeiteten Werkstücks wird durch diesen Wert geteilt.
+- **Unabhängige Maxima:** Das größte Gewicht und das größte Volumen können
+  zu unterschiedlichen Produkttypen gehören. `SimLayout` bestimmt beide
+  Werte beim Aufbau des Simulationslayouts.
 - **Größenfaktor berechnen:**
 
 ```python

@@ -128,33 +128,23 @@ unterschiedlich viele Jobs aufnehmen.
 
 #### Erlaubte Werkzeugtypen
 
-`tool_types` legt fest, welche Werkzeugtypen die konkrete Maschine verwenden
-darf. Zwei Maschinen desselben `MachineType` können dadurch unterschiedlich
-ausgestattet sein. Beispiel mit bereits definierten Typen und einem Korridor:
+`tool_types` ermöglicht eine eigene Werkzeugliste für jede konkrete Maschine.
+Die explizite Angabe soll reale Unterschiede in der Werkzeugausstattung
+abbilden: Zwei CNC-Maschinen desselben `MachineType` müssen nicht dieselbe
+vollständige Werkzeugliste haben, nur weil beide dieselbe Operation ausführen
+können.
 
-```python
-Machine(
-    "CNC A", cnc_type, corridor, True, 10, 10,
-    tool_types=[turning_tool, milling_tool],
-    defect_probability=0.05,
-)
-Machine(
-    "CNC B", cnc_type, corridor, False, 10, 10,
-    tool_types=[milling_tool],
-    defect_probability=0.20,
-)
-```
+Beispielsweise kann **CNC A nur ein Schruppwerkzeug** unterstützen, während
+**CNC B ein Schruppwerkzeug und zusätzlich ein Fräswerkzeug** unterstützt.
+Beide können damit die zugehörige Schruppoperation ausführen. CNC B kann
+zusätzlich eine Fräsoperation ausführen, sofern diese ihrem Maschinentyp
+zugeordnet ist. Die Werkzeugliste wird deshalb pro Maschine festgelegt und
+nicht ausschließlich aus den Operationen des gemeinsamen Maschinentyps
+abgeleitet.
 
-Wird `tool_types` nicht angegeben, ermittelt
-`MachineType.computeToolTypes()` die Werkzeugtypen aus den Operationen des
-Maschinentyps. Eine explizite Liste erlaubt dagegen eine Ausstattung pro
-Maschine. Eine Operation kann nur zugeordnet werden, wenn Maschinentyp und
-benötigter Werkzeugtyp passen. Deshalb muss eine Maschine nicht automatisch
-alle Operationen ihres Maschinentyps ausführen können.
-
-Die Liste beschreibt erlaubte Werkzeugtypen, keine Stückzahlen einzelner
-Werkzeuge oder Anzahl freier Magazinplätze. Jede `OperationType` benötigt
-weiterhin den in ihr festgelegten Werkzeugtyp.
+Ohne explizite Liste bleibt die bisherige Ableitung über
+`MachineType.computeToolTypes()` erhalten. Für jede konkrete Operation müssen
+weiterhin der Maschinentyp und der benötigte Werkzeugtyp passen.
 
 #### Verarbeitungsgeschwindigkeit
 

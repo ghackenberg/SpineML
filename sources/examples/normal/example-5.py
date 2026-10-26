@@ -72,32 +72,32 @@ polished_part = ProductType("Polished part", 16, 16, 12, 6)
 
 # Die Bearbeitungswege unterscheiden sich in Dauer und Werkzeugverbrauch.
 # Die Defektwahrscheinlichkeit wird unten je Maschine festgelegt, nicht je Operation.
-# Schruppt Rohteil A zum Grundkörper: Dauer 3, Verbrauch 8 Werkzeug-Lebensdauereinheiten.
+# Rohteil A -> Schruppen mit Schruppwerkzeug -> Grundkörper; Dauer 3, Werkzeugverbrauch 8.
 OperationType("Rough blank A", 3, 8, basic, rough_tool, blank_a, base_body)
-# Alternative auf der Präzisionsmaschine: Rohteil A zum Grundkörper; Dauer 7, Verbrauch 4.
+# Rohteil A -> Präzisionsbearbeitung mit Präzisionswerkzeug -> Grundkörper; Dauer 7, Werkzeugverbrauch 4.
 OperationType("Precision blank A", 7, 4, precision, precision_tool, blank_a, base_body)
-# Bearbeitet Rohteil B zum Grundkörper: Dauer 5, Verbrauch 6 Werkzeug-Lebensdauereinheiten.
+# Rohteil B -> Schruppen mit Fräswerkzeug -> Grundkörper; Dauer 5, Werkzeugverbrauch 6.
 OperationType("Rough blank B", 5, 6, basic, milling_tool, blank_b, base_body)
 
-# Fräst den Grundkörper auf der Grundbearbeitungsmaschine: Dauer 8, Verbrauch 8.
+# Grundkörper -> Fräsen mit Fräswerkzeug -> Gefräster Körper; Dauer 8, Werkzeugverbrauch 8.
 OperationType("Basic housing milling", 8, 8, basic, milling_tool, base_body, milled_body)
-# Fräst denselben Grundkörper auf der Präzisionsmaschine: Dauer 5, Verbrauch 5.
+# Grundkörper -> Präzisionsfräsen mit Präzisionswerkzeug -> Gefräster Körper; Dauer 5, Werkzeugverbrauch 5.
 OperationType("Precision housing milling", 5, 5, precision, precision_tool, base_body, milled_body)
-# Direkter Weg von Rohteil B zum gefrästen Körper ohne Grundkörper-Schritt: Dauer 12, Verbrauch 9.
+# Rohteil B -> Direktbearbeitung mit Schruppwerkzeug -> Gefräster Körper; Dauer 12, Werkzeugverbrauch 9.
 OperationType("Direct housing from blank B", 12, 9, basic, rough_tool, blank_b, milled_body)
 
-# Bohrt den Grundkörper auf der Grundbearbeitungsmaschine: Dauer 9, Verbrauch 6.
+# Grundkörper -> Bohren mit Bohrwerkzeug -> Gebohrter Körper; Dauer 9, Werkzeugverbrauch 6.
 OperationType("Basic bracket drilling", 9, 6, basic, drill_tool, base_body, drilled_body)
-# Alternativer Bohrschritt auf der Bohrmaschine: Dauer 4, Verbrauch 4.
+# Grundkörper -> Bohren mit Bohrwerkzeug -> Gebohrter Körper; Dauer 4, Werkzeugverbrauch 4.
 OperationType("Specialist bracket drilling", 4, 4, drilling, drill_tool, base_body, drilled_body)
 
-# Bearbeitet den gefrästen Körper zum fertigen Gehäuse: Dauer 6, Verbrauch 4.
+# Gefräster Körper -> Endbearbeitung mit Polierwerkzeug -> Fertiges Gehäuse; Dauer 6, Werkzeugverbrauch 4.
 OperationType("Housing finishing", 6, 4, finishing, polishing_tool, milled_body, finished_housing)
-# Bearbeitet den gebohrten Körper zum fertigen Halter: Dauer 4, Verbrauch 3.
+# Gebohrter Körper -> Endbearbeitung mit Polierwerkzeug -> Fertiger Halter; Dauer 4, Werkzeugverbrauch 3.
 OperationType("Bracket finishing", 4, 3, finishing, polishing_tool, drilled_body, finished_bracket)
-# Alternativer Abschluss des Halters auf der Präzisionsmaschine: Dauer 7, Verbrauch 2.
+# Gebohrter Körper -> Präzisions-Endbearbeitung mit Präzisionswerkzeug -> Fertiger Halter; Dauer 7, Werkzeugverbrauch 2.
 OperationType("Precision bracket finishing", 7, 2, precision, precision_tool, drilled_body, finished_bracket)
-# Poliert den Grundkörper zum polierten Endprodukt: Dauer 8, Verbrauch 4.
+# Grundkörper -> Polieren mit Polierwerkzeug -> Poliertes Teil; Dauer 8, Werkzeugverbrauch 4.
 OperationType("Base body polishing", 8, 4, finishing, polishing_tool, base_body, polished_part)
 
 # Legt das Szenario für die folgenden acht Aufträge mit insgesamt 24 Jobs an.

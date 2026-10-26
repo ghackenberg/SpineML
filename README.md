@@ -175,30 +175,52 @@ führen sie aus.
 
 ### `SimLayout.py`
 
-`SimLayout` bildet ein konfiguriertes `Layout` als Simulationslayout ab. Ein
-Store ist dabei ein Salabim-Puffer, der Jobs aufnimmt. Beim Aufbau gilt:
+`SimLayout` baut das Simulationslayout mit Startlager, Endlager, Korridoren
+und Main-Roboter auf. Dieser grundlegende Aufbau war bereits in `main`
+vorhanden. Ein Store ist ein Salabim-Puffer, der Jobs aufnimmt.
 
-- Start- und Endlager verwenden `layout.storage_capacity`.
-- Jeder Korridor erhält drei Stores mit `corridor.storage_capacity`.
-- Das maximale Produktgewicht und -volumen werden aus den Aufträgen ermittelt
-  und an die Maschinen für die Laufzeitberechnung weitergegeben.
-- `SimLayout` reicht die `SimulationBridge` an die Laufzeitkomponenten weiter.
-  Die jeweiligen Komponenten registrieren sich beim Erzeugen selbst: Der
-  Main-Roboter, jeder Korridorroboter, jede Maschine und jeder Job registrieren
-  ihre eigene ID. Komponenten registrieren außerdem – soweit vorhanden – die
-  Stores, die sie selbst besitzen oder verwalten.
+Erweiterungen gegenüber `main`:
 
-### `SimCorridor.py` und `SimCorridorArm.py`
+- **Start- und Endlager begrenzen:** Beide Stores verwenden jetzt
+  `layout.storage_capacity` als maximale Anzahl aufnehmbarer Jobs.
+- **Bezugsgrößen für die Bearbeitungsdauer bestimmen:** Aus den
+  Zielprodukttypen der Aufträge werden das maximale Gewicht
+  (`max_product_weight`) und Volumen (`max_product_volume`) ermittelt. Diese
+  Werte werden über die Korridore und Korridorarme an die Maschinen
+  weitergegeben. Dort dienen sie der
+  [Berechnung der größenabhängigen Bearbeitungsdauer](#verarbeitungsdauer).
+- **Bridge weitergeben:** Beim Erzeugen der `SimCorridor`-Komponenten und
+  des `SimRobotMain` wird dieselbe `SimulationBridge` übergeben, damit diese
+  Komponenten mit der Steuerung verbunden sind.
 
-`SimCorridor` erzeugt die drei Korridor-Stores, registriert den Korridor
-zusammen mit diesen Stores bei der `SimulationBridge` und erzeugt den linken
-und rechten Korridorarm. `SimCorridorArm` erzeugt die zugehörigen
-`SimMachine`-Komponenten und den Korridorroboter. Die Werte
-`max_product_weight` und `max_product_volume` werden von `SimLayout` aus dem
-Szenario ermittelt und an jede Maschine weitergegeben.
+### `SimCorridor.py`
 
-Maschinen und Roboter registrieren sich selbst bei der `SimulationBridge`.
-Jede Maschine registriert dabei auch ihren Eingangs- und Ausgangspuffer.
+`SimCorridor` erzeugt die drei Korridor-Stores sowie den linken und rechten
+Korridorarm. Dieser Aufbau war bereits in `main` vorhanden.
+
+Erweiterungen gegenüber `main`:
+
+- **Korridorlager begrenzen:** Die drei Stores verwenden jetzt jeweils
+  `corridor.storage_capacity` als maximale Anzahl aufnehmbarer Jobs.
+- **Korridor und Stores registrieren:** `bridge.register_corridor()` meldet
+  den Korridor zusammen mit seinen drei Stores bei der `SimulationBridge` an.
+- **Bridge und Produktgrößen weitergeben:** Beide `SimCorridorArm`-Komponenten
+  erhalten dieselbe Bridge sowie `max_product_weight` und
+  `max_product_volume`. `SimCorridor` berechnet diese Größen nicht selbst.
+
+### `SimCorridorArm.py`
+
+`SimCorridorArm` erzeugt die Maschinen und den Korridorroboter einer
+Korridorseite. Dieser Aufbau war bereits in `main` vorhanden.
+
+Erweiterungen gegenüber `main`:
+
+- **Bridge weitergeben:** Die erzeugten `SimMachine`-Komponenten und der
+  `SimRobotCorridorArm` erhalten die `SimulationBridge` für den Austausch mit
+  der Steuerung.
+- **Produktgrößen an die Maschinen weitergeben:** Jede `SimMachine` erhält
+  `max_product_weight` und `max_product_volume` für die
+  [Berechnung ihrer Bearbeitungsdauer](#verarbeitungsdauer).
 
 ### `SimOrder.py` und `SimOrderJob.py`
 
@@ -345,6 +367,9 @@ ablegen) und melden ihre Lade- und Bewegungszustände.
 
 #### Aktionen und Bewegung
 
+- **Registrierung bei der Bridge:** `SimRobotMain` registriert sich selbst
+  zusammen mit Start- und Endlager. Jeder `SimRobotCorridorArm` registriert
+  sich selbst unter seiner eigenen ID.
 - **Aktionen der Steuerung:**
   - Main-Roboter: `pick_main_robot`, `place_main_robot`, `wait_main_robot`.
   - Korridorarm: `pick_corridor_arm_robot`, `place_corridor_arm_robot`,
@@ -376,6 +401,8 @@ Werkzeugwechsel, Werkzeuglebensdauer, Verarbeitungsdauer und Qualität.
 - `self.machine` verweist auf die Fabrikkonfiguration der Maschine.
 - `store_in` und `store_out` sind getrennte Eingangs- und Ausgangspuffer mit
   den konfigurierten Kapazitäten.
+- **Registrierung bei der Bridge:** Jede `SimMachine` registriert sich selbst
+  unter ihrer eigenen ID und meldet dabei auch `store_in` und `store_out` an.
 - `max_product_weight` und `max_product_volume` sind die größten Werte aller
   Produkte im Szenario. Sie werden für die Größenanpassung der
   Verarbeitungsdauer verwendet.

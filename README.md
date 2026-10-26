@@ -1073,18 +1073,26 @@ für die Koordination zuständig und verbindet drei austauschbare Bausteine:
 ### ActionGenerator
 
 - **Aufgabe:** `SpineActionGenerator.generate_actions()` liefert die
-  technisch möglichen Aktionen für ein einzelnes wartendes Simulationsobjekt.
+  Aktionskandidaten für genau ein Simulationsobjekt anhand des Snapshots und
+  der Konfiguration. Die Policy ruft ihn für Objekte auf, die eine Aktion
+  angefordert haben.
 - **Kandidaten erzeugen:** `_generate_actions()` verzweigt anhand von
   Objekttyp und Zustand.
 - **Duplikate entfernen:** `generate_actions()` entfernt anschließend
-  exakt identische Aktionen aus der Liste.
+  identische Kandidaten aus der Liste dieses Objekts.
+- **Keine Bewertung oder Ausführung:** Der Generator berechnet keine
+  Scores und wählt keine Aktion aus. Bei der heuristischen Policy folgen
+  Bewertung und Auswahl; erst die Simulation führt die gewählte Aktion aus.
 
 #### Einfache Zustandsregeln
 
 `_generate_actions()` prüft zuerst den Typ und den aktuellen Zustand des
-Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
+Objekts. Die folgenden Regeln gelten jeweils für das betrachtete Objekt.
 
-**Job:**
+##### Job
+
+Die Jobbedingungen werden in dieser Reihenfolge geprüft. Sobald ein Fall
+zutrifft, liefert der Generator dessen Kandidaten zurück.
 
 1. **Abschlusszeit vorhanden, Terminstatus noch offen:** Bei
    `completed_time is not None` und `due_state is None` wird `complete_job`
@@ -1111,7 +1119,10 @@ Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
      - `wait_job`: Die Entscheidung zunächst aufschieben.
 
 3. **Job ist noch nicht freigegeben:** Bei `released == False` werden
-   `release_job` und `wait_job` angeboten.
+   `release_job` und `wait_job` angeboten. Die Freigabeaktion enthält
+   `release_time = max(aktuelle Zeit, earliest_start_time)`. Der Job wartet
+   bei ihrer Ausführung gegebenenfalls bis zu diesem Zeitpunkt und legt sich
+   anschließend im Startlager ab.
 4. **Keiner der vorherigen Fälle trifft zu:** Es wird nur `wait_job`
    angeboten.
 
@@ -1120,48 +1131,94 @@ Objekts. Die Verzweigung für einen Job entspricht dabei dieser Reihenfolge:
   der Generator Roboteraktionen zum Endlager. `downgraded=True` verhindert
   dabei eine weitere normale Bearbeitungsroute.
 
-Für Roboter und Maschinen gelten folgende Zustandsregeln:
+##### Main-Roboter
 
-**Main-Roboter oder Korridorarm:**
+- **Kein Job geladen (`current_job_id is None`):** Für jeden Job im
+  Startlager und in den Main-Stores der Korridore wird ein
+  `pick_main_robot`-Kandidat erzeugt. Zusätzlich gibt es `wait_main_robot`.
+- **Job geladen (`current_job_id is not None`):** Der Generator erzeugt
+  passende `place_main_robot`-Kandidaten und zusätzlich `wait_main_robot`.
+  Bei normaler Weiterbearbeitung ist das Ziel der Arm-Eingangspuffer für
+  die nächste Maschine. Fertige, herabgestufte oder als Ausschuss markierte
+  Jobs erhalten einen Transportkandidaten zum Endlager, sofern dort Platz ist.
 
-- `current_job_id == None` → Pick-Kandidaten und Warteaktion.
-- `current_job_id != None` → Place-Kandidaten und Warteaktion.
+##### Korridorroboter
 
-**Maschine:**
+- **Kein Job geladen (`current_job_id is None`):** Für jeden Job im
+  eigenen Arm-Eingangspuffer und in den Ausgangspuffern seiner Maschinen
+  wird ein `pick_corridor_arm_robot`-Kandidat erzeugt. Zusätzlich gibt es
+  `wait_corridor_arm_robot`.
+- **Job geladen (`current_job_id is not None`):** Der Generator erzeugt
+  passende `place_corridor_arm_robot`-Kandidaten und zusätzlich
+  `wait_corridor_arm_robot`. Das Ziel ergibt sich aus der nächsten Maschine:
+  eigener Maschineneingang, Eingangspuffer des anderen Arms oder Main-Store
+  des aktuellen Korridors. Fertige, herabgestufte oder als Ausschuss markierte
+  Jobs werden zum Main-Store für den Weitertransport zum Endlager geführt.
 
-- `current_job_id == None` → Pick-Kandidaten und Warteaktion.
-- `current_job_id != None` und Ausgangspuffer hat Kapazität →
-  `process_machine_job`.
-- `current_job_id != None` und Ausgangspuffer ist voll → `wait_machine`.
+##### Maschine
 
-- **Routen prüfen:** Maschinentyp, Layout und erlaubte Werkzeuge müssen passen.
-- **Transportziele prüfen:** Beim Erzeugen der Transportaktionen werden
-  unter anderem die Zielkapazitäten berücksichtigt.
-- **Nacharbeitsmaschine prüfen:** Ihr Zustand und ihre Puffer bestimmen,
-  ob sie momentan für die Nacharbeit verfügbar ist.
+- **Kein Job geladen (`current_job_id is None`):** Für jeden Job im
+  Eingangspuffer wird ein `pick_machine_job`-Kandidat erzeugt. Zusätzlich
+  gibt es `wait_machine`.
+- **Job geladen und Ausgangspuffer hat Platz:** Es wird nur
+  `process_machine_job` erzeugt, keine zusätzliche Wartealternative.
+- **Job geladen und Ausgangspuffer voll:** Es wird nur `wait_machine`
+  erzeugt.
+- **Bearbeitungsdaten übernehmen:** Die Verarbeitungsaktion verwendet die
+  am geladenen Job gespeicherte Operation und Maschine. Die Werkzeugdaten
+  und eine nötige Werkzeugvorbereitung werden aus dem Snapshot übernommen
+  beziehungsweise daraus abgeleitet. Hier wird keine neue Route berechnet.
+
+#### Technische Prüfungen des ActionGenerators
+
+Diese Prüfungen gehören zu unterschiedlichen Erzeugungsmethoden, nicht zu
+den Zustandsregeln einer einzelnen Maschine:
+
+- **Maschinen zu einer Route zuordnen:**
+  `calculate_machine_sequences_from_operation_sequence()` prüft den
+  Maschinentyp, die Zugehörigkeit zum ausgewählten Layout und die erlaubten
+  Werkzeugtypen. Diese Zuordnung sagt noch nicht, ob eine Maschine gerade
+  frei ist.
+- **Unmittelbares Transportziel prüfen:** Die Place-Methoden bestimmen aus
+  dem nächsten Bearbeitungsschritt den Zielstore und erzeugen die Ablageaktion
+  nur bei freier Zielkapazität. Sie prüfen nicht pauschal alle Puffer des
+  weiteren Herstellungswegs.
+- **Nacharbeit auf der Defektmaschine anbieten:**
+  `machine_available_for_rework()` prüft für
+  `job_rework_on_defect_machine` alle vier Bedingungen:
+
+  - Kein Job auf der Maschine geladen.
+  - Maschinenzustand ist `"waiting"`.
+  - Mindestens ein freier Platz im Eingangspuffer.
+  - Mindestens ein freier Platz im Ausgangspuffer.
+
+- **Alternative Nacharbeitsroute bestimmen:**
+  `find_alternative_rework_routes()` sucht Routen, auf denen dieselbe
+  fehlerhafte Operation zuerst auf einer anderen Maschine wiederholt wird.
+  Dabei werden weder die aktuelle Belegung noch die Pufferkapazitäten
+  dieser alternativen Maschine geprüft. Beim späteren Transport wird
+  jeweils die Kapazität des unmittelbar nächsten Zielstores geprüft.
+- **Werkzeugvorbereitung festlegen:** Bei `process_machine_job` steht im
+  Payload, ob das Werkzeug beibehalten, gewechselt oder wegen verbrauchter
+  Lebensdauer ersetzt werden soll. Dafür werden keine separaten
+  Werkzeugwechsel-Kandidaten erzeugt.
 
 #### Mehrere Kandidaten pro wartendem Objekt
 
 - **Möglichkeiten sammeln:** Lässt die Zustandsregel mehrere Aktionen zu,
   erzeugt der Generator sie gemeinsam als Kandidatenliste.
-- **Eine Aktion auswählen:** Der `ActionSelector` lässt die Kandidaten
-  bewerten und wählt eine Aktion für das betrachtete Objekt aus. Die Liste
-  bedeutet keine parallele Ausführung aller Kandidaten.
+- **Auswahl der Policy überlassen:** `GeneratorSelectorPolicy` übergibt die
+  Liste an den Selector zur Bewertung und Auswahl. `RandomPolicy` wählt
+  stattdessen ohne Scores. Der Generator führt keinen Kandidaten selbst aus.
 - **Payload-Beispiele lesen:** Die folgenden Beispiele zeigen jeweils
   einen einzelnen Kandidaten aus einer solchen Liste.
 
-**Defekter Job mit technisch möglicher Nacharbeit:**
+**Beispiel: Herabstufung eines defekten Jobs**
 
-1. `job_rework_on_defect_machine` (wenn die Defektmaschine verfügbar
-   ist).
-2. `job_rework_on_alternative_machine` (für jede gefundene
-   Alternativroute).
-3. `downgrade_product`.
-4. `wait_job`.
-
-- **Nicht nacharbeitbarer Defekt:** Außerhalb des technisch
-  nacharbeitbaren Schweregradbereichs wird ausschließlich `job_scrap` erzeugt.
-- **Keine verfügbare Nacharbeit:** Gibt es im nacharbeitbaren Bereich
+- **Verfügbare Defektaktionen:** Ihre Erzeugung ist unter
+  [Job](#job) beschrieben. Die Herabstufung ist im Nacharbeitsbereich eine
+  Alternative zur Nacharbeit und zum Warten.
+- **Keine Nacharbeitskandidaten:** Gibt es im nacharbeitbaren Bereich
   weder eine alternative Route noch eine verfügbare Defektmaschine,
   bleiben `downgrade_product` und `wait_job`. Die Policy wählt zwischen
   diesen Kandidaten; die Herabstufung erfolgt nicht automatisch.
@@ -1189,7 +1246,7 @@ Beispiel für eine Herabstufungsaktion:
 }
 ```
 
-**Pick:**
+**Beispiel: Pick eines Roboters**
 
 1. Eine eigene `pick_*`-Aktion für jeden auswählbaren Job im Store (Beispiel:
    zwei Jobs erzeugen zwei Pick-Kandidaten).
@@ -1209,12 +1266,14 @@ Beispiel für eine Pick-Aktion des Main-Roboters:
 }
 ```
 
-**Place:**
+**Beispiel: Place eines Roboters**
 
-1. Eine eigene `place_*`-Aktion für jede technisch mögliche Route und jeden
-   freien Zielstore (Beispiel: zwei freie Zielrouten erzeugen zwei
-   Place-Kandidaten).
-2. Zusätzlich eine `wait_*`-Aktion.
+1. Eine Route legt die nächste Operation und Maschine fest. Daraus ergibt
+   sich der nächste Zielstore des Roboters.
+2. Hat dieser Store Platz, wird ein `place_*`-Kandidat erzeugt. Zwei
+   unterschiedliche nächste Schritte können so zwei Place-Kandidaten ergeben.
+3. Zusätzlich gibt es eine `wait_*`-Aktion. Identische Kandidaten werden
+   anschließend entfernt.
 
 Beispiel für eine Place-Aktion des Main-Roboters:
 
@@ -1232,12 +1291,11 @@ Beispiel für eine Place-Aktion des Main-Roboters:
 }
 ```
 
-**Maschine:**
+**Beispiel: Verarbeitung auf einer Maschine**
 
-1. Eine eigene `pick_machine_job`-Aktion für jeden auswählbaren Job im
-   Eingangspuffer.
-2. Für einen geladenen Job `process_machine_job` bei freiem Ausgangspuffer;
-   bei fehlender Kapazität `wait_machine` (Beispiel: voller Ausgangspuffer).
+- **Voraussetzung:** Ein Job ist geladen und der Ausgangspuffer hat Platz.
+- **Payload:** Er enthält die auszuführende Operation, das Werkzeug, dessen
+  Lebensdauerwerte, die Werkzeugvorbereitung und den Ausgangsstore.
 
 Beispiel für eine Verarbeitungsaktion:
 
@@ -1257,13 +1315,16 @@ Beispiel für eine Verarbeitungsaktion:
 }
 ```
 
-- **Datenquellen:** Die Hilfsmethoden lesen Snapshot, ID-basiertes
-  Konfigurationsmodell, Store-Kapazitäten und mögliche Routen.
+#### Identische Kandidaten entfernen
+
 - **Identische Kandidaten erkennen:** Nur gleicher `action_type` und
   gleicher Payload gelten als Duplikat. Verschiedene vollständige Routen
   können denselben nächsten Schritt und damit eine identische Aktion ergeben.
 - **Unterschiedliche Kandidaten behalten:** Aktionen mit unterschiedlichen
   Payloads bleiben erhalten und stehen dem Selector zur Auswahl.
+- **Nur die Liste dieses Objekts bereinigen:** Der Generator entfernt hier
+  keine konkurrierenden Picks verschiedener Roboter. Diese zusätzliche
+  Prüfung übernimmt die [GeneratorSelectorPolicy](#generatorselectorpolicy).
 
 #### Berechnung von Operations- und Maschinenrouten
 
@@ -1274,9 +1335,11 @@ Beispiel für eine Verarbeitungsaktion:
   passenden Maschinenfolgen. Jede Kombination aus Operations- und
   Maschinenfolge bildet eine Route.
 - **Routen eines Jobs bereitstellen:** `selectable_routes_for_job()`
-  liefert für normale Jobs diese Routen. Bei bereits gewählter Nacharbeit
-  mit konkreter Operation und Maschine liefert sie nur den festgelegten
-  Nacharbeitsschritt.
+  liefert für normale, intakte und noch nicht fertige Jobs diese Routen.
+  Defekte, als Ausschuss markierte, herabgestufte oder noch nicht konfigurierte
+  Jobs erhalten keine normale Produktionsroute. Bei bereits gewählter
+  Nacharbeit mit konkreter Operation und Maschine liefert die Methode nur
+  den festgelegten Nacharbeitsschritt.
 - **Alternative Nacharbeit vorbereiten:**
   `find_rework_routes_with_alternative_machine()` liest die nötigen IDs aus
   der Beobachtung. `find_alternative_rework_routes()` berechnet den weiteren
@@ -1285,6 +1348,14 @@ Beispiel für eine Verarbeitungsaktion:
   Restfolge gesetzt; dazu werden Maschinenfolgen berechnet. Routen mit der
   Defektmaschine als erster Maschine werden ausgeschlossen. Für spätere
   Operationen darf diese Maschine wieder vorkommen.
+- **Defekttransport beim Main-Roboter:** Ist für den geladenen defekten Job
+  eine Operation und Maschine gespeichert, wird diese Auswahl verwendet.
+  Fehlt sie, erzeugt die Main-Place-Methode eigene Transportkandidaten zur
+  Defektmaschine und zu gefundenen Alternativen. Das ist von den oben
+  beschriebenen Job-Defektaktionen zu unterscheiden.
+- **Defekttransport beim Korridorroboter:** Er übernimmt eine vorhandene
+  Operations- und Maschinenauswahl. Ohne solche Auswahl berechnet er für
+  einen defekten Job keine Ersatzroute aus den Defektdaten.
 
 ### ActionSelector
 

@@ -272,6 +272,53 @@ Erweiterungen gegenüber `main`:
   Simulationszeiteinheit warten. Eine Abschlussaktion mit
   `finish_process=True` beendet seinen Prozess.
 
+#### Herkunft und Aktualisierung der Jobattribute
+
+Das Diagramm zeigt alle 29 eigenen Attribute aus dem Konstruktor von
+`SimOrderJob`. Die Pfeile zeigen, woher ihre Werte stammen beziehungsweise
+wodurch sie im Ablauf aktualisiert werden.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 360
+    rankSpacing: 40
+    nodeSpacing: 20
+---
+flowchart LR
+    Aufbau["Aufbau der Simulation<br/>Konfiguration und Objektbezüge"]
+    Policy["Steuerung<br/>wählt Aktionen und ihre Vorgaben"]
+    Simulation["Ausführung in der Simulation<br/>Maschinen, Roboter und Job"]
+
+    subgraph Job["SimOrderJob: speichert Daten und führt Aktionen aus"]
+        Basis["Grunddaten und Verbindungen<br/>layout<br/>scenario<br/>order<br/>number<br/>store_start<br/>bridge"]
+        Vorgaben["Vorgaben der Steuerung<br/>released<br/>due_state<br/>downgraded<br/>downgrade_product_type"]
+        Gemeinsam["Steuerungsvorgaben und Ausführungszustand<br/>queue_priority<br/>selected_operation<br/>selected_machine<br/>processing_state<br/>general_state<br/>defect_recovery_strategy<br/>recovery_in_progress"]
+        Ergebnisse["Erfasste Ausführungsergebnisse<br/>location<br/>completed_time<br/>defect_detected_time<br/>defect_operation<br/>defect_machine<br/>defect_product_state_before<br/>defect_product_state_target<br/>defect_severity"]
+        Zaehler["Zähler und Prozessabschluss<br/>defect_count<br/>rework_count<br/>scrap_count<br/>process_finished"]
+    end
+
+    Aufbau --> Basis
+    Policy -->|"Werte im Aktions-Payload"| Vorgaben
+    Policy -->|"Auswahl, Zustand und Strategie vorgeben"| Gemeinsam
+    Simulation -->|"übernehmen, aktualisieren oder zurücksetzen"| Gemeinsam
+    Simulation -->|"Transport und Bearbeitung erfassen"| Ergebnisse
+    Simulation -->|"Aktionen und Defekte verbuchen"| Zaehler
+```
+
+- **Steuerung entscheidet:** Sie bestimmt die Aktion und ihre Vorgaben.
+  Der Job wählt selbst keine Operation, Maschine oder Defektstrategie aus.
+- **Gemeinsame Aktualisierung:** Die Steuerung gibt beispielsweise die
+  nächste Maschine vor; nach der Bearbeitung wird diese Auswahl
+  zurückgesetzt. Den Produktzustand setzt die Steuerung bei der Freigabe
+  und die Maschine nach einer erfolgreichen Bearbeitung.
+- **Ausführung verbuchen:** Defekte und empfangene Nacharbeits- oder
+  Ausschussaktionen erhöhen die entsprechenden Zähler. Eine Abschlussaktion
+  setzt `process_finished=True`.
+- **Details nachlesen:** Die folgenden Abschnitte erklären die Bedeutung
+  der einzelnen Attribute.
+
 #### Laufzeitstatus eines `SimOrderJob`
 
 - **Entscheidungsdaten übernehmen:** Der Aktions-Payload enthält die von der

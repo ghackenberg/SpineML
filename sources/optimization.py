@@ -431,6 +431,7 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
     if phase_name is None:
         phase_name = "Baseline" if calculate_reference_values else "Optimized weights"
     metrics_by_seed = []
+
     for seed_index, seed in enumerate(seeds, start=1):
         # Legt nur die Statusmeldung im Streamlit-Webserver 
         # für den aktuellen Lauf fest.
@@ -484,6 +485,7 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
         }
         rows.append(row)
     return rows
+
 
 
 def _benchmark_policies(state, optimizer, optimized_weights):

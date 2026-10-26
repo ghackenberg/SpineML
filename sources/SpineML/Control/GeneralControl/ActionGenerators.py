@@ -435,6 +435,9 @@ class SpineActionGenerator(ActionGenerator):
     # Beispiel: completed_time=12 und latest_end_time=10 ergeben due_state="late".
     def create_completion_actions_for_job(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
+
+
+        # Vergleicht den Abschlusszeitpunkt des Jobs mit der Deadline seines Auftrags.
         if current_state["completed_time"] > current_state["latest_end_time"]:
             due_state = "late"
         else:

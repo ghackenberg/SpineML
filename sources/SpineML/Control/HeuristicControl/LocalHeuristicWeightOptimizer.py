@@ -139,10 +139,15 @@ class LocalHeuristicWeightOptimizer:
                 if iterations_without_improvement >= restart_after_no_improvement:
                     # Ausgangspunkt bleibt der zuletzt gespeicherte beste Gewichtssatz.
                     if best_solution_memory:
+
+                        #best_solution_memory speichert die erste beste Bewertung und
+                        # danach nur neue Verbesserungen. Deshalb enthält das letzte Element
+                        # den bisher besten Gewichtssatz.
                         remembered_solution = best_solution_memory[-1]
                         current_local_weights = remembered_solution.weights
                     # Ohne gespeicherte beste Bewertung dient ein Zufallssatz als Ausgangspunkt.
                     else:
+                        #erzeugt einen vollständigen zufälligen Gewichtssatz. Dabei erhält jedes Gewicht einen Zufallswert.
                         random_weight_sets = self.random_local_weight_candidates(
                             candidate_count=1,
                             rng=exploration_rng,
@@ -245,7 +250,7 @@ class LocalHeuristicWeightOptimizer:
 
             # Für diesen einen festen Gewichtssatz: einen vollständigen Produktionslauf pro Seed ausführen.
             # Für jeden Lauf eine globale Bewertungszahl berechnen.
-            # Danach den Durchschnitt dieser Bewertungszahlen über alle Seeds bilden.
+            # Danach den Durchschnitt dieser Bewertungszahlen über alle Seeds bilden.(Für diesen einen festen Gewichtssatz)
             # evaluation.mean_global_cost enthält diesen Durchschnitt für diesen einen Gewichtssatz.
             evaluation = self.evaluate_local_weights_across_seeds(
                 local_weights,

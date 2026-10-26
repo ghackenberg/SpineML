@@ -40,6 +40,8 @@ class RandomPolicy(Policy):
 
             object_observation = PolicyObservation(snapshot, object_id)
             actions = self.action_generator.generate_actions(object_observation)
+
+
             available_actions = [
                 action for action in actions
                 # Jobs in selected_job_ids sind bereits zugeteilt; kein zweiter Roboter darf sie aufnehmen.
@@ -48,13 +50,19 @@ class RandomPolicy(Policy):
                     and action["payload"]["selected_job_id"] in selected_job_ids
                 )
             ]
+
+
             productive_actions = [
                 action for action in available_actions
                 if not is_wait_action(action["action_type"])
             ]
+
+
             if productive_actions:
                 candidates = productive_actions
             else:
+
+                # available_actions enthält auch Warteaktionen
                 candidates = available_actions
 
             if not candidates:

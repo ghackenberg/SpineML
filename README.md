@@ -1838,40 +1838,48 @@ Beispiel:
 
 #### Defektbehandlung
 
-- **Zuständigkeiten:** Der Generator erzeugt technisch mögliche Aktionen
-  für den defekten Job; `evaluate_defect_action()` bewertet sie.
-- **Termindruck:** Für Nacharbeit, Warten und Herabstufung zählt die Restzeit
-  bis zur Auftragsdeadline:
+- **Welche Aktionen stehen zur Auswahl?** Der
+  [ActionGenerator](#job) erzeugt die möglichen Defektaktionen. Dort ist
+  erklärt, wann Nacharbeit, Herabstufung, Warten oder Ausschuss angeboten
+  werden.
+- **Wie werden diese Aktionen bewertet?**
+  [`evaluate_defect_action()`](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py)
+  berechnet für jede angebotene Defektaktion einen Score. Ein höherer
+  Score bewertet die Aktion als vorteilhafter.
+- **Wann ändern sich die Scores wegen der Deadline?** Die Methode prüft
+  die Restzeit bis zur Deadline des Auftrags:
 
 `remaining_time = latest_end_time − aktuelle Zeit`
 
-- **Vor der Deadline (`remaining_time > 0`):** Bei Deadline `10` und
-  aktueller Zeit `8` ist `remaining_time = 10 − 8 = 2`. Es bleiben zwei
-  Zeiteinheiten:
+- **Beispiel mit Deadline `10`:** Bei aktueller Zeit `8` ist die Restzeit
+  `2`: Die Deadline liegt noch in der Zukunft. Bei Zeit `10` ist sie
+  erreicht (`Restzeit = 0`), bei Zeit `11` überschritten (`Restzeit = −1`).
+  Die zusätzlichen Deadline-Strafen und der Herabstufungsbonus gelten
+  bereits ab Zeit `10`.
 
-- **Nacharbeit:** Der berechnete Score erhält keinen Deadline-Strafabzug.
-- **Warten:** Der Score ergibt sich aus `1 − EDD`, ohne Deadline-Strafabzug.
-  Die EDD-Priorität berücksichtigt den Termindruck bereits vor der Deadline.
-- **Herabstufung:** Nur der Defektschweregrad geht als Teilwert ein. Der
-  zusätzliche Deadline-Teilwert `1` wird noch nicht berücksichtigt.
+**Bewertung vor und ab der Deadline mit dem [Standardgewichtssatz](#heuristicweights):**
 
-- **Deadline erreicht oder überschritten (`remaining_time <= 0`):** Bei Zeit
-  `10` ist die Restzeit `0`; bei Zeit `11` ist sie `−1`. Ab Restzeit `0`
-  erhalten Nacharbeit und Warten einen Deadline-Strafabzug. Bei Herabstufung
-  kommt der zusätzliche Teilwert `1` hinzu.
+| Aktion | Bewertungsgrößen und Score vor der Deadline (`remaining_time > 0`) | Score ab der Deadline (`remaining_time <= 0`) |
+| --- | --- | --- |
+| [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) | Gewichteter Durchschnitt aus [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen), [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen), [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) und [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen), ohne Strafabzug | Nacharbeitsscore minus `0.5` |
+| [Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine) | Gewichteter Durchschnitt aus [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen), [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen), [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) und [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen), ohne Strafabzug | Nacharbeitsscore minus `0.5` |
+| [Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job) | Aus dem [Termindruck (EDD)](#1-termindruck-dringendere-jobs-bevorzugen) ergibt die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert) den Score `1 − EDD` | `1 − EDD − 0.2` |
+| [Herabstufung](#herabstufung-downgrade_product) | Der Score entspricht dem [Defektschweregrad](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten) | `0.5 + 0.5 × Defektschweregrad` |
+| [Ausschuss](#ausschuss-job_scrap) | Keine Bewertungsgröße; fester Score `1.0` | `1.0` |
 
-**Strafabzüge bei Nacharbeit und Warten**
-
-- **Reihenfolge:** Die Deadline-Strafe wird erst nach dem gewichteten
-  Durchschnitt abgezogen und gehört nicht zur Gewichtssumme im Nenner:
-
-`Endscore = gewichteter Durchschnitt − Deadline-Strafe`
-
-- **Ohne Strafabzug:** Der Endscore entspricht dem gewichteten Durchschnitt.
-- **Negative Endscores:** Sie bleiben unverändert; höher ist weiterhin
-  vorteilhafter, zum Beispiel `−0.1 > −0.4`.
-- **Technische Zulässigkeit:** Ein negativer Score verbietet keine Aktion.
-  Ob sie technisch möglich ist, prüft der Generator.
+- **Nacharbeitsscore:** Gemeint ist der gewichtete Durchschnitt der
+  Teilwerte aus den vier verlinkten Bewertungsgrößen. Transportzeit zählt
+  nur, wenn sie geschätzt werden kann; Werkzeugreserve nur bei positivem
+  Werkzeugverbrauch der Operation. Die Strafe wird erst von diesem
+  berechneten Score abgezogen.
+- **EDD:** Die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
+  beschreibt den Termindruck. Deshalb verändert sich der Warte-Score
+  schon vor der Deadline; die zusätzliche Strafe `0.2` gilt erst ab der
+  Deadline. Nacharbeit und Herabstufung verwenden EDD nicht als Teilwert;
+  dort wird nur geprüft, ob die Deadline erreicht ist.
+- **Deadline ist kein technischer Ausschluss:** Eine angebotene
+  Nacharbeitsaktion bleibt auch ab der Deadline zur Auswahl. Es ändert
+  sich ihre Bewertung, nicht ihre technische Zulässigkeit.
 
 **Mathematische Begründung der Standardwerte**
 

@@ -1838,269 +1838,224 @@ Beispiel:
 
 #### Defektbehandlung
 
-- **Welche Aktionen stehen zur Auswahl?** Der
-  [ActionGenerator](#job) erzeugt die möglichen Defektaktionen. Dort ist
-  erklärt, wann Nacharbeit, Herabstufung, Warten oder Ausschuss angeboten
-  werden.
-- **Wie werden diese Aktionen bewertet?**
+- **Aktionen erzeugen:** Der [ActionGenerator](#job) bestimmt, welche
+  Defektaktionen für den Job angeboten werden.
+- **Aktionen bewerten:**
   [`evaluate_defect_action()`](sources/SpineML/Control/HeuristicControl/LocalHeuristicActionEvaluator.py)
-  berechnet für jede angebotene Defektaktion einen Score. Ein höherer
-  Score bewertet die Aktion als vorteilhafter.
-- **Wann ändern sich die Scores wegen der Deadline?** Die Methode prüft
-  die Restzeit bis zur Deadline des Auftrags:
+  berechnet für jeden dieser Kandidaten einen Score. Die beiden
+  Nacharbeitsarten werden dafür an `evaluate_defect_recovery_action()`
+  weitergegeben.
+- **Aktion auswählen:** Der [ActionSelector](#actionselector) verwendet
+  diese Scores für seine Auswahl. Ein höherer Score ist vorteilhafter.
+
+**Welche Rolle spielt die Deadline?**
 
 `remaining_time = latest_end_time − aktuelle Zeit`
 
-- **Beispiel mit Deadline `10`:** Bei aktueller Zeit `8` ist die Restzeit
-  `2`: Die Deadline liegt noch in der Zukunft. Bei Zeit `10` ist sie
-  erreicht (`Restzeit = 0`), bei Zeit `11` überschritten (`Restzeit = −1`).
-  Die zusätzlichen Deadline-Strafen und der Herabstufungsbonus gelten
-  bereits ab Zeit `10`.
+- **Vor der Deadline (`remaining_time > 0`):** Nacharbeit und Warten
+  erhalten keinen Deadline-Strafabzug. Herabstufung erhält keinen
+  Deadline-Bonus.
+- **Ab der Deadline (`remaining_time <= 0`):** Vom Nacharbeits- und
+  Warte-Score wird eine Strafe abgezogen. Bei Herabstufung geht ein
+  zusätzlicher Teilwert in den gewichteten Durchschnitt ein.
+- **Beispiel:** Bei Deadline `10` liegt Zeit `8` noch davor
+  (`remaining_time = 2`). Genau bei Zeit `10` gilt bereits die zweite
+  Regel (`remaining_time = 0`), ebenso bei Zeit `11` (`remaining_time = −1`).
+- **Keine Zulässigkeitsprüfung:** Eine angebotene Nacharbeit bleibt auch
+  ab der Deadline zur Auswahl. Der Evaluator prüft nicht, ob sie noch
+  rechtzeitig abgeschlossen werden kann.
 
-**Bewertung vor und ab der Deadline mit dem [Standardgewichtssatz](#heuristicweights):**
-
-| Aktion | Bewertungsgrößen und Score vor der Deadline (`remaining_time > 0`) | Score ab der Deadline (`remaining_time <= 0`) |
-| --- | --- | --- |
-| [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) | Gewichteter Durchschnitt aus [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen), [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen), [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) und [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen), ohne Strafabzug | Nacharbeitsscore minus `0.5` |
-| [Nacharbeit auf einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine) | Gewichteter Durchschnitt aus [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen), [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen), [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) und [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen), ohne Strafabzug | Nacharbeitsscore minus `0.5` |
-| [Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job) | Aus dem [Termindruck (EDD)](#1-termindruck-dringendere-jobs-bevorzugen) ergibt die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert) den Score `1 − EDD` | `1 − EDD − 0.2` |
-| [Herabstufung](#herabstufung-downgrade_product) | Der Score entspricht dem [Defektschweregrad](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten) | `0.5 + 0.5 × Defektschweregrad` |
-| [Ausschuss](#ausschuss-job_scrap) | Keine Bewertungsgröße; fester Score `1.0` | `1.0` |
-
-- **Nacharbeitsscore:** Gemeint ist der gewichtete Durchschnitt der
-  Teilwerte aus den vier verlinkten Bewertungsgrößen. Transportzeit zählt
-  nur, wenn sie geschätzt werden kann; Werkzeugreserve nur bei positivem
-  Werkzeugverbrauch der Operation. Die Strafe wird erst von diesem
-  berechneten Score abgezogen.
-- **EDD:** Die [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen)
-  beschreibt den Termindruck. Deshalb verändert sich der Warte-Score
-  schon vor der Deadline; die zusätzliche Strafe `0.2` gilt erst ab der
-  Deadline. Nacharbeit und Herabstufung verwenden EDD nicht als Teilwert;
-  dort wird nur geprüft, ob die Deadline erreicht ist.
-- **Deadline ist kein technischer Ausschluss:** Eine angebotene
-  Nacharbeitsaktion bleibt auch ab der Deadline zur Auswahl. Es ändert
-  sich ihre Bewertung, nicht ihre technische Zulässigkeit.
-
-**Mathematische Begründung der Standardwerte**
-
-- **Modellvorgaben:** Die folgenden Scoregrenzen sind bewusst gewählt.
-  [HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
-  leitet daraus Standardstrafen und Herabstufungsgewichte ab.
-- **Notation:** `s` bezeichnet den Defektschweregrad in `[0, 1]`:
-
-```mermaid
-flowchart TD
-    D["Deadline erreicht oder überschritten<br/>remaining_time ≤ 0"]
-    D --> R["Nacharbeit<br/>Score höchstens 0.5"]
-    R --> RP["Grundscore höchstens 1<br/>Strafe = 1 − 0.5 = 0.5"]
-    D --> W["Warten<br/>Score höchstens 0.3"]
-    W --> WP["EDD ≥ 0.5: 1 − EDD ≤ 0.5<br/>Strafe = 0.5 − 0.3 = 0.2"]
-    D --> G["Herabstufung<br/>Score zwischen 0.5 und 1"]
-    G --> GB["Bonus = 0.5 × (1 − s)<br/>Score = s + Bonus"]
-```
-
-- **Untergrenze der Herabstufung:** Der Wert `0.5` orientiert sich am
-  maximalen Nacharbeitsscore ab der Deadline. Die lineare Abbildung soll bei
-  `s = 0` den Score `0.5` und bei `s = 1` den Score `1` ergeben:
-
-`Score = 0.5 + (1 − 0.5) × s = s + 0.5 × (1 − s)`
-
-- **Gewichtsverhältnis:** Mit dem zusätzlichen Deadline-Teilwert `1`
-  entspricht die Abbildung dem normierten Verhältnis `0.5 : 0.5`.
-  Defektschwere und Deadline-Teilwert erhalten jeweils das Gewicht `0.5`.
-- **Bonus:** Er entspricht der Hälfte des verbleibenden Abstands zum Score
-  `1`, nicht einem pauschalen Aufschlag von `0.5`.
-- **Beabsichtigte Bevorzugung:** Bei positiver Defektschwere erhält
-  Herabstufung ab der Deadline einen höheren Score als Nacharbeit und Warten.
-- **Geltungsbereich:** Die Herleitung gilt für die Standardgewichte. Ein
-  manuell geänderter oder optimierter Gewichtssatz kann die Scoregrenzen
-  verändern. Die Zielgrenzen sind eine Modellierungsentscheidung, kein
-  Nachweis optimaler Steuerung.
-- **Kein Ausschluss:** Der Evaluator entfernt angebotene Nacharbeit bei
-  erreichter Deadline nicht. Er berechnet ihren Score weiter und zieht eine
-  Deadline-Strafe ab.
-- **Beispiele:** Die folgenden Berechnungen verwenden die Standardgewichte
-  aus `HeuristicWeights`. Nach der Deadline gelten die Deadline `10` und die
-  aktuelle Zeit `11`.
+Die folgenden Abschnitte erklären jede Aktion mit ihren
+**verlinkten Bewertungsgrößen, ihrer Berechnung und einem Beispiel**.
+Die Zahlenbeispiele verwenden den [Standardgewichtssatz](#heuristicweights).
+Die [mathematische Begründung der Deadline-Werte](#warum-diese-deadline-strafen-und-dieser-bonus)
+folgt nach den Aktionstypen.
 
 ##### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 
-- **Aufgabe:** Die fehlerhafte Operation wird auf derselben Maschine
-  wiederholt.
-- **Bewertung:** `evaluate_defect_recovery_action()` verwendet die Zustände
-  dieser Maschine und die Daten der zu wiederholenden Operation:
+- **Zweck:** Die fehlerhafte Operation auf derselben Maschine wiederholen.
+  Mit „Defektmaschine“ ist die Maschine gemeint, auf der der Produktdefekt
+  entstanden ist.
+- **Bewertete Maschine:** Alle Maschinen- und Werkzeugdaten beziehen sich
+  auf diese Maschine.
 
-1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
-   `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-2. **[Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
-   `inverse_scale(Transportzeit zur Defektmaschine) × defect_recovery_transport_time_weight`,
-   wenn diese Zeit geschätzt werden kann.
-3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):** `Werkzeugpassung × defect_recovery_tool_match_weight`.
-   Dieses Kriterium geht immer ein.
-4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   falls der Lebensdauerverbrauch der Operation positiv ist.
+**Bewertungsgrößen und Teilwerte:**
 
-- **Transportzeit auf derselben Maschine:** Ausgangs- und Eingangspuffer
-  der Defektmaschine haben im aktuellen Layout dieselben Koordinaten. Liegt
-  der Job im Ausgangspuffer, ermittelt `defect_recovery_transport_time_value()`:
+| Bewertungsgröße | Berechnung des Teilwerts | Gewichtsparameter (Standard) |
+| --- | --- | --- |
+| [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen) | `inverse_scale(Anzahl Jobs im Eingangspuffer)` | `defect_recovery_machine_queue_length_weight` (`0.3`) |
+| [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen) | `inverse_scale(geschätzte Transportzeit)` | `defect_recovery_transport_time_weight` (`0.2`) |
+| [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) | Benötigter Werkzeugtyp montiert: `1`, sonst `0` | `defect_recovery_tool_match_weight` (`0.2`) |
+| [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen) | `direct_scale(verbleibende Lebensdauer / Verbrauch der Operation)` | `defect_recovery_tool_reserve_weight` (`0.2`) |
 
-`Transportzeit = 0` und `Transport-Teilwert = inverse_scale(0) = 1`.
+- **Optionale Kriterien:** Transportzeit geht nur ein, wenn sie geschätzt
+  werden kann; Werkzeugreserve nur bei positivem Werkzeugverbrauch.
+  Entfällt ein Kriterium, entfällt auch sein Gewicht aus dem Durchschnitt.
+- **Transport zur selben Maschine:** Liegt der Job in ihrem Ausgangspuffer,
+  ergibt die direkte Wegschätzung zum Eingangspuffer `0`, weil beide
+  Puffer dieselben Modellkoordinaten haben. Der Transport-Teilwert ist
+  dann `inverse_scale(0) = 1`. Das bedeutet nicht, dass Aufnahme und Ablage
+  in der Simulation keine Zeit benötigen.
+- **Score vor der Deadline:** `calculate_action_score()` bildet den
+  [gewichteten Durchschnitt](#gewichte-und-gesamtscore) der verwendeten Teilwerte.
+- **Score ab der Deadline:** Von diesem Durchschnitt wird
+  `rework_defect_machine_deadline_penalty_weight` abgezogen,
+  standardmäßig `0.5`.
 
-- **Bedeutung des Transport-Teilwerts:** `1` bewertet nur die geschätzte
-  Wegstrecke und bleibt mit seinem Gewicht enthalten. Es setzt nicht den
-  gesamten Aktionsscore auf `1`. Zusätzliche Greif- und Hubbewegungen fehlen
-  in dieser Wegschätzung.
-- **Deadline:** Bei `remaining_time > 0` entfällt der Strafabzug. Bei
-  `remaining_time <= 0` wird nach dem gewichteten Durchschnitt
-  `rework_defect_machine_deadline_penalty_weight` abgezogen, standardmäßig `0.5`.
-- **Rechenbeispiel:** Der Job liegt im Ausgangspuffer dieser Maschine.
-  Mit den Standardgewichten ergeben sich:
+**Rechenbeispiel:** Der Eingangspuffer ist leer, der Job liegt im
+Ausgangspuffer, und das benötigte Werkzeug ist montiert. Es hat noch
+`5` Lebensdauereinheiten; die Wiederholung verbraucht `5` Einheiten.
+Die Teilwerte sind damit `1` für die Warteschlange, `1` für die
+Transportzeit, `1` für die Werkzeugpassung und `direct_scale(5 / 5) = 0.5`
+für die Werkzeugreserve:
 
-- **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
-  Gewicht `0.3`.
-- **Transportzeit:** Die Wegschätzung ergibt `0`. `inverse_scale(0) = 1`,
-  Gewicht `0.2`.
-- **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
-  Teilwert `1`, Gewicht `0.2`.
-- **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
-  `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
+`Nacharbeitsscore = (1 × 0.3 + 1 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 8 / 9 ≈ 0.889`
 
-`Score vor Strafabzug = (1 × 0.3 + 1 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 8 / 9 ≈ 0.889`
-
-- **Vor der Deadline:** Bei aktueller Zeit `8` liegt die Deadline `10` noch
-  in der Zukunft. Ohne Strafabzug bleibt der Score `8 / 9 ≈ 0.889`.
-- **Nach der Deadline:** Bei aktueller Zeit `11` zieht der Code `0.5` ab:
-
-`Endscore = 8 / 9 − 0.5 = 7 / 18 ≈ 0.389`
+| Deadline | Aktuelle Zeit | Endscore |
+| --- | --- | --- |
+| `10` | `8` – vor der Deadline | `8 / 9 ≈ 0.889`, kein Abzug |
+| `10` | `11` – Deadline überschritten | `8 / 9 − 0.5 = 7 / 18 ≈ 0.389` |
 
 ##### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
-- **Aufgabe:** Die fehlerhafte Operation wird auf einer anderen geeigneten
-  Maschine wiederholt. Der Job muss zu deren Eingangspuffer transportiert werden.
-- **Bewertung:** `evaluate_defect_recovery_action()` verwendet die Zustände
-  der ausgewählten Maschine und die Daten der zu wiederholenden Operation:
+- **Zweck:** Dieselbe fehlerhafte Operation auf einer anderen geeigneten
+  Maschine wiederholen.
+- **Bewertete Maschine:** Warteschlange, montiertes Werkzeug und
+  Werkzeuglebensdauer werden von der ausgewählten anderen Maschine gelesen.
 
-1. **[Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen):**
-   `inverse_scale(Maschinenwarteschlangenlänge) × defect_recovery_machine_queue_length_weight`.
-2. **[Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
-   `inverse_scale(Transportzeit zur Nacharbeitsmaschine) × defect_recovery_transport_time_weight`,
-   wenn diese Zeit geschätzt werden kann.
-3. **[Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen):**
-   `Werkzeugpassung × defect_recovery_tool_match_weight`.
-   Dieses Kriterium geht immer ein.
-4. **[Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen):**
-   `direct_scale(verbleibende Lebensdauer / geplanter Verbrauch) × defect_recovery_tool_reserve_weight`,
-   falls der Lebensdauerverbrauch der Operation positiv ist.
+**Bewertungsgrößen und Teilwerte:**
 
-- **Transportzeit zur ausgewählten Maschine:**
-  `defect_recovery_transport_time_value()` berechnet den Weg vom aktuellen
-  Jobstandort zum Eingangspuffer dieser Maschine:
+| Bewertungsgröße | Berechnung des Teilwerts | Gewichtsparameter (Standard) |
+| --- | --- | --- |
+| [Maschinenwarteschlange](#3-maschinenwarteschlange-weniger-wartende-jobs-bevorzugen) | `inverse_scale(Anzahl Jobs im Eingangspuffer)` | `defect_recovery_machine_queue_length_weight` (`0.3`) |
+| [Transportzeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen) | `inverse_scale(geschätzte Transportzeit zur ausgewählten Maschine)` | `defect_recovery_transport_time_weight` (`0.2`) |
+| [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) | Benötigter Werkzeugtyp montiert: `1`, sonst `0` | `defect_recovery_tool_match_weight` (`0.2`) |
+| [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen) | `direct_scale(verbleibende Lebensdauer / Verbrauch der Operation)` | `defect_recovery_tool_reserve_weight` (`0.2`) |
 
-`Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
+- **Optionale Kriterien:** Transportzeit geht nur bei möglicher Schätzung
+  ein, Werkzeugreserve nur bei positivem Werkzeugverbrauch. Nicht
+  verwendete Kriterien gehen auch nicht in die Gewichtssumme ein.
+- **Transportzeit schätzen:** `defect_recovery_transport_time_value()`
+  verwendet den direkten Abstand vom gespeicherten Jobstandort zum
+  Eingangspuffer der ausgewählten Maschine:
 
-- **Transport-Teilwert:** `inverse_scale()` bewertet kürzere geschätzte
-  Transportzeiten höher. Zusätzliche Greif- und Hubbewegungen sind in der
-  Wegschätzung nicht enthalten.
-- **Deadline:** Bei `remaining_time > 0` entfällt der Strafabzug. Bei
-  `remaining_time <= 0` wird nach dem gewichteten Durchschnitt
+`geschätzte Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
+
+- **Verwendete Geschwindigkeit:** Die Schätzung nutzt die konfigurierte
+  Grundgeschwindigkeit eines Korridorarms im Zielkorridor; ersatzweise die
+  eines Main-Roboters. Sie enthält keine vollständige Transportfolge mit
+  Zwischenpuffern, Aufnahme, Ablage oder Wartezeiten.
+- **Score vor der Deadline:** `calculate_action_score()` bildet den
+  [gewichteten Durchschnitt](#gewichte-und-gesamtscore) der verwendeten Teilwerte.
+- **Score ab der Deadline:** Von diesem Durchschnitt wird
   `rework_alternative_machine_deadline_penalty_weight` abgezogen,
   standardmäßig `0.5`.
-- **Rechenbeispiel:** Der Job soll zum Eingangspuffer dieser Maschine
-  transportiert werden. Mit den Standardgewichten ergeben sich:
 
-- **Warteschlange:** Der Eingangspuffer ist leer. `inverse_scale(0) = 1`,
-  Gewicht `0.3`.
-- **Transportzeit:** Im Beispiel nehmen wir eine Wegstrecke von `1.5` und
-  eine Grundgeschwindigkeit von `1.5` an. Daraus ergibt sich die geschätzte
-  Transportzeit `1.5 / 1.5 = 1`. Das ist kein fester Wert im Code.
-  `inverse_scale(1) = 0.5`, Gewicht `0.2`.
-- **Werkzeugpassung:** Das von der Operation benötigte Werkzeug ist montiert.
-  Teilwert `1`, Gewicht `0.2`.
-- **Werkzeugreserve:** Verbleibende Lebensdauer `5`, Verbrauch der Operation
-  `5`. `direct_scale(5 / 5) = 0.5`, Gewicht `0.2`.
+**Rechenbeispiel:** Der Eingangspuffer der ausgewählten Maschine ist leer.
+Das benötigte Werkzeug ist montiert, mit Restlebensdauer `5` und Verbrauch
+`5`. Für dieses Beispiel beträgt der direkte Abstand `1.5` und die
+Grundgeschwindigkeit `1.5`; die geschätzte Transportzeit ist also
+`1.5 / 1.5 = 1`. Die Teilwerte sind `1`, `inverse_scale(1) = 0.5`, `1`
+und `direct_scale(5 / 5) = 0.5`:
 
-`Score vor Strafabzug = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
+`Nacharbeitsscore = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
 
-- **Vor der Deadline:** Bei aktueller Zeit `8` liegt die Deadline `10` noch
-  in der Zukunft. Ohne Strafabzug bleibt der Score `7 / 9 ≈ 0.778`.
-- **Nach der Deadline:** Bei aktueller Zeit `11` gilt der Deadline-Strafabzug:
-
-`Endscore = 7 / 9 − 0.5 = 5 / 18 ≈ 0.278`
+| Deadline | Aktuelle Zeit | Endscore |
+| --- | --- | --- |
+| `10` | `8` – vor der Deadline | `7 / 9 ≈ 0.778`, kein Abzug |
+| `10` | `11` – Deadline überschritten | `7 / 9 − 0.5 = 5 / 18 ≈ 0.278` |
 
 ##### Herabstufung: `downgrade_product`
 
-- **Bewertung:** `evaluate_defect_action()` unterscheidet zwei Fälle:
+- **Zweck:** Den Job als herabgestuft übernehmen, statt ihn nachzuarbeiten.
+  Der verwendete Produkttyp ist das vorgesehene Ergebnis der fehlerhaften
+  Operation; das kann auch ein Zwischenprodukt sein. Weitere reguläre
+  Bearbeitungsschritte entfallen.
+- **Bewertungsgröße:** Die
+  [Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten)
+  wird direkt als Teilwert verwendet. Je größer sie ist, desto höher
+  wird Herabstufung bewertet.
+- **Score vor der Deadline:** Nur dieser Teilwert geht mit
+  `product_downgrade_defect_severity_weight` ein. Deshalb entspricht
+  der Score dem Defektschweregrad.
+- **Score ab der Deadline:** Zusätzlich geht der feste Teilwert `1` mit
+  `deadline_reached_downgrade_bonus_weight` ein. Beide Beiträge werden
+  zu einem gewichteten Durchschnitt verbunden:
 
-1. **Vor der Deadline (`remaining_time > 0`):** Nur die
-   [Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten)
-   geht mit `product_downgrade_defect_severity_weight` ein. Da dies der
-   einzige Teilwert ist, entspricht der Score dem Defektschweregrad.
-2. **Deadline erreicht oder überschritten (`remaining_time <= 0`):**
-   Zusätzlich geht der feste Teilwert `1` mit
-   `deadline_reached_downgrade_bonus_weight` ein. `calculate_action_score()`
-   bildet den gewichteten Durchschnitt aus Defektschwere und diesem
-   zusätzlichen Teilwert.
+`Score = (Defektschwere × product_downgrade_defect_severity_weight + 1 × deadline_reached_downgrade_bonus_weight) / (product_downgrade_defect_severity_weight + deadline_reached_downgrade_bonus_weight)`
 
-- **Terminprüfung:** `is_deadline_reached()` liefert bei
-  `remaining_time <= 0` den Wert `True` und prüft ausschließlich den Termin.
-- **Beispiel vor der Deadline:** Bei Defektschweregrad `0.4`, aktueller
-  Zeit `8` und Deadline `10` geht nur die Defektschwere mit Standardgewicht
-  `0.5` ein:
+**Rechenbeispiel:** Der Defektschweregrad beträgt `0.4`.
+Beide Gewichte haben im Standardgewichtssatz den Wert `0.5`:
 
-`Score vor der Deadline = (0.4 × 0.5) / 0.5 = 0.4`
+| Deadline | Aktuelle Zeit | Endscore |
+| --- | --- | --- |
+| `10` | `8` – vor der Deadline | `(0.4 × 0.5) / 0.5 = 0.4` |
+| `10` | `11` – Deadline überschritten | `(0.4 × 0.5 + 1 × 0.5) / (0.5 + 0.5) = 0.7` |
 
-- **Beispiel ab der Deadline:** Der Teilwert `1` kommt mit
-  `deadline_reached_downgrade_bonus_weight = 0.5` hinzu:
-
-`Score = (0.4 × 0.5 + 1 × 0.5) / (0.5 + 0.5) = 0.7`
-
-- **Bonus im Beispiel:** Die Anhebung beträgt `0.5 × (1 − 0.4) = 0.3`.
-  Die Herabstufung erhält `0.4 + 0.3 = 0.7` statt `0.4`.
+- **Bedeutung des Bonus:** Im Beispiel steigt der Score von `0.4` auf
+  `0.7`, also um `0.3`. Es wird nicht pauschal `0.5` zum Score addiert.
 
 ##### Warten bei einem Defekt: `wait_job`
 
-- **Regel:** `evaluate_defect_action()` verwendet die
-  [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert):
-  Je dringender der Job, desto niedriger der Warte-Score.
-- **Termindruck:** `calculate_edd_priority()` berechnet die
-  [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen). Für Warten
-  wird ihre Vorteilsrichtung umgekehrt:
+- **Zweck:** Der defekte Job wartet zunächst, statt eine neue Nacharbeit
+  oder Herabstufung einzuleiten. Warten behebt den Defekt nicht.
+- **Bewertungsgröße:** `calculate_edd_priority()` berechnet den
+  [Termindruck als EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen).
+  Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
+  bildet daraus den Teilwert `1.0 - EDD`: Je dringender der Job ist,
+  desto niedriger wird Warten bewertet.
+- **Score vor der Deadline:** Es geht nur dieser Teilwert mit
+  `wait_defect_job_weight` ein. Der gewichtete Durchschnitt ist daher
+  ebenfalls `1.0 - EDD`.
+- **Score ab der Deadline:** Davon wird
+  `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`:
 
-`Teilwert = 1.0 - EDD`
+`Score = (1.0 - EDD) - deadline_missed_wait_penalty_weight`
 
-- **Grundscore:** `calculate_action_score()` erhält nur diesen Teilwert mit
-  `wait_defect_job_weight`. Der Durchschnitt eines einzelnen Teilwerts ist
-  wieder dieser Teilwert; zunächst gilt `Score = 1.0 - EDD`.
+**Rechenbeispiel mit Deadline `10` und Standardstrafe `0.2`:**
 
-- **Vor der Deadline** (`remaining_time > 0`) bleibt dieser Score unverändert.
-- **Ab Erreichen der Deadline** (`remaining_time <= 0`) zieht der Code
-  zusätzlich `deadline_missed_wait_penalty_weight` ab, standardmäßig `0.2`:
-  `Score = (1.0 - EDD) - 0.2`.
-
-Beispiele mit Deadline `10` und dem Standard-Strafabzug `0.2`:
-
-- Bei aktueller Zeit `8` bleiben zwei Zeiteinheiten bis zur Deadline.
-  `EDD = 0.5 × inverse_scale(2) ≈ 0.167`.
-  Warten erhält `Score = 1 − 0.167 ≈ 0.833`; es gibt keinen Strafabzug.
-- Bei aktueller Zeit `11` ist der Auftrag eine Zeiteinheit überfällig.
-  `EDD = 0.5 + 0.5 × direct_scale(1) = 0.75`.
-  Warten erhält `Score = (1 − 0.75) − 0.2 = 0.05`.
-
-- **Auswahl:** Der `ActionSelector` vergleicht den Warte-Score mit den
-  anderen Kandidaten. Ein niedrigerer Warte-Score macht Warten weniger
-  vorteilhaft.
+| Aktuelle Zeit | Berechnung der EDD-Priorität | Endscore für Warten |
+| --- | --- | --- |
+| `8` – vor der Deadline | `0.5 × inverse_scale(2) = 1 / 6 ≈ 0.167` | `1 − 1 / 6 = 5 / 6 ≈ 0.833` |
+| `10` – Deadline erreicht | `0.5 × inverse_scale(0) = 0.5` | `1 − 0.5 − 0.2 = 0.3` |
+| `11` – Deadline überschritten | `0.5 + 0.5 × direct_scale(1) = 0.75` | `1 − 0.75 − 0.2 = 0.05` |
 
 ##### Ausschuss: `job_scrap`
 
-- **Angebot:** Außerhalb des technisch nacharbeitbaren Defektschwerebereichs
-  erzeugt der Generator ausschließlich Ausschuss.
-- **Score:** `evaluate_defect_action()` liefert dafür konstant:
+- **Zweck:** Den Job als Ausschuss markieren.
+- **Angebot:** Wenn keine Nacharbeit bereits läuft und der Schweregrad
+  außerhalb von `0.001 <= defect_severity < 0.6` liegt, erzeugt der
+  [ActionGenerator](#job) ausschließlich `job_scrap`.
+- **Bewertungsgrößen:** Keine. `evaluate_defect_action()` liefert
+  konstant `Score = 1.0`, unabhängig von Deadline und Gewichten.
+- **Auswahl:** In diesem Fall gibt es keine andere Defektaktion zur
+  Auswahl; Ausschuss konkurriert nicht mit Nacharbeit oder Herabstufung.
 
-`Score = 1.0`
+##### Warum diese Deadline-Strafen und dieser Bonus?
 
-- **Auswahl:** EDD und Gewichte werden nicht verwendet. Da kein anderer
-  Kandidat vorliegt, wird Ausschuss unabhängig vom Termindruck gewählt.
+- **Ziel:** Ab der Deadline soll weiteres Warten weniger vorteilhaft
+  sein als zuvor. Auch Nacharbeit soll niedriger bewertet werden;
+  Herabstufung soll dagegen einen höheren Score erhalten.
+- **Festgelegte Grenzen:** Für den Standardgewichtssatz wurden
+  Nacharbeit höchstens `0.5`, Warten höchstens `0.3` und Herabstufung
+  mindestens `0.5` gewählt. Die Werte werden in
+  [HeuristicWeights.py](sources/SpineML/Control/HeuristicControl/HeuristicWeights.py)
+  daraus abgeleitet:
+
+| Aktion | Mathematische Begründung des Standardwerts ab der Deadline |
+| --- | --- |
+| Nacharbeit auf [derselben](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) oder [einer anderen Maschine](#nacharbeit-auf-einer-anderen-maschine-job_rework_on_alternative_machine) | Der gewichtete Durchschnitt ist höchstens `1`. Damit der Endscore höchstens `0.5` ist, wird `1 − 0.5 = 0.5` abgezogen. |
+| [Warten](#warten-bei-einem-defekt-wait_job) | Ab der Deadline gilt `EDD >= 0.5`, also `1 − EDD <= 0.5`. Für einen Endscore von höchstens `0.3` wird `0.5 − 0.3 = 0.2` abgezogen. |
+| [Herabstufung](#herabstufung-downgrade_product) | Bei Defektschwere `0` soll der Score `0.5` betragen, bei Defektschwere `1` soll er `1` betragen. Das ergibt `Score = 0.5 + 0.5 × Defektschwere`, umgesetzt mit den beiden Gewichten `0.5` und `0.5`. |
+
+- **Herabstufungsbonus:** Die Anhebung beträgt damit
+  `0.5 × (1 − Defektschwere)`. Bei positiver Defektschwere liegt der
+  Herabstufungsscore ab der Deadline über dem maximalen Nacharbeitsscore
+  und dem maximalen Warte-Score.
+- **Geltungsbereich:** Diese Grenzen gelten für den Standardgewichtssatz.
+  Ein manuell geänderter oder optimierter Gewichtssatz kann andere
+  Grenzen ergeben. Die Grenzwerte sind bewusst gewählte Steuerungsziele,
+  keine mathematisch nachgewiesenen Optimalwerte.
 
 #### Abschluss: `complete_job`
 

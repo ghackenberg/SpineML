@@ -16,7 +16,6 @@ Werkzeugen, Lagern und Robotern. Diese README beschreibt den Zweig `Foroogh`.
 ## Inhalt
 
 - [Installation und Start](#installation-und-start)
-- [Parallele Optimierung und gemessene Beschleunigung](#parallele-optimierung-mit-mehreren-cpu-prozessen)
 - [Fabrikkonfiguration](#fabrikkonfiguration)
 - [Diskrete Simulation](#diskrete-simulation)
 - [SimulationBridge](#simulationbridge)
@@ -24,6 +23,7 @@ Werkzeugen, Lagern und Robotern. Diese README beschreibt den Zweig `Foroogh`.
 - [HeuristicControl](#heuristiccontrol)
 - [Optimierungsvorgang](#optimierungsvorgang)
 - [Optimierung starten und Ergebnisse lesen](#optimierung-starten)
+- [Parallele Optimierung und gemessene Beschleunigung](#parallele-optimierung-mit-mehreren-cpu-prozessen)
 
 ## Installation und Start
 
@@ -127,63 +127,6 @@ die Obergrenze auf diesem Rechner bei `20` Prozessen. Der
 [Messbericht](parallel_benchmark_results.json) enthält die ungerundeten Zeiten
 und alle Kennzahlen. Dies ist ein gemessener Batchvergleich, keine Garantie
 derselben Beschleunigung für andere Szenarien oder eine komplette Gewichtssuche.
-
-### Parallele Optimierung mit mehreren CPU-Prozessen
-
-Im Zweig `Foroogh` können unabhängige Simulationsläufe parallel ausgeführt
-werden. Vorher führte ein `SpineMLSimulationRunner` die Läufe nacheinander
-aus. Jetzt verteilt der
-[`ParallelSimulationRunner`](sources/SpineML/Control/HeuristicControl/ParallelSimulationRunner.py)
-die Aufträge auf einen **Prozesspool**, also eine Gruppe wiederverwendeter
-Python-Prozesse.
-
-- **CPU nutzen:** `MAX_WORKERS = min(os.cpu_count() or 1, 20)` in
-  [optimization.py](sources/optimization.py) begrenzt die Zahl gleichzeitig
-  arbeitender Simulationsprozesse. Der verwendete Intel Core i7-13700H hat
-  14 physische Kerne und 20 logische Prozessoren; auf diesem Rechner sind
-  deshalb bis zu **20 Simulationen gleichzeitig** möglich. Windows verteilt
-  die Prozesse auf die verfügbaren logischen Prozessoren. Eine feste
-  Zuordnung zu einzelnen Kernen wird nicht vorgenommen.
-- **Einen Auftrag ausführen:** Jeder Prozess besitzt einen eigenen Runner.
-  Ein Auftrag der Gewichtssuche führt genau eine vollständige Simulation
-  mit einem Gewichtssatz und einem Seed aus. Die Salabim-Umgebung und die Policy
-  werden für jeden Lauf neu aufgebaut.
-- **Freie Prozesse weiterverwenden:** Alle Gewichtssatz-Seed-Paare einer
-  Iteration werden gemeinsam eingeplant. Bei 53 Gewichtssätzen und zwei
-  Seeds sind das beispielsweise 106 Simulationen, nicht nur 20. Sobald
-  eine Simulation endet, übernimmt der freie Prozess den nächsten Auftrag.
-- **Abhängige Schritte nacheinander ausführen:** Die Baseline muss fertig
-  sein, bevor die Gewichtssuche beginnt. Die nächste Iteration beginnt erst,
-  wenn die Ergebnisse der aktuellen Iteration vorliegen. Die Oberfläche
-  bleibt für Anzeige und Bedienung zuständig; ihr Hintergrundthread
-  koordiniert die Suche und den Prozesspool.
-
-**Beschleunigt wird die Gesamtbearbeitung vieler Simulationen, nicht eine
-einzelne Simulation.** Ein einzelner Lauf bleibt in einem Prozess und kann
-unter paralleler Last länger dauern. Weil mehrere Läufe gleichzeitig
-voranschreiten, können trotzdem alle Ergebnisse deutlich früher vorliegen.
-
-#### Gemessene Gesamtzeit der vollständigen Optimierung
-
-Für `example-5.py` wurden im Webinterface folgende Gesamtzeiten abgelesen
-und gemeldet. Anders als der oben beschriebene 20-Läufe-Test umfassen diese
-Zeiten den vollständigen Ablauf mit Baseline, Gewichtssuche,
-Steuerungsvergleich und Beenden der Worker:
-
-| Ausführungsart | Gesamtzeit | Ungefähr in Minuten |
-| --- | ---: | ---: |
-| `Sequential (previous execution)` – ohne Prozesspool | `4291.7 s` | `71.5 min` |
-| `Parallel (process pool)` – bis zu 20 Prozesse | `1399.5 s` | `23.3 min` |
-
-Das Verhältnis beträgt `4291.7 / 1399.5 ≈ 3.07`: Die parallele Optimierung
-war in diesem Vergleich rund **dreimal so schnell**. Die Zeitersparnis
-betrug `2892.2 s`, also etwa **48.2 Minuten beziehungsweise 67.4 %**.
-
-Dies sind die gemeldeten Messwerte dieser beiden vollständigen Läufe,
-keine allgemeine Beschleunigungsgarantie. Ein exportierter Ergebnisbericht
-dieser beiden Läufe liegt hier nicht vor; ihre Aufgaben- und
-Ergebnisidentität wurde daher nicht zusätzlich anhand der Rohdaten geprüft.
-Die folgende Vergleichsfunktion prüft diese Übereinstimmung bei neuen Läufen.
 
 ### Vollständige Optimierung: vorher und jetzt vergleichen
 
@@ -3315,3 +3258,61 @@ auf separaten Test-Seeds.
 - **Ergebnis beurteilen:** Der kleinere Mittelwert der globalen
   Bewertungszahl ist besser. Ob `Heuristic (optimized)` die anderen
   Steuerungen tatsächlich übertrifft, zeigt erst dieser Vergleich.
+
+### Parallele Optimierung mit mehreren CPU-Prozessen
+
+Im Zweig `Foroogh` können unabhängige Simulationsläufe parallel ausgeführt
+werden. Vorher führte ein `SpineMLSimulationRunner` die Läufe nacheinander
+aus. Jetzt verteilt der
+[`ParallelSimulationRunner`](sources/SpineML/Control/HeuristicControl/ParallelSimulationRunner.py)
+die Aufträge auf einen **Prozesspool**, also eine Gruppe wiederverwendeter
+Python-Prozesse.
+
+- **CPU nutzen:** `MAX_WORKERS = min(os.cpu_count() or 1, 20)` in
+  [optimization.py](sources/optimization.py) begrenzt die Zahl gleichzeitig
+  arbeitender Simulationsprozesse. Der verwendete Intel Core i7-13700H hat
+  14 physische Kerne und 20 logische Prozessoren; auf diesem Rechner sind
+  deshalb bis zu **20 Simulationen gleichzeitig** möglich. Windows verteilt
+  die Prozesse auf die verfügbaren logischen Prozessoren. Eine feste
+  Zuordnung zu einzelnen Kernen wird nicht vorgenommen.
+- **Einen Auftrag ausführen:** Jeder Prozess besitzt einen eigenen Runner.
+  Ein Auftrag der Gewichtssuche führt genau eine vollständige Simulation
+  mit einem Gewichtssatz und einem Seed aus. Die Salabim-Umgebung und die Policy
+  werden für jeden Lauf neu aufgebaut.
+- **Freie Prozesse weiterverwenden:** Alle Gewichtssatz-Seed-Paare einer
+  Iteration werden gemeinsam eingeplant. Bei 53 Gewichtssätzen und zwei
+  Seeds sind das beispielsweise 106 Simulationen, nicht nur 20. Sobald
+  eine Simulation endet, übernimmt der freie Prozess den nächsten Auftrag.
+- **Abhängige Schritte nacheinander ausführen:** Die Baseline muss fertig
+  sein, bevor die Gewichtssuche beginnt. Die nächste Iteration beginnt erst,
+  wenn die Ergebnisse der aktuellen Iteration vorliegen. Die Oberfläche
+  bleibt für Anzeige und Bedienung zuständig; ihr Hintergrundthread
+  koordiniert die Suche und den Prozesspool.
+
+**Beschleunigt wird die Gesamtbearbeitung vieler Simulationen, nicht eine
+einzelne Simulation.** Ein einzelner Lauf bleibt in einem Prozess und kann
+unter paralleler Last länger dauern. Weil mehrere Läufe gleichzeitig
+voranschreiten, können trotzdem alle Ergebnisse deutlich früher vorliegen.
+
+#### Gemessene Gesamtzeit der vollständigen Optimierung
+
+Für `example-5.py` wurden im Webinterface folgende Gesamtzeiten abgelesen
+und gemeldet. Anders als der oben beschriebene 20-Läufe-Test umfassen diese
+Zeiten den vollständigen Ablauf mit Baseline, Gewichtssuche,
+Steuerungsvergleich und Beenden der Worker:
+
+| Ausführungsart | Gesamtzeit | Ungefähr in Minuten |
+| --- | ---: | ---: |
+| `Sequential (previous execution)` – ohne Prozesspool | `4291.7 s` | `71.5 min` |
+| `Parallel (process pool)` – bis zu 20 Prozesse | `1399.5 s` | `23.3 min` |
+
+Das Verhältnis beträgt `4291.7 / 1399.5 ≈ 3.07`: Die parallele Optimierung
+war in diesem Vergleich rund **dreimal so schnell**. Die Zeitersparnis
+betrug `2892.2 s`, also etwa **48.2 Minuten beziehungsweise 67.4 %**.
+
+Dies sind die gemeldeten Messwerte dieser beiden vollständigen Läufe,
+keine allgemeine Beschleunigungsgarantie. Ein exportierter Ergebnisbericht
+dieser beiden Läufe liegt hier nicht vor; ihre Aufgaben- und
+Ergebnisidentität wurde daher nicht zusätzlich anhand der Rohdaten geprüft.
+Der [vollständige Laufzeitvergleich](#vollständige-optimierung-vorher-und-jetzt-vergleichen)
+prüft diese Übereinstimmung bei neuen Läufen.

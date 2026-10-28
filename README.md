@@ -16,6 +16,7 @@ Werkzeugen, Lagern und Robotern. Diese README beschreibt den Zweig `Foroogh`.
 ## Inhalt
 
 - [Installation und Start](#installation-und-start)
+- [Parallele Optimierung und gemessene Beschleunigung](#parallele-optimierung-mit-mehreren-cpu-prozessen)
 - [Fabrikkonfiguration](#fabrikkonfiguration)
 - [Diskrete Simulation](#diskrete-simulation)
 - [SimulationBridge](#simulationbridge)
@@ -66,11 +67,161 @@ python sources/examples/normal/example-5.py
 python -m streamlit run sources/optimization.py
 ```
 
-- **Optimierung ausführen:** Im Browser auf **Start optimization** klicken.
+- **Optimierung ausführen:** Im Browser unter **Execution mode** die Option
+  **Parallel (process pool)** auswählen und auf **Start optimization** klicken.
   Dadurch startet der Vergleich verschiedener Gewichtssätze.
 - **Produktionsbeispiel:** Verwendet wird `example-5.py`.
 - **Weitere Einstellungen und Ergebnisse:** Modellwahl und Diagramme sind
   unter [Optimierung starten](#optimierung-starten) erklärt.
+
+### Rechenzeit eines Simulationslaufs messen
+
+```powershell
+python sources/measure_simulation_time.py
+```
+
+- **Ausgeführte Läufe:** Das [Messskript](sources/measure_simulation_time.py)
+  führt Example 5 ohne 3D-Anzeige mit dem Standardgewichtssatz aus.
+  Standardmäßig werden die Seeds `1, 2, 3, 4, 5` mit einem Worker geprüft.
+- **Workerzahlen vergleichen:** Beispielsweise verwendet
+  `python sources/measure_simulation_time.py --seeds 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 --workers 1 14 20 --output simulation_times.json`
+  denselben Taskstapel für alle drei Workerzahlen. Nur angeforderte Modi
+  werden gemessen; auch ein Worker verwendet einen Spawn-Unterprozess.
+- **Wiederholungen:** `--repeats 2` wiederholt den Seed-Taskstapel zweimal
+  innerhalb jedes Batches. Seeds und Wiederholungen sind für alle Modi gleich.
+- **Gemessene Zeit:** Maßgeblich ist die gesamte Batch-Wallzeit mit
+  `perf_counter()`, einschließlich Poolstart, Modellladen, Simulationen,
+  Kennzahlenerfassung und Pool-Shutdown. Ein persistenter Pool lädt das
+  Modell einmal je Prozess. Einzelne Laufzeiten sind nur Zusatzinformationen.
+- **Ergebnisse prüfen:** Alle Produktionskennzahlen werden je ursprünglichem
+  Input exakt mit der Referenz verglichen: einem Worker, falls angefordert,
+  sonst der ersten angeforderten Workerzahl. Abweichungen brechen den Vergleich ab.
+- **Ausgabe:** Batchzeiten, Speedup gegenüber der Referenz und schnellste
+  gemessene Workerzahl; mit `--output PATH` zusätzlich ein JSON-Bericht mit
+  allen Kennzahlen, Laufzeiten und Prozess-IDs. Es werden keine Messwerte
+  vorgegeben. Die Zeiten sind nicht die simulierte Produktionsdauer.
+- **Langsame Funktionen untersuchen:**
+  `python sources/measure_simulation_time.py --profile` startet nach der
+  Zeitmessung einen zusätzlichen Lauf mit `cProfile`. Die Ausgabe zeigt
+  die 20 Funktionen mit der höchsten kumulierten Ausführungszeit, also
+  einschließlich der von ihnen aufgerufenen Funktionen. Dieser zusätzliche
+  direkte Lauf läuft außerhalb des Prozesspools und aller Batch-Timer,
+  weil Profiling selbst Rechenzeit benötigt.
+- **Aufwand beurteilen:** Für parallele Läufe zählt die gemessene Batchzeit,
+  nicht die Summe der einzelnen Laufzeiten. Mehr Prozesse sind nicht automatisch
+  schneller; das Ergebnis gilt für diesen Taskstapel und diese Hardware.
+
+#### Gemessener Vergleich für Example 5
+
+Für denselben Stapel aus 20 vollständigen Läufen mit den Seeds `1` bis `20`
+und dem Standardgewichtssatz wurden auf diesem Rechner folgende Gesamtzeiten gemessen:
+
+| Simulationsprozesse | Gesamtzeit einschließlich Poolstart und -ende | Beschleunigung gegenüber einem Prozess |
+| --- | --- | --- |
+| `1` | `211.6 s` | `1.00×` |
+| `14` | `42.4 s` | `4.99×` |
+| `20` | `39.2 s` | `5.40×` |
+
+Alle Produktionskennzahlen jedes Seed-Laufs waren exakt gleich. Deshalb bleibt
+die Obergrenze auf diesem Rechner bei `20` Prozessen. Der
+[Messbericht](parallel_benchmark_results.json) enthält die ungerundeten Zeiten
+und alle Kennzahlen. Dies ist ein gemessener Batchvergleich, keine Garantie
+derselben Beschleunigung für andere Szenarien oder eine komplette Gewichtssuche.
+
+### Parallele Optimierung mit mehreren CPU-Prozessen
+
+Im Zweig `Foroogh` können unabhängige Simulationsläufe parallel ausgeführt
+werden. Vorher führte ein `SpineMLSimulationRunner` die Läufe nacheinander
+aus. Jetzt verteilt der
+[`ParallelSimulationRunner`](sources/SpineML/Control/HeuristicControl/ParallelSimulationRunner.py)
+die Aufträge auf einen **Prozesspool**, also eine Gruppe wiederverwendeter
+Python-Prozesse.
+
+- **CPU nutzen:** `MAX_WORKERS = min(os.cpu_count() or 1, 20)` in
+  [optimization.py](sources/optimization.py) begrenzt die Zahl gleichzeitig
+  arbeitender Simulationsprozesse. Der verwendete Intel Core i7-13700H hat
+  14 physische Kerne und 20 logische Prozessoren; auf diesem Rechner sind
+  deshalb bis zu **20 Simulationen gleichzeitig** möglich. Windows verteilt
+  die Prozesse auf die verfügbaren logischen Prozessoren. Eine feste
+  Zuordnung zu einzelnen Kernen wird nicht vorgenommen.
+- **Einen Auftrag ausführen:** Jeder Prozess besitzt einen eigenen Runner.
+  Ein Auftrag der Gewichtssuche führt genau eine vollständige Simulation
+  mit einem Gewichtssatz und einem Seed aus. Die Salabim-Umgebung und die Policy
+  werden für jeden Lauf neu aufgebaut.
+- **Freie Prozesse weiterverwenden:** Alle Gewichtssatz-Seed-Paare einer
+  Iteration werden gemeinsam eingeplant. Bei 53 Gewichtssätzen und zwei
+  Seeds sind das beispielsweise 106 Simulationen, nicht nur 20. Sobald
+  eine Simulation endet, übernimmt der freie Prozess den nächsten Auftrag.
+- **Abhängige Schritte nacheinander ausführen:** Die Baseline muss fertig
+  sein, bevor die Gewichtssuche beginnt. Die nächste Iteration beginnt erst,
+  wenn die Ergebnisse der aktuellen Iteration vorliegen. Die Oberfläche
+  bleibt für Anzeige und Bedienung zuständig; ihr Hintergrundthread
+  koordiniert die Suche und den Prozesspool.
+
+**Beschleunigt wird die Gesamtbearbeitung vieler Simulationen, nicht eine
+einzelne Simulation.** Ein einzelner Lauf bleibt in einem Prozess und kann
+unter paralleler Last länger dauern. Weil mehrere Läufe gleichzeitig
+voranschreiten, können trotzdem alle Ergebnisse deutlich früher vorliegen.
+
+#### Gemessene Gesamtzeit der vollständigen Optimierung
+
+Für `example-5.py` wurden im Webinterface folgende Gesamtzeiten abgelesen
+und gemeldet. Anders als der oben beschriebene 20-Läufe-Test umfassen diese
+Zeiten den vollständigen Ablauf mit Baseline, Gewichtssuche,
+Steuerungsvergleich und Beenden der Worker:
+
+| Ausführungsart | Gesamtzeit | Ungefähr in Minuten |
+| --- | ---: | ---: |
+| `Sequential (previous execution)` – ohne Prozesspool | `4291.7 s` | `71.5 min` |
+| `Parallel (process pool)` – bis zu 20 Prozesse | `1399.5 s` | `23.3 min` |
+
+Das Verhältnis beträgt `4291.7 / 1399.5 ≈ 3.07`: Die parallele Optimierung
+war in diesem Vergleich rund **dreimal so schnell**. Die Zeitersparnis
+betrug `2892.2 s`, also etwa **48.2 Minuten beziehungsweise 67.4 %**.
+
+Dies sind die gemeldeten Messwerte dieser beiden vollständigen Läufe,
+keine allgemeine Beschleunigungsgarantie. Ein exportierter Ergebnisbericht
+dieser beiden Läufe liegt hier nicht vor; ihre Aufgaben- und
+Ergebnisidentität wurde daher nicht zusätzlich anhand der Rohdaten geprüft.
+Die folgende Vergleichsfunktion prüft diese Übereinstimmung bei neuen Läufen.
+
+### Vollständige Optimierung: vorher und jetzt vergleichen
+
+```console
+.\.venv\Scripts\python.exe sources/compare_optimization_time.py
+```
+
+- **Ganzen Ablauf vergleichen:** Das Skript führt zuerst die bisherige
+  sequenzielle und danach die parallele Ausführung vollständig aus: Baseline,
+  Gewichtssuche und Abschlussvergleich dreier Steuerungen. Beide verwenden
+  dieselben Einstellungen aus `optimization.py`, aktuell `SEEDS = [1, 2]`,
+  zwei Iterationen und `TEST_SEEDS = [101, 102, 103, 104, 105]`.
+- **Ausführungsarten unterscheiden:** `sequential` verwendet den direkten
+  `SpineMLSimulationRunner` und führt Läufe nacheinander aus, ohne Prozesspool.
+  `parallel` verwendet den Prozesspool mit bis zu `20` Workern. Ein Pool mit
+  einem Worker ist nicht die bisherige sequenzielle Ausführung.
+- **Gesamtzeit messen:** Der Vergleich erfolgt ohne Webinterface und ohne
+  3D-Anzeige. Er misst den vollständigen Workflow einschließlich Prozesspool-
+  Start und -Shutdown; einzelne Simulationslaufzeiten sind davon zu trennen.
+  Da beide vollständigen Abläufe nacheinander laufen, kann der Vergleich
+  deutlich länger als eine einzelne Optimierung dauern.
+- **Bericht prüfen:** `optimization_timing_comparison.json` speichert
+  Konfiguration, Ergebnisse und Zeiten beider Modi. Eine Beschleunigung wird
+  nur ausgewiesen, wenn Konfiguration und Produktionsergebnisse exakt
+  übereinstimmen. Damit lassen sich die
+  [gemeldeten Gesamtzeiten](#gemessene-gesamtzeit-der-vollständigen-optimierung)
+  durch einen neuen, vollständig dokumentierten Vergleich überprüfen.
+- **Im Webinterface messen:** `Sequential (previous execution)` auswählen
+  und **Start optimization** drücken; danach dasselbe mit
+  `Parallel (process pool)` wiederholen. Historientabelle und Berichtdownload
+  erlauben den Vergleich der Phasen- und Gesamtzeiten beider vollständigen Läufe.
+  Für einen isolierten Vergleich lädt das Skript jeden Modus in einem frischen
+  Python-Prozess. Während einer Messung keine weitere Optimierung starten und
+  Modell, Code und Einstellungen unverändert lassen. Nach Codeänderungen das
+  Webinterface neu starten.
+- **20-Läufe-Test abgrenzen:** Die oben gemessenen `39.2 s` betreffen nur
+  20 Standardheuristik-Läufe, nicht die gesamte Gewichtssuche mit Baseline
+  und Abschlussvergleich. Daraus folgt keine vollständige Optimierungszeit.
 
 ## Fabrikkonfiguration
 
@@ -2312,6 +2463,9 @@ abschließenden Steuerungsvergleich.
 
 - **Reihenfolge:** Die Abschnitte darunter erklären dieselben Schritte 0 bis 6.
 - **Iteration:** Ein Durchlauf der Schritte 2 bis 5 bildet eine Iteration.
+  Aufeinanderfolgende Iterationen bleiben abhängig und laufen nacheinander.
+- **Parallelität:** Unabhängige Simulationsläufe derselben Phase werden im
+  persistenten Prozesspool ausgeführt; Bewertung und Auswahl bleiben im Elternprozess.
 
 ```mermaid
 ---
@@ -2324,13 +2478,13 @@ config:
       bottom: 20
 ---
 flowchart TD
-    P["0. Modell laden und Optimierung starten<br/>Optimierer vorbereiten und Hintergrundlauf starten"]
-    A["1. Produktion mit dem Standardgewichtssatz simulieren<br/>Baseline-Referenzwerte berechnen"]
+    P["0. Optimierer und persistenten Prozesspool vorbereiten<br/>Modell einmal je Worker laden"]
+    A["1. Standardgewichtssatz mit allen SEEDS parallel simulieren<br/>Danach Baseline-Referenzwerte im Elternprozess berechnen"]
 
     subgraph Iteration["Eine Iteration<br/>Schritte 2 bis 5"]
         direction TB
         B["2. Andere lokale Gewichtssätze erstellen<br/>Gewichte erhöhen oder verringern<br/>und Zufallsvarianten ergänzen"]
-        B --> C["3. Produktion mit jedem Gewichtssatz<br/>einmal pro Seed aus SEEDS vollständig simulieren<br/>Produktionsergebnisse bewerten und Fortschritt anzeigen"]
+        B --> C["3. Jobs aus Gewichtssätzen × SEEDS parallel simulieren<br/>Im Elternprozess bewerten und Fortschritt anzeigen"]
         C --> D["4. Besten Gewichtssatz dieser Iteration auswählen<br/>Kleinster Mittelwert über alle Seeds"]
         D --> E{"5. Weitere Iteration<br/>ausführen?"}
     end
@@ -2338,7 +2492,7 @@ flowchart TD
     P --> A
     A --> B
     E -- Ja --> B
-    E -- Nein --> F["6. Gefundenen Gewichtssatz mit<br/>Standardheuristik und Zufallspolicy vergleichen<br/>Separate Test-Seeds verwenden und Ergebnisse anzeigen"]
+    E -- Nein --> F["6. Drei Steuerungen × fünf Test-Seeds parallel simulieren<br/>15 Ergebnisse im Elternprozess bewerten und anzeigen"]
 
     style Iteration fill:transparent,stroke:#64748b,stroke-width:2px,stroke-dasharray:6 4
 ```
@@ -2403,12 +2557,11 @@ Produktionsmodell für den Vergleich der Steuerungen bereit.
 
 #### Modell und Hintergrundlauf vorbereiten
 
-Beim Klick auf **Start optimization** wird zunächst der Optimierer vorbereitet.
-
-- **Einstieg:** `_start_optimization()` ruft zuerst `create_optimizer()` auf.
-- **Vorbereitung:** Die Funktion lädt das eingetragene Beispiel und erstellt
-  einen neuen Optimierer mit Runner und globaler Bewertung. Dabei wird noch
-  keine Produktion simuliert.
+- **Einstieg:** `_start_optimization()` startet den Hintergrundthread.
+  Dessen Funktion `worker()` ruft zuerst `create_optimizer()` auf.
+- **Vorbereitung:** `create_optimizer()` findet das eingetragene Beispiel und erstellt
+  einen neuen Optimierer mit parallelem Runner und globaler Bewertung.
+  Dabei wird noch keine Produktion simuliert.
 - **Diagramm lesen:** Das erste Diagramm zeigt diese Vorbereitung; seine
   Nummern entsprechen den Erklärungen darunter.
 
@@ -2423,47 +2576,32 @@ config:
 flowchart TD
     P0["create_optimizer()"]
     P0 --> P1["1. _resolve_model_path()<br/>Beispieldatei finden"]
-    P1 --> P2["2. _load_model()<br/>Layout und Szenario laden"]
-    P2 -. "verwendet beim Laden" .-> PS["_suppress_model_visualization()<br/>simulate(...) deaktivieren"]
-    P2 --> P3["3. _find_layout_and_scenario()<br/>Layout und Szenario auswählen"]
-    P3 --> P4["4. SpineMLSimulationRunner(...)<br/>Runner erstellen"]
-    P4 --> P5["5. _global_evaluation()<br/>Globale Bewertung erstellen"]
-    P5 --> P6["6. LocalHeuristicWeightOptimizer(...)<br/>Optimierer erstellen<br/>Runner und globale Bewertung übergeben"]
+    P1 --> P2["2. ParallelSimulationRunner(...)<br/>Persistenten Spawn-Prozesspool vorbereiten"]
+    P2 --> P3["3. _global_evaluation()<br/>Globale Bewertung im Elternprozess erstellen"]
+    P3 --> P4["4. LocalHeuristicWeightOptimizer(...)<br/>Runner und globale Bewertung übergeben"]
+    P2 -. "einmal je gestarteten Worker" .-> W["ModelLoader.load_layout_and_scenario()<br/>Modell ohne Simulationsstart laden<br/>Layout und Szenario auswählen"]
+    W --> R["SpineMLSimulationRunner(...)<br/>Prozesslokalen Runner erstellen"]
 ```
 
 1. **`_resolve_model_path()` – Beispieldatei finden:** Sucht die bei
    `EXAMPLE_FILE` eingetragene Datei.
-2. **`_load_model()` – Beispiel laden:** Lädt die Fabrikkonfiguration (Layout)
-   und die Produktionsaufträge (Szenario) aus der Beispieldatei. Die Simulation
-   startet dabei noch nicht.
-
-   - **`_suppress_model_visualization()` – sofortigen Simulationsstart verhindern:**
-     Verhindert innerhalb von `_load_model()`, dass `simulate(...)` in der
-     Beispieldatei eine Simulation startet. Es wird nicht nur die Animation
-     ausgeschaltet: Beim Laden wird kein Simulationslauf ausgeführt.
-
-3. **`_find_layout_and_scenario()` – Layout und Szenario auswählen:** Bestimmt,
-   welches **Layout** (räumlicher Aufbau der Fabrik) und welches **Szenario**
-   (Produktionsaufträge) für die Optimierung verwendet werden.
-4. **`SpineMLSimulationRunner(...)` – Runner erstellen:** Erstellt den
-   [Runner](sources/SpineML/Control/HeuristicControl/SpineMLSimulationRunner.py).
-   Der Runner ist nicht die Simulation selbst: Er startet einen Simulationslauf
-   und führt ihn aus. Dafür verwendet er das ausgewählte Layout und Szenario
-   sowie den beim Aufruf `runner(weights, seed)` übergebenen Gewichtssatz und
-   [Seed](#baseline-technik). Nach dem Lauf gibt er die Produktionskennzahlen
-   zurück. Das Erstellen des Runners startet noch keine Simulation.
-5. **`_global_evaluation()` – globale Bewertung erstellen:** Erstellt die
+2. **`ParallelSimulationRunner(...)` – Prozesspool vorbereiten:** Erstellt den
+   [parallelen Runner](sources/SpineML/Control/HeuristicControl/ParallelSimulationRunner.py)
+   mit dem Modellpfad und `MAX_WORKERS`. Der persistente Pool verwendet
+   `spawn`; jeder Worker führt nur einen Simulationsauftrag gleichzeitig
+   in seinem eigenen Prozess aus.
+3. **`_global_evaluation()` – globale Bewertung erstellen:** Erstellt die
    [GlobalSimulationEvaluation](sources/SpineML/Control/HeuristicControl/GlobalSimulationEvaluation.py).
    Sie berechnet aus den Produktionskennzahlen eines abgeschlossenen Laufs eine
    [globale Bewertungszahl](#globale-bewertungszahl). Je kleiner diese Zahl,
    desto besser wird das Produktionsergebnis bewertet.
-6. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Erstellt
+4. **`LocalHeuristicWeightOptimizer(...)` – Optimierer erstellen:** Erstellt
    den [Optimierer](sources/SpineML/Control/HeuristicControl/LocalHeuristicWeightOptimizer.py)
    und übergibt ihm zwei Bestandteile:
 
-   - **Den Runner zum Aufrufen:** Der Optimierer übergibt ihm bei jedem
-     Aufruf einen Gewichtssatz und einen Seed. Der Runner simuliert die
-     Produktion und liefert die Produktionskennzahlen zurück.
+   - **Den Runner zum Aufrufen:** Der Optimierer übergibt unabhängige Jobs
+     aus Gewichtssatz und Seed als Batch. Der Pool liefert die
+     Produktionskennzahlen in ursprünglicher Eingabereihenfolge zurück.
    - **Die globale Bewertung als Bewertungsregel:** Sie berechnet aus den
      Kennzahlen eines Laufs eine globale Bewertungszahl. Je kleiner diese
      Zahl, desto besser.
@@ -2475,10 +2613,23 @@ flowchart TD
      Erst `optimizer.optimize_iteratively(...)` startet die Suche aus den
      [Schritten 2 bis 5](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
-- **Hintergrundlauf starten:** Nach dem Erstellen des Optimierers startet
-  `_start_optimization()` den Worker-Thread. Der Streamlit-Thread für die
+- **Modell pro Worker laden:** Der Initializer verwendet
+  [ModelLoader.py](sources/SpineML/Control/HeuristicControl/ModelLoader.py),
+  um das Modell einmal je Prozess zu laden und Layout sowie Szenario
+  auszuwählen. `_suppress_model_visualization()` verhindert dabei einen
+  sofortigen Simulationsstart. Die bisherigen privaten Helfernamen bleiben
+  in `optimization.py` als importierte Aliase verfügbar.
+- **Gleiche Konfiguration verwenden:** Die Modelldatei muss während des
+  Optimierungslaufs unverändert bleiben, damit alle Worker dasselbe Modell laden.
+- **Prozesslokalen Runner wiederverwenden:** Jeder Worker erstellt einen
+  `SpineMLSimulationRunner`. Pro Auftrag baut dieser eine frische Policy,
+  Bridge und Laufzeit-Simulation auf und liefert `GlobalSimulationMetrics`.
+- **Hintergrundlauf starten:** Der Klick auf **Start optimization** ruft
+  `_start_optimization()` auf. Diese Funktion setzt die angezeigten Ergebnisse
+  zurück und startet den Worker-Thread. Dieser ruft zuerst `create_optimizer()`
+  auf und führt danach die Berechnungsphasen aus. Der Streamlit-Thread für die
   Oberfläche läuft bereits.
-- **Phasen ausführen:** Der Worker berechnet zuerst die Baseline, startet
+- **Phasen ausführen:** Der Hintergrundthread berechnet zuerst die Baseline, startet
   danach die Gewichtssuche mit `optimizer.optimize_iteratively(...)` und
   führt anschließend den Abschlussvergleich aus.
 - **Daten teilen:** Das zweite Diagramm zeigt diese Aufgabenteilung. Beide
@@ -2500,14 +2651,18 @@ flowchart TB
 
     subgraph Berechnung[" "]
         direction TB
-        B["<b>Worker-Thread: worker()</b><br/>1. Baseline berechnen<br/>Standardgewichtssatz mit allen SEEDS"]
+        B["<b>Elternprozess: worker()-Hintergrundthread</b><br/>1. Baseline-Jobs einreichen<br/>Danach Referenzwerte berechnen"]
         B --> O["2–5. Gewichtssuche ausführen<br/>optimizer.optimize_iteratively(...)"]
         O --> V["6. Drei Steuerungen vergleichen<br/>_benchmark_policies()"]
-        V --> E["Abschluss melden<br/>state.running = False"]
+        V --> E["Prozesspool schließen und Abschluss melden<br/>state.running = False"]
     end
 
     Z[("Gemeinsame Daten: state<br/>Fortschritt und Kennzahlen<br/>Ergebnisse und Fehler")]
     U -- "Worker-Thread starten" --> B
+    B --> POOL["Persistenter Spawn-Prozesspool<br/>Modell einmal je Worker<br/>Unabhängige Simulationen parallel ausführen"]
+    O --> POOL
+    V --> POOL
+    POOL -. "Kennzahlen je Input" .-> Z
     O -. "progress()" .-> Z
     E -. "Abschluss oder Fehler" .-> Z
     Z -. "Daten für die Anzeige" .-> U
@@ -2515,8 +2670,11 @@ flowchart TB
     style Berechnung fill:transparent,stroke:#64748b,stroke-width:1px
 ```
 
-- **Gemeinsamer Speicher:** Der Worker schreibt Fortschritt und Ergebnisse
-  in `state`. Die Oberfläche liest diese Daten und aktualisiert die Anzeige.
+- **Gemeinsamer Speicher:** Der Hintergrundthread schreibt Fortschritt und
+  Ergebnisse in `state`; die Oberfläche liest diese Daten. Die Poolprozesse
+  teilen diesen Speicher nicht, sondern liefern serialisierte Ergebnisse zurück.
+- **Pool schließen:** Nach allen Phasen wird er im `finally`-Block des
+  Hintergrundlaufs geschlossen, auch wenn eine Berechnung fehlschlägt.
 
 Der Ablauf im Detail:
 
@@ -2532,8 +2690,11 @@ Der Ablauf im Detail:
    - **Streamlit-Thread – Anzeige:** Aktualisiert die Oberfläche, die
      Fortschrittsanzeige und die Diagramme.
    - **Worker-Thread – Berechnung:** Führt die Funktion `worker()` aus.
-     Diese berechnet die Baseline, führt die Gewichtssuche aus und startet
-     den Abschlussvergleich.
+     Sie koordiniert Baseline, Gewichtssuche und Abschlussvergleich, reicht
+     Simulationsjobs an den Prozesspool weiter und wertet ihre Kennzahlen aus.
+   - **Poolprozesse – Simulation:** Führen voneinander unabhängige Läufe aus.
+     Modell und Zufallszahlengeneratoren sind pro Prozess isoliert; jeder
+     Auftrag setzt den eigenen Simulations-Seed neu.
 
    - **Fortschritt während der Berechnung:** Die Oberfläche kann ihn anzeigen,
      während der Worker rechnet; sie muss nicht auf das Ende der gesamten
@@ -2553,13 +2714,17 @@ Der Ablauf im Detail:
      `_benchmark_policies()` vergleicht die Zufallspolicy, die Standardheuristik
      und die Heuristik mit dem gefundenen Gewichtssatz auf separaten Test-Seeds.
 
-   - **Keine parallelen Simulationsläufe:** Der Worker-Thread führt die
-     einzelnen Läufe nacheinander aus.
+   - **Parallel innerhalb einer Phase:** Baseline-Seeds, die Jobs
+     `Gewichtssätze × SEEDS` einer Iteration sowie die 15 Testläufe werden
+     jeweils als Batch eingereicht. Der Pool bleibt zwischen den Batches bestehen.
+   - **Abhängigkeiten erhalten:** Die Gewichtssuche wartet auf die
+     Baseline-Referenzen. Jede nächste Iteration wartet auf Auswahl und
+     Ergebnisse der vorherigen; der Abschlussvergleich beginnt nach der Suche.
 
 4. **Fortschritt an die Oberfläche weitergeben:** Während der Gewichtssuche
-   speichert `progress()` die aktuelle Iterationsnummer und die Nummer des
-   geprüften Gewichtssatzes in `state`, dem gemeinsamen Speicher für
-   Fortschritt und Ergebnisse. Nach der vollständigen Prüfung eines Satzes
+   speichert `progress()` die aktuelle Iteration, die Anzahl vollständig
+   geprüfter Gewichtssätze und separat den ursprünglichen Kandidatenindex.
+   Ergebnisse können in anderer Reihenfolge fertig werden. Nach allen Seeds eines Satzes
    werden dort auch dessen mittlere globale Bewertungszahl und die
    Mittelwerte seiner Produktionskennzahlen ergänzt.
    Die Oberfläche liest diese Daten regelmäßig und aktualisiert daraus die
@@ -2578,6 +2743,7 @@ Die Parameter stehen oben in [sources/optimization.py](sources/optimization.py):
 | --- | --- |
 | `SEEDS` | Gemeinsame [Seeds](#baseline-technik) (Startwerte für die Zufallszahlengeneratoren) für die [Baseline](#1-produktion-mit-dem-standardgewichtssatz-simulieren) und die Gewichtssuche. |
 | `TEST_SEEDS` | Separate Test-Seeds für den [Abschlussvergleich](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen). |
+| `MAX_WORKERS` | Maximale Zahl der persistenten Simulationsprozesse: bis zu `20`, begrenzt durch die Zahl logischer Prozessoren. Im [gemessenen Vergleich](#gemessener-vergleich-für-example-5) waren auf diesem Rechner `20` Prozesse am schnellsten. |
 | `ITERATIONS` | Maximale Anzahl der [Iterationen](#5-weitere-iteration-ausführen). |
 | `INITIAL_WEIGHT_STEP` | Anfängliche Schrittweite für das [Erhöhen und Verringern einzelner Gewichte](#2-varianten-des-lokalen-gewichtssatzes-erstellen). |
 | `EXPLORATION_CANDIDATES` | Anzahl zusätzlicher zufälliger Gewichtssätze je Iteration. |
@@ -2596,7 +2762,7 @@ folgenden Produktionsläufe.
 
 1. **Vergleichsläufe ausführen:** Die heuristische Steuerung wird mit dem
    Standardgewichtssatz `HeuristicWeights()` einmal pro Seed aus `SEEDS`
-   simuliert, aktuell mit Seed `1` und Seed `2`. Diese Läufe bilden die
+   parallel simuliert, aktuell mit Seed `1` und Seed `2`. Diese Läufe bilden die
    Baseline (Vergleichsbasis).
 2. **Referenzen berechnen:** Für jede [Zeitkennzahl](#produktionskennzahlen)
    wird der Mittelwert über die Baseline-Seeds berechnet und gespeichert.
@@ -2609,8 +2775,9 @@ folgenden Produktionsläufe.
   `11` Stunden mit Seed `2`, wird `(9 + 11) / 2 = 10` Stunden als Referenz
   gespeichert. Die Anwendung dieser Referenz zeigt das
   [Rechenbeispiel in Schritt 3](#globale-gewichte-in-optimizationpy).
-- **Umsetzung im Code:** Der Hintergrundlauf ruft zuerst den Runner mit
-  `HeuristicWeights()` und jedem Seed aus `SEEDS` auf. Anschließend berechnet
+- **Umsetzung im Code:** Der Hintergrundlauf reicht zuerst alle Baseline-Jobs
+  mit `HeuristicWeights()` und jedem Seed aus `SEEDS` an den Pool ein.
+  Erst nach allen Ergebnissen berechnet im Elternprozess
   `GlobalSimulationEvaluation.calculate_baseline_reference_values()` die
   Referenzen aus den gemessenen Zeitkennzahlen.
 - **Ergebnis:** Die Baseline-Referenzwerte gelten für alle folgenden Läufe,
@@ -2731,22 +2898,26 @@ Die Varianten entstehen auf zwei Arten:
 Ziel dieses Schritts ist eine mittlere globale Bewertungszahl für jeden
 Gewichtssatz aus [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
 
-- **Reihenfolge:** Die Gewichtssätze werden einer nach dem anderen geprüft.
-- **Seeds:** Mit der aktuellen Liste `SEEDS = [1, 2]` läuft die Prüfung eines
-  Gewichtssatzes so ab:
+- **Parallelität:** Alle Kombinationen aus Kandidaten und `SEEDS` einer
+  Iteration werden als unabhängige Simulationsjobs an den Pool übergeben.
+- **Seeds:** Mit `SEEDS = [1, 2]` entstehen pro Gewichtssatz zwei Jobs.
+  Die fachliche Auswertung eines Satzes umfasst:
 
 1. **Lauf mit Seed `1`:** Die Produktion wird mit diesem Gewichtssatz
    vollständig simuliert. Aus den Ergebnissen dieses Laufs wird eine
    [globale Bewertungszahl](#globale-bewertungszahl) berechnet.
 2. **Lauf mit Seed `2`:** Die Produktion wird mit **demselben Gewichtssatz**
-   und Seed `2` erneut vollständig simuliert. Für diesen zweiten Lauf wird
+   und Seed `2` unabhängig vollständig simuliert. Für diesen Lauf wird
    eine eigene globale Bewertungszahl berechnet.
 3. **Ergebnis für diesen Gewichtssatz:** Aus **diesen beiden
    Bewertungszahlen** wird der [Mittelwert](#mittelwert-über-die-seeds)
    berechnet, also ihre Summe durch `2` geteilt.
 
-- **Nächsten Satz prüfen:** Erst danach folgt der nächste Gewichtssatz,
-  ebenfalls mit beiden Seeds und einem eigenen Mittelwert.
+- **Ergebnisse zuordnen:** Unterschiedliche Sätze und Seeds dürfen in anderer
+  Reihenfolge fertig werden. Erst wenn alle Seeds eines Satzes vorliegen,
+  berechnet der Elternprozess dessen globale Bewertungszahlen und Mittelwerte.
+- **Iteration abschließen:** Erst nach allen Kandidaten wird der beste Satz
+  bestimmt und daraus die nächste Iteration vorbereitet.
 
 #### Gewichtssätze mit denselben Seeds vergleichen
 
@@ -2755,8 +2926,8 @@ getestet.
 
 - **Diagrammzeilen:** Jede Zeile zeigt einen anderen Gewichtssatz.
 - **Zweige:** Jeder Zweig steht für einen vollständigen Produktionslauf und
-  dessen [globale Bewertungszahl](#globale-bewertungszahl). Die Läufe werden
-  nacheinander ausgeführt.
+  dessen [globale Bewertungszahl](#globale-bewertungszahl). Unabhängige Läufe
+  derselben Iteration werden parallel ausgeführt.
 - **Zusammenfassung:** Der
   [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds) fasst das
   Ergebnis eines Gewichtssatzes zusammen.
@@ -2783,8 +2954,9 @@ flowchart LR
 
 #### Simulationslauf und Produktionskennzahlen
 
-Für jeden Gewichtssatz und Seed ruft der Optimierer `runner(weights, seed)`
-auf. Dieser Aufruf führt drei Schritte aus:
+Der Optimierer übergibt die Kombinationen aus Gewichtssatz und Seed mit
+`run_many()` an `ParallelSimulationRunner`. Jeder Poolprozess führt mit seinem
+prozesslokalen `SpineMLSimulationRunner` drei Schritte aus:
 
 1. **Steuerung erstellen:** Der Runner erstellt die heuristische Steuerung
    mit dem übergebenen Gewichtssatz.
@@ -2794,7 +2966,7 @@ auf. Dieser Aufruf führt drei Schritte aus:
    wiederholt über Aktionen. Der Gewichtssatz bleibt dabei unverändert.
 3. **Produktionsergebnis erfassen:** `collect_global_metrics()` erfasst die
    Kennzahlen des gesamten Laufs. Der Runner gibt sie als
-   `GlobalSimulationMetrics` an den Optimierer zurück. Sind beim Laufende
+   `GlobalSimulationMetrics` über den Pool an den Optimierer zurück. Sind beim Laufende
    noch Jobs unfertig, meldet der Runner stattdessen einen Fehler.
 
 ##### Produktionskennzahlen
@@ -2945,17 +3117,20 @@ Vergleichswert zusammen.
 Die Oberfläche zeigt den aktuellen Prüfstand und die Ergebnisse bereits
 abgeschlossener Gewichtssatz-Prüfungen.
 
-- **Fortschritt melden:** `progress` in `optimization.py` übermittelt die
-  aktuelle Iteration und den gerade geprüften Gewichtssatz.
+- **Fortschritt melden:** `progress` in `optimization.py` erhält die
+  Iteration und den ursprünglichen Index eines vollständig geprüften
+  Gewichtssatzes. Die Oberfläche zählt fertige Sätze separat.
 - **Anzeige lesen:** `Optimization: iteration 1, candidate 9/53` bedeutet:
-  In Iteration `1` wird der neunte von `53` Gewichtssätzen geprüft. Die Anzeige
+  In Iteration `1` sind neun von `53` Gewichtssätzen vollständig geprüft. Die Anzeige
   bezieht sich auf die aktuelle Iteration, nicht auf die gesamte Optimierung.
 - **Diagrammachsen unterscheiden:** Die drei folgenden Darstellungen
   verwenden die fortlaufende X-Achse `Candidate` (geprüfter Gewichtssatz).
-  Sie nummeriert abgeschlossene Prüfungen über alle Iterationen hinweg.
+  Sie nummeriert Kandidaten in ihrer ursprünglichen Eingabereihenfolge über
+  alle Iterationen hinweg, nicht nach Fertigstellungszeit.
 - **Punkte und Linien lesen:** Ein Punkt erscheint nach der Auswertung
-  aller Seeds eines Gewichtssatzes. Die Verbindungslinien zeigen nur die
-  Prüfreihenfolge.
+  aller Seeds eines Gewichtssatzes. Bereits fertige spätere Kandidaten werden
+  bis zu ihren Vorgängern gepuffert. Verbindungslinien zeigen die
+  Eingabereihenfolge; Kandidat `1` bleibt die ursprüngliche Vergleichsbasis.
 
 ##### Bedeutung der Kostenkurve
 
@@ -2987,24 +3162,35 @@ abgeschlossener Gewichtssatz-Prüfungen.
 ##### Abweichung gegenüber dem ersten Gewichtssatz
 
 **Metric deviation from candidate 1** zeigt die Änderung der einzelnen
-Kennzahlmittelwerte gegenüber dem ersten geprüften Gewichtssatz.
+Kennzahlmittelwerte in zwei getrennten Diagrammen: Zeitkennzahlen in relativen
+Prozent und Nacharbeits-, Ausschuss- sowie Herabstufungsquoten in Prozentpunkten.
 
-- **Vergleichsbasis:** In der aktuellen Suche ist das der Standardgewichtssatz.
-- **Abweichung berechnen:** Für einen Ausgangswert ungleich `0` gilt:
+- **Vergleichsbasis:** Kandidat `1` ist der erste Gewichtssatz der ursprünglichen
+  Eingabereihenfolge der gesamten Optimierung, aktuell der Standardgewichtssatz.
+  Er ist weder der zuerst fertiggestellte Kandidat noch ein neuer Ausgangspunkt
+  pro Iteration.
+- **Zeitkennzahlen:** Für einen Ausgangswert ungleich `0` gilt:
 
 `Abweichung (%) = (Kennzahlmittelwert − Ausgangswert) / |Ausgangswert| × 100`
 
-- **Rechenbeispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8`
+- **Zeitbeispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8`
   Stunden, ist die Abweichung `(8 − 10) / 10 × 100 = −20 %`.
+- **Quoten:** Die bereits in Prozent dargestellten Mittelwerte werden direkt
+  voneinander abgezogen. Von `0 %` auf `5 %` ergibt `+5` Prozentpunkte;
+  von `10 %` auf `20 %` ergibt `+10` Prozentpunkte, nicht `+100` Prozentpunkte.
+- **Zeit-Ausgangswert `0`:** Die relative Abweichung ist nicht definiert.
+  Für diese Zeitkennzahl wird keine Kurve gezeichnet; ein Hinweis im
+  Diagrammtitel erklärt den fehlenden Vergleich. Es wird kein künstlicher
+  Wert von `0 %` eingesetzt. Quoten mit Ausgangswert `0 %` bleiben dagegen
+  als Prozentpunktdifferenz darstellbar.
 - **Vorzeichen lesen:** Ein negativer Wert bedeutet eine Verringerung, ein
   positiver Wert eine Erhöhung.
 - **Gesamtergebnis beurteilen:** Eine einzelne verringerte Kennzahl beweist
   noch keine Verbesserung: Weniger Nacharbeit kann mit mehr Ausschuss
   einhergehen. Entscheidend ist die
   [mittlere globale Bewertungszahl](#mittelwert-über-die-seeds).
-- **Ausgangswert `0` beachten:** Eine prozentuale Abweichung ist dann nicht
-  berechenbar. Das Diagramm zeigt durchgehend `0 %`, auch wenn andere Sätze
-  einen Wert ungleich `0` erreichen. Die tatsächlichen Werte stehen im
+- **Unveränderte Rohwerte:** Die tatsächlichen Kennzahlmittelwerte und die
+  Berechnung der Jobquoten bleiben unverändert. Sie stehen weiterhin im
   [Kennzahlendiagramm](#einzelne-produktionskennzahlen).
 - **Ergebnis dieses Schritts:** Ein `mean_global_cost` pro geprüftem
   Gewichtssatz bildet die Grundlage für die
@@ -3118,8 +3304,11 @@ auf separaten Test-Seeds.
 - **Gleiche Bedingungen:** Alle drei Steuerungen verwenden dasselbe Layout,
   dasselbe Szenario, dieselben Test-Seeds sowie dieselben globalen Gewichte
   und Baseline-Referenzwerte.
-- **Umfang:** Es entstehen 15 Testläufe: fünf pro Steuerung. Der gefundene
-  Gewichtssatz wird dabei nicht verändert.
+- **Umfang:** Die 15 Testläufe, fünf pro Steuerung, werden gemeinsam parallel
+  an denselben Prozesspool übergeben. Der gefundene Gewichtssatz bleibt unverändert.
+- **Auswertung:** Der Elternprozess ordnet die Ergebnisse Steuerung und Seed
+  zu und berechnet globale Bewertungszahlen sowie Mittelwerte. Diagramme
+  behalten die festgelegte Eingabereihenfolge, nicht die Fertigstellungsreihenfolge.
 - **Tabelle lesen:** Das Interface zeigt je Steuerung die Mittelwerte der
   sieben bewerteten Produktionskennzahlen und der globalen Bewertungszahl.
 - **Diagramme lesen:** Sie zeigen die Ergebnisse für jeden einzelnen Test-Seed.

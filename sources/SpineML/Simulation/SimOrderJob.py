@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 import salabim as sim
 from ..Configuration import Layout, Scenario, Order, Machine, OperationType
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 if TYPE_CHECKING:
     from .SimOrder import SimOrder

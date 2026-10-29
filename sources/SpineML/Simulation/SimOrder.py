@@ -2,7 +2,7 @@ import salabim as sim
 import matplotlib.pyplot as plt
 
 from ..Configuration import Layout, Scenario, Order
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimOrderJob import SimOrderJob
 

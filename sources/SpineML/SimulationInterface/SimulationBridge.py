@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import salabim as sim
 
-from ...Configuration import (
+from ..Configuration import (
     CORRIDORS,
     LAYOUTS,
     MACHINES,
@@ -10,8 +10,7 @@ from ...Configuration import (
     PRODUCT_TYPES,
     TOOL_TYPES,
 )
-from ..GeneralControl.GeneratorSelectorPolicy import GeneratorSelectorPolicy
-from ..Interface.InterfaceTypes import (
+from .InterfaceTypes import (
     ConfigurationObjectObserver,
     Policy,
     PolicyObservation,
@@ -28,7 +27,10 @@ class SimulationBridge(sim.Component):
     def __init__(self, policy: Policy | None = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if policy is None:
-            self.policy = GeneratorSelectorPolicy()
+            # Die Standardheuristik erst laden, wenn keine Policy übergeben wurde.
+            from ..Control.HeuristicPolicy.HeuristicPolicy import HeuristicPolicy
+
+            self.policy = HeuristicPolicy()
         else:
             self.policy = policy
 

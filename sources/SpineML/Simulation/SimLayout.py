@@ -2,7 +2,7 @@ import salabim as sim
 import matplotlib.pyplot as plt
 
 from ..Configuration import Layout, Scenario
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimCorridor import SimCorridor
 from .SimRobotMain import SimRobotMain

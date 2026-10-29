@@ -1,4 +1,4 @@
 from .Configuration import *
-from .Control import *
+from .SimulationInterface import *
 from .Simulation import *
 from .simulate import *

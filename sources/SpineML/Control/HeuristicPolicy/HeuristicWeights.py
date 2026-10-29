@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
+from ..ActionGeneration.ActionPreparation import EDD_AT_DEADLINE, SCORE_MAX
 
-# Gemeinsame Score-Skala und EDD-Wert genau bei Erreichen der Deadline.
-SCORE_MAX = 1.0
-EDD_AT_DEADLINE = 0.5
 
 # Bewusst gewählte Zielgrenzen für die Standardparametrierung ab der Deadline.
 DEFAULT_DEADLINE_REWORK_SCORE_MAX = 0.5

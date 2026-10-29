@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from ..Interface.InterfaceTypes import (
+from ...SimulationInterface.InterfaceTypes import (
     ActionEvaluator,
     ActionSelector,
     PolicyDecision,
@@ -12,7 +12,7 @@ from ..Interface.InterfaceTypes import (
 )
 
 
-class BaselineActionSelector(ActionSelector):
+class HeuristicActionSelector(ActionSelector):
     # Toleranz für Aktionen, deren Bewertung nahe am besten Ergebnis liegt.
     SCORE_TOLERANCE = 0.05
     # Wahrscheinlichkeit, gelegentlich eine fast gleich gute Alternative zu testen.

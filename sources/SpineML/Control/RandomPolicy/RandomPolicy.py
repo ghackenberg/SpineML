@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import random
 
-from .ActionGenerators import SpineActionGenerator
-from ..Interface.InterfaceTypes import (
+from ..ActionGeneration.ActionGenerator import SpineActionGenerator
+from ...SimulationInterface.InterfaceTypes import (
     ActionGenerator,
     Policy,
     PolicyDecision,

@@ -1,3 +1,5 @@
+"""Produktionskennzahlen und gemeinsame globale Bewertung eines Simulationslaufs."""
+
 from dataclasses import dataclass
 from typing import Iterable
 

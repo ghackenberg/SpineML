@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import salabim as sim
 
 from ..Configuration import Machine, OperationType, ToolType
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimOrderJob import SimOrderJob
 

@@ -6,7 +6,7 @@ from .Configuration import (
     Layout,
     Scenario,
 )
-from .Control import Policy, SimulationBridge
+from .SimulationInterface import Policy, SimulationBridge
 from .Simulation import SimLayout, SimMachineShutdown, SimScenario
 
 

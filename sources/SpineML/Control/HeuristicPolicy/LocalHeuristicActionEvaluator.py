@@ -1,10 +1,11 @@
 from typing import Any
 
-from ..GeneralControl.ActionGenerators import SpineActionGenerator
-from ..Interface.InterfaceTypes import ActionEvaluator, PolicyObservation
-from .HeuristicWeights import EDD_AT_DEADLINE, SCORE_MAX, HeuristicWeights
+from ..ActionGeneration.ActionGenerator import SpineActionGenerator
+from ..ActionGeneration.ActionPreparation import ActionPreparation
+from ...SimulationInterface.InterfaceTypes import ActionEvaluator, PolicyObservation
+from .HeuristicWeights import HeuristicWeights
 
-class LocalHeuristicActionEvaluator(ActionEvaluator):
+class LocalHeuristicActionEvaluator(ActionPreparation, ActionEvaluator):
     """Prepare action candidates and evaluate them with weights."""
 
     DEFAULT_WAIT_SCORE = 0.01
@@ -22,17 +23,6 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             if action_generator is not None
             else SpineActionGenerator()
         )
-
-    # Inverse Skalierung: Für value >= 0 liegt der Score in (0, 1].
-    @staticmethod
-    def inverse_scale(value: float) -> float:
-        return 1.0 / (1.0 + float(value))
-
-    # Direkte Skalierung: Für value >= 0 liegt der Score in [0, 1).
-    @staticmethod
-    def direct_scale(value: float) -> float:
-        value = float(value)
-        return value / (1.0 + value)
 
     # Berechnet das Verhältnis value/maximum ohne Begrenzung oder Ersatzwert.
     @staticmethod
@@ -63,83 +53,6 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             observation.current_object_id
         ]
 
-
-    # Kopiert einen Aktionskandidaten und ergänzt Pick-Aktionen um queue_priority.
-    # Beispiel: pick_main_robot für Job A erhält zusätzlich queue_priority=0.42.
-    def prepare_action_candidate(
-        self,
-        action: dict[str, Any],
-        observation: PolicyObservation,
-    ) -> dict[str, Any]:
-        action_type = str(action["action_type"])
-        prepared_action = dict(action)
-        prepared_action["payload"] = dict(action["payload"])
-
-        # Jede Pick-Aktion betrifft genau einen Job; dafür wird die aktuelle EDD-Priorität berechnet.
-        if action_type.startswith("pick_"):
-            prepared_action["payload"]["queue_priority"] = (
-                self.calculate_pick_edd_priority(
-                    prepared_action,
-                    observation,
-                )
-            )
-
-        return prepared_action
-
-    # Liest den ausgewählten Job und berechnet daraus seine aktuelle EDD-Priorität.
-    # Beispiel: Deadline 10 und aktuelle Zeit 8 ergeben die Priorität 0.1667.
-    def calculate_pick_edd_priority(
-        self,
-        action: dict[str, Any],
-        observation: PolicyObservation,
-    ) -> float:
-        job_state = self.selected_job_state(action, observation)
-        return self.calculate_edd_priority(
-            float(job_state["latest_end_time"]),
-            float(observation.simulation_configuration_snapshot["time"]),
-        )
-
-    # Wandelt Deadline und aktuelle Zeit in eine Dringlichkeit zwischen 0 und 1 um.
-    # Beispiel: latest_end_time=10 und current_time=8 ergeben 0.5/(1+2)=0.1667.
-    def calculate_edd_priority(
-        self,
-        latest_end_time: float,
-        current_time: float,
-    ) -> float:
-        time_until_deadline = latest_end_time - current_time
-        if time_until_deadline >= 0:
-            # Je weniger Restzeit vorhanden ist, desto höher ist der Druck.
-            return EDD_AT_DEADLINE * self.inverse_scale(time_until_deadline)
-
-        overdue_time = -time_until_deadline
-        # Bei einer Überschreitung steigt der Druck mit der Überfälligkeit.
-        return EDD_AT_DEADLINE + (
-            SCORE_MAX - EDD_AT_DEADLINE
-        ) * self.direct_scale(overdue_time)
-
-
-    # Sucht einen Store rekursiv im Snapshot und gibt sein Zustands-Dictionary zurück.
-    # Beispiel: store_id="Machine 1 in" liefert count, capacity und job_summaries.
-    def find_store_state(
-        self,
-        value: object,
-        store_id: str,
-    ) -> dict:
-        stores_by_id: dict[str, dict] = {}
-
-        # Beispiel: Ein verschachteltes Dictionary mit store_id wird in stores_by_id gespeichert.
-        def collect_store_states(nested_value):
-            if isinstance(nested_value, dict):
-                if "store_id" in nested_value:
-                    stores_by_id[nested_value["store_id"]] = nested_value
-                for child_value in nested_value.values():
-                    collect_store_states(child_value)
-            elif isinstance(nested_value, list):
-                for child_value in nested_value:
-                    collect_store_states(child_value)
-
-        collect_store_states(value)
-        return stores_by_id[store_id]
 
     # Sucht einen Maschinenzustand rekursiv anhand seiner ID oder seines Namens.
     # Beispiel: machine_id="Fräsmaschine A" liefert den Zustand dieser Maschine.
@@ -191,24 +104,6 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         collect_store_positions(value)
         return store_positions_by_id[store_id]
-
-    # Sucht anhand von selected_job_id und target_store_id den ausgewählten Jobzustand.
-    # Beispiel: Job A im Start-Store liefert dessen latest_end_time und selected_operation_id.
-    def selected_job_state(
-        self,
-        action: dict[str, Any],
-        observation: PolicyObservation,
-    ) -> dict:
-        payload = action["payload"]
-        selected_job_id = payload["selected_job_id"]
-        target_store_id = payload["target_store_id"]
-
-        snapshot = observation.simulation_configuration_snapshot
-        store_state = self.find_store_state(snapshot, str(target_store_id))
-        for job_state in store_state["job_summaries"]:
-            if job_state["job_id"] == selected_job_id:
-                return job_state
-        raise KeyError(selected_job_id)
 
     # Liest die gültige Queue-Priorität aus einer Pick-Aktion oder dem aktuellen Objektzustand.
     # Beispiel: Pick-Payload queue_priority=0.42 ergibt die Zahl 0.42.

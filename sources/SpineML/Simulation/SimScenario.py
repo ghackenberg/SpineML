@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from typing import TYPE_CHECKING, Optional
 
 from ..Configuration import Layout, Scenario
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimOrder import SimOrder
 

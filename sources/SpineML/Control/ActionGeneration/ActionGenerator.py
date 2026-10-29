@@ -1,4 +1,4 @@
-from ..Interface.InterfaceTypes import ActionGenerator, PolicyObservation
+from ...SimulationInterface.InterfaceTypes import ActionGenerator, PolicyObservation
 
 
 class SpineActionGenerator(ActionGenerator):

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 import salabim as sim
 
 if TYPE_CHECKING:
-    from ...Simulation.SimMachine import SimMachine
-    from ...Simulation.SimOrderJob import SimOrderJob
-    from ...Simulation.SimRobotCorridorArm import SimRobotCorridorArm
-    from ...Simulation.SimRobotMain import SimRobotMain
+    from ..Simulation.SimMachine import SimMachine
+    from ..Simulation.SimOrderJob import SimOrderJob
+    from ..Simulation.SimRobotCorridorArm import SimRobotCorridorArm
+    from ..Simulation.SimRobotMain import SimRobotMain
 
 
 class SimulationObjectObserver:
@@ -19,10 +19,10 @@ class SimulationObjectObserver:
     @classmethod
     # Wählt anhand des konkreten Laufzeittyps die passende Beobachtungsmethode.
     def observe_simulation_object(cls, sender: sim.Component, time: float) -> dict[str, object]:
-        from ...Simulation.SimMachine import SimMachine
-        from ...Simulation.SimOrderJob import SimOrderJob
-        from ...Simulation.SimRobotCorridorArm import SimRobotCorridorArm
-        from ...Simulation.SimRobotMain import SimRobotMain
+        from ..Simulation.SimMachine import SimMachine
+        from ..Simulation.SimOrderJob import SimOrderJob
+        from ..Simulation.SimRobotCorridorArm import SimRobotCorridorArm
+        from ..Simulation.SimRobotMain import SimRobotMain
 
         if isinstance(sender, SimOrderJob):
             return cls.observe_order_job(sender, time)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import salabim as sim
 
 from ..Configuration import Corridor, Machine
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimRobot import SimRobot
 from .SimMachine import SimMachine

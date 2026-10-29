@@ -1,7 +1,7 @@
 import salabim as sim
 
 from ..Configuration import Corridor
-from ..Control import SimulationBridge
+from ..SimulationInterface import SimulationBridge
 
 from .SimCorridorArm import SimCorridorArm
 

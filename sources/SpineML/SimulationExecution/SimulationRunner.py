@@ -1,28 +1,24 @@
+"""Führt eine übergebene Policy aus und sammelt die Produktionskennzahlen."""
+
 from __future__ import annotations
 
 import random
 
 import salabim as sim
 
-from ...Configuration import (
+from ..Configuration import (
     Layout,
     Scenario,
 )
-from ...Simulation import SimLayout, SimScenario
-from ...Simulation.SimMachine import SimMachine
-from ..GeneralControl.ActionSelectors import BaselineActionSelector
-from ..GeneralControl.GeneratorSelectorPolicy import GeneratorSelectorPolicy
-from ..Interface.InterfaceTypes import Policy
-from ..SimulationBridge.SimulationBridge import SimulationBridge
-from .GlobalSimulationEvaluation import GlobalSimulationMetrics
-from .HeuristicWeights import HeuristicWeights
-from .LocalHeuristicActionEvaluator import (
-    LocalHeuristicActionEvaluator,
-)
+from ..Simulation import SimLayout, SimScenario
+from ..Simulation.SimMachine import SimMachine
+from ..SimulationInterface.InterfaceTypes import Policy
+from ..SimulationInterface.SimulationBridge import SimulationBridge
+from ..GlobalEvaluation.GlobalSimulationEvaluation import GlobalSimulationMetrics
 
 
-class SpineMLSimulationRunner:
-    """Run a headless SpineML simulation with heuristic weights or any Policy."""
+class SimulationRunner:
+    """Führt eine übergebene Policy ohne 3D-Anzeige aus und sammelt Kennzahlen."""
 
     # Speichert Layout, Szenario und die maximale Simulationszeit für spätere Läufe.
     def __init__(
@@ -34,19 +30,6 @@ class SpineMLSimulationRunner:
         self.layout = layout
         self.scenario = scenario
         self.till = till
-
-    # Erstellt die heuristische Policy für einen Gewichtssatz und einen Seed.
-    def __call__(
-        self,
-        weights: HeuristicWeights,
-        seed: int,
-    ) -> GlobalSimulationMetrics:
-        evaluator = LocalHeuristicActionEvaluator(weights)
-        policy = GeneratorSelectorPolicy(
-            action_evaluator=evaluator,
-            action_selector=BaselineActionSelector(rng=random.Random(seed)),
-        )
-        return self.run_policy(policy, seed)
 
     def run_policy(self, policy: Policy, seed: int) -> GlobalSimulationMetrics:
         """Führt die übergebene Policy über dieselbe Bridge aus und misst die Ergebnisse."""

@@ -5,8 +5,13 @@ from dataclasses import dataclass, fields, replace
 from statistics import mean
 from typing import Iterable
 
-from .GlobalSimulationEvaluation import GlobalSimulationEvaluation, GlobalSimulationMetrics
-from .HeuristicWeights import HeuristicWeights
+from ..HeuristicPolicyFactory import HeuristicPolicyFactory
+from ..HeuristicWeights import HeuristicWeights
+from ....GlobalEvaluation.GlobalSimulationEvaluation import (
+    GlobalSimulationEvaluation,
+    GlobalSimulationMetrics,
+)
+from ....SimulationExecution.ParallelSimulationRunner import SimulationRunRequest
 
 
 @dataclass(frozen=True)
@@ -46,12 +51,14 @@ class LocalHeuristicWeightOptimizer:
         exploration_candidate_count: int = 10,
         restart_after_no_improvement: int = 2,
         stop_after_no_improvement: int | None = 6,
-        # Optionale Funktion, die Beginn und Ergebnis jeder Gewichtssatzprüfung erhält.
+        # Optionale Rückmeldung zum Beginn der Prüfungen und zu fertigen Gewichtssätzen.
         progress_callback=None,
     ) -> WeightOptimizationResult:
         """Verbindet Varianten einzelner Gewichte mit zusätzlichen Zufallsgewichtssätzen."""
         # Speichert die Seeds, damit jeder Gewichtssatz mit denselben Seeds geprüft wird.
         seed_values = tuple(seeds)
+        if not seed_values:
+            raise ValueError("Mindestens ein Seed ist erforderlich.")
         # Ausgangssatz, aus dem die Varianten der ersten Iteration erstellt werden.
         current_local_weights = initial_local_weights
         # Betrag, der zu einem Gewicht addiert oder davon abgezogen wird.
@@ -231,36 +238,40 @@ class LocalHeuristicWeightOptimizer:
         """Gibt den besten Gewichtssatz und alle Gewichtssatzbewertungen dieses Aufrufs zurück."""
         # Hält dieselben Seeds für alle Gewichtssatzprüfungen verfügbar.
         seed_values = tuple(seeds)
-        evaluations = []
+        if not seed_values:
+            raise ValueError("Mindestens ein Seed ist erforderlich.")
         # Entfernt doppelte vollständige Gewichtssätze aus der Kandidatenauswahl.
         # Das erste Vorkommen jedes Gewichtssatzes bleibt in der ursprünglichen Reihenfolge erhalten.
         candidate_list = tuple(dict.fromkeys(local_weight_candidates))
         # Anzahl der unterschiedlichen Gewichtssätze in diesem Aufruf.
         total_candidates = len(candidate_list)
+        if not total_candidates:
+            raise ValueError("Mindestens ein Gewichtssatz ist erforderlich.")
 
-        # Prüft die Gewichtssätze nacheinander; ihre Nummerierung beginnt bei 1.
-        for candidate_number, local_weights in enumerate(candidate_list, start=1):
-
-            # Meldet Streamlit, welcher Gewichtssatz jetzt mit allen Seeds simuliert und bewertet wird.
-            # Dafür wird progress() aus optimization.py aufgerufen; die Funktion aktualisiert state.
-            # Gemeldet werden die Iteration, die Gewichtssatznummer und die Anzahl der Sätze dieser Iteration.
-            # None bedeutet: Für diesen Gewichtssatz liegt noch kein Bewertungsergebnis vor.
-            if progress_callback is not None:
-                progress_callback(iteration_number, None, candidate_number, total_candidates)
-
-            # Für diesen einen festen Gewichtssatz: einen vollständigen Produktionslauf pro Seed ausführen.
-            # Für jeden Lauf eine globale Bewertungszahl berechnen.
-            # Danach den Durchschnitt dieser Bewertungszahlen über alle Seeds bilden.(Für diesen einen festen Gewichtssatz)
-            # evaluation.mean_global_cost enthält diesen Durchschnitt für diesen einen Gewichtssatz.
-            evaluation = self.evaluate_local_weights_across_seeds(
-                local_weights,
+        run_many = getattr(self.simulation_runner, "run_many", None)
+        if callable(run_many):
+            # Gibt alle Kandidaten-Seed-Paare dieser Iteration gemeinsam an den Pool.
+            # Die nächste Suchiteration beginnt weiterhin erst nach diesem gesamten Batch.
+            evaluations = self._evaluate_candidates_with_run_many(
+                candidate_list,
                 seed_values,
+                run_many,
+                iteration_number,
+                progress_callback,
             )
-            # Speichert das Ergebnis auch dann, wenn dieser Gewichtssatz nicht der beste ist.
-            evaluations.append(evaluation)
-            # Meldet dieselben Fortschrittsangaben, jetzt mit der fertigen Bewertung statt None.
-            if progress_callback is not None:
-                progress_callback(iteration_number, evaluation, candidate_number, total_candidates)
+        else:
+            # Der allgemeine Runner führt die Policies nacheinander aus.
+            evaluations = []
+            for candidate_number, local_weights in enumerate(candidate_list, start=1):
+                if progress_callback is not None:
+                    progress_callback(iteration_number, None, candidate_number, total_candidates)
+                evaluation = self.evaluate_local_weights_across_seeds(
+                    local_weights,
+                    seed_values,
+                )
+                evaluations.append(evaluation)
+                if progress_callback is not None:
+                    progress_callback(iteration_number, evaluation, candidate_number, total_candidates)
         # Startet den Vergleich mit dem Ergebnis des ersten Gewichtssatzes.
         best_evaluation = evaluations[0]
 
@@ -277,6 +288,65 @@ class LocalHeuristicWeightOptimizer:
             evaluations=tuple(evaluations),
         )
 
+    def _evaluate_candidates_with_run_many(
+        self,
+        candidates: tuple[HeuristicWeights, ...],
+        seeds: tuple[int, ...],
+        run_many,
+        iteration_number: int,
+        progress_callback,
+    ) -> list[WeightEvaluation]:
+        """Ordnet parallele Ergebnisse wieder ihren Kandidaten und Seedpositionen zu."""
+        seed_count = len(seeds)
+        total_candidates = len(candidates)
+        requests = tuple(
+            SimulationRunRequest(HeuristicPolicyFactory(weights), seed)
+            for weights in candidates
+            for seed in seeds
+        )
+        # Seedpositionen statt Seedwerte als Schlüssel erhalten auch doppelte Seeds.
+        metrics_by_candidate: list[dict[int, GlobalSimulationMetrics]] = [
+            {} for _ in candidates
+        ]
+        evaluations: list[WeightEvaluation | None] = [None] * total_candidates
+
+        if progress_callback is not None:
+            progress_callback(iteration_number, None, 0, total_candidates)
+
+        def record_completed_run(request_index, result):
+            # run_many ruft diese Funktion im Elternprozess auf, nicht im Worker.
+            candidate_index, seed_index = divmod(request_index, seed_count)
+            candidate_metrics = metrics_by_candidate[candidate_index]
+            if seed_index in candidate_metrics:
+                return
+            candidate_metrics[seed_index] = result.metrics
+            if len(candidate_metrics) != seed_count:
+                return
+
+            # Die Abschlussreihenfolge ist beliebig; Kosten und Mittelwerte verwenden
+            # trotzdem dieselbe Seedreihenfolge wie die bisherige sequenzielle Rechnung.
+            evaluation = self._evaluate_metrics_by_seed(
+                candidates[candidate_index],
+                tuple(candidate_metrics[index] for index in range(seed_count)),
+            )
+            evaluations[candidate_index] = evaluation
+            if progress_callback is not None:
+                progress_callback(
+                    iteration_number,
+                    evaluation,
+                    candidate_index + 1,
+                    total_candidates,
+                )
+
+        results = tuple(run_many(requests, on_completed=record_completed_run))
+        if len(results) != len(requests):
+            raise ValueError("Der Runner muss genau ein Ergebnis je Simulationsanfrage liefern.")
+        # Übernimmt auch Ergebnisse eines kompatiblen Runners ohne Abschlussmeldungen.
+        # Bereits gemeldete Läufe und fertige Gewichtssätze werden nicht doppelt verbucht.
+        for request_index, result in enumerate(results):
+            record_completed_run(request_index, result)
+        return [evaluation for evaluation in evaluations if evaluation is not None]
+
     # Führt für einen Gewichtssatz einen Produktionslauf pro Seed aus.
     # Berechnet je Lauf eine globale Bewertungszahl und danach deren Mittelwert.
     def evaluate_local_weights_across_seeds(
@@ -285,21 +355,47 @@ class LocalHeuristicWeightOptimizer:
         seeds: Iterable[int],
     ) -> WeightEvaluation:
         """Bewertet einen Gewichtssatz anhand vollständiger Produktionsläufe mit allen Seeds."""
+        seed_values = tuple(seeds)
+        if not seed_values:
+            raise ValueError("Mindestens ein Seed ist erforderlich.")
+        run_many = getattr(self.simulation_runner, "run_many", None)
+        if callable(run_many):
+            requests = tuple(
+                SimulationRunRequest(HeuristicPolicyFactory(local_weights), seed)
+                for seed in seed_values
+            )
+            results = tuple(run_many(requests))
+            if len(results) != len(requests):
+                raise ValueError("Der Runner muss genau ein Ergebnis je Simulationsanfrage liefern.")
+            metrics_by_seed = tuple(result.metrics for result in results)
+        else:
+            # Der Generator erhält beim allgemeinen Runner die bisherige Reihenfolge:
+            # einen Lauf ausführen, seine Kosten berechnen, dann den nächsten starten.
+            metrics_by_seed = (
+                self.simulation_runner.run_policy(
+                    HeuristicPolicyFactory(local_weights)(seed), seed
+                )
+                for seed in seed_values
+            )
+        return self._evaluate_metrics_by_seed(local_weights, metrics_by_seed)
+
+    def _evaluate_metrics_by_seed(
+        self,
+        local_weights: HeuristicWeights,
+        metrics_by_seed: Iterable[GlobalSimulationMetrics],
+    ) -> WeightEvaluation:
+        """Berechnet globale Kosten im Elternprozess in der vorgegebenen Seedreihenfolge."""
+        ordered_metrics = []
         objective_values = []
-        metrics_by_seed = []
-        for seed in seeds:
-            # Der Runner startet einen vollständigen Produktionslauf mit diesem Gewichtssatz
-            # und Seed. Er liefert die Produktionskennzahlen, noch keine globale Bewertungszahl.
-            metrics = self.simulation_runner(local_weights, seed)
-            
-            metrics_by_seed.append(metrics)
-            # Berechnet aus den Kennzahlen die globale Bewertungszahl dieses Laufs.
-            weighted_relative_sum = (
+        for metrics in metrics_by_seed:
+            ordered_metrics.append(metrics)
+            objective_values.append(
                 self.global_evaluation.calculate_weighted_sum_of_metrics_relative_to_baseline(
                     metrics
                 )
             )
-            objective_values.append(weighted_relative_sum)
+        if not ordered_metrics:
+            raise ValueError("Mindestens ein Simulationsergebnis ist erforderlich.")
         # Eine globale Bewertungszahl je Seed, in derselben Reihenfolge wie die Seeds.
         objective_values_tuple = tuple(objective_values)
         # Arithmetischer Mittelwert dieser Bewertungszahlen über alle Seeds.
@@ -313,5 +409,5 @@ class LocalHeuristicWeightOptimizer:
             # Summe der globalen Bewertungszahlen geteilt durch die Anzahl der Seeds.
             mean_global_cost=mean_global_cost,
             # Die Produktionskennzahlen jedes Laufs, in derselben Reihenfolge wie die Seeds.
-            metrics_by_seed=tuple(metrics_by_seed),
+            metrics_by_seed=tuple(ordered_metrics),
         )

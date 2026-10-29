@@ -1,6 +1,6 @@
-from .ActionGenerators import SpineActionGenerator
-from .ActionSelectors import BaselineActionSelector
-from ..Interface.InterfaceTypes import (
+from ..ActionGeneration.ActionGenerator import SpineActionGenerator
+from .HeuristicActionSelector import HeuristicActionSelector
+from ...SimulationInterface.InterfaceTypes import (
     ActionEvaluator,
     ActionGenerator,
     ActionSelector,
@@ -11,7 +11,7 @@ from ..Interface.InterfaceTypes import (
 )
 
 
-class GeneratorSelectorPolicy(Policy):
+class HeuristicPolicy(Policy):
     """Connect an action generator to a replaceable action selector."""
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
@@ -21,7 +21,7 @@ class GeneratorSelectorPolicy(Policy):
         action_generator: ActionGenerator | None = None,
         action_evaluator: ActionEvaluator | None = None,
     ):
-        self.action_selector = action_selector if action_selector is not None else BaselineActionSelector()
+        self.action_selector = action_selector if action_selector is not None else HeuristicActionSelector()
         self.action_generator = action_generator if action_generator is not None else SpineActionGenerator()
         self.action_evaluator = (
             action_evaluator
@@ -30,10 +30,10 @@ class GeneratorSelectorPolicy(Policy):
         )
 
     def _create_default_action_evaluator(self) -> ActionEvaluator:
-        # Der Import erfolgt erst bei der Policy-Erzeugung, damit
-        # GeneralControl und HeuristicControl keinen zirkulären Import bilden.
-        from ..HeuristicControl.HeuristicWeights import HeuristicWeights
-        from ..HeuristicControl.LocalHeuristicActionEvaluator import (
+        # Der Import erfolgt erst bei der Policy-Erzeugung, damit die
+        # Standardbewertung erst nach dem Laden der Policy aufgelöst wird.
+        from .HeuristicWeights import HeuristicWeights
+        from .LocalHeuristicActionEvaluator import (
             LocalHeuristicActionEvaluator,
         )
 

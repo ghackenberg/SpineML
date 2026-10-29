@@ -11,3 +11,6 @@ __pycache__/
 sources/SpineML.egg-info/
 sources/example-*.py
 image/overview.png
+
+# Lokale RL-Checkpoints, Trainingsprotokolle und Auswertungen
+rl_runs/

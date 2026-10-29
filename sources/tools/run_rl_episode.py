@@ -40,7 +40,7 @@ def positive_float(value: str) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="RL-Umgebung prüfen, noch kein trainiertes neuronales Netz.",
+        description="RL-Umgebung mit Zufalls- oder Heuristikauswahl prüfen; kein NN-Training.",
     )
     parser.add_argument(
         "--model", type=Path,
@@ -102,7 +102,7 @@ def main() -> None:
     evaluation = optimization_config._global_evaluation()
     weights = HeuristicWeights()
 
-    print("RL-Umgebung prüfen, noch kein trainiertes neuronales Netz.", flush=True)
+    print("RL-Umgebung mit Zufalls- oder Heuristikauswahl prüfen; kein NN-Training.", flush=True)
     print(f"Modell: {model_path.name}; Debug-Policy: {args.policy}; Seed: {args.seed}.")
     print(
         f"Zuerst separate vollständige Heuristik-Baseline für Seeds {baseline_seeds}; "

@@ -24,6 +24,12 @@ dependencies = [
 
 [project.optional-dependencies]
 rl = ["gymnasium>=1.0,<2"]
+rl-training = [
+    "gymnasium>=1.0,<2",
+    "torch>=2.8,<3",
+    "stable-baselines3>=2.9.2,<2.10",
+    "sb3-contrib>=2.9.2,<2.10",
+]
 
 [tool.setuptools]
 package-dir = {"" = "sources"}

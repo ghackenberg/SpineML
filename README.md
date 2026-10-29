@@ -1151,6 +1151,46 @@ Zustand. Danach entfernt `generate_actions()` identische Einträge unter
 Beibehaltung ihres ersten Auftretens. Der Generator berechnet keine Scores,
 wählt keinen Kandidaten aus und verändert keine Simulationskomponente.
 
+<a id="pick-priorität-im-actiongenerator"></a>
+
+#### Berechnung der Pick-Priorität
+
+[SpineActionGenerator.generate_actions()](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
+liefert Pick-Kandidaten bereits mit `queue_priority` im Payload.
+`SpineActionGenerator.calculate_edd_priority()` berechnet diesen Wert aus
+der Deadline des im Kandidaten angegebenen Jobs und der aktuellen Simulationszeit.
+Die Berechnung erfolgt direkt beim Erzeugen der Pick-Payloads:
+
+- `create_pick_actions_for_store()` trägt die Priorität für Roboter-Picks ein.
+- `create_machine_pick_actions()` trägt sie für Maschinen-Picks ein.
+- Beide verwenden dieselbe Formel in `calculate_edd_priority()`.
+
+Für `r = latest_end_time - current_time` gilt:
+
+| Situation | `queue_priority` |
+| --- | --- |
+| Vor oder genau an der Deadline (`r >= 0`) | `0.5 / (1 + r)` |
+| Nach der Deadline (`r < 0`, Überfälligkeit `u = -r`) | `0.5 + 0.5 * u / (1 + u)` |
+
+**Beispiel mit Deadline `10`:**
+
+| Aktuelle Zeit | Restzeit `r` | Berechnung | `queue_priority` |
+| --- | --- | --- | --- |
+| `8` | `2` | `0.5 / (1 + 2)` | `1 / 6 ≈ 0.167` |
+| `10` | `0` | `0.5 / (1 + 0)` | `0.5` |
+| `11` | `−1` | `0.5 + 0.5 × 1 / (1 + 1)` | `0.75` |
+
+Je näher die Deadline liegt beziehungsweise je weiter sie überschritten ist,
+desto höher ist die berechnete EDD-Priorität. Die Berechnung allein wählt noch
+keinen Job aus; das entscheidet die Policy.
+
+Die Priorität ist ein Payload-Wert für die spätere Store-Einordnung, kein
+fertiger Aktionsscore. Der Generator schreibt sie nicht direkt in den Job.
+`LocalHeuristicActionEvaluator` liest sie für die Pick-Bewertung aus dem Payload;
+`RLCandidatePolicy` verwendet die erzeugten Kandidaten ohne weitere Vorbereitung.
+`RandomPolicy` verwendet die EDD-Priorität nicht zur Auswahl und setzt im
+ausgewählten Pick-Payload ausdrücklich `queue_priority = 0.0`.
+
 #### Einfache Zustandsregeln
 
 `_generate_actions()` prüft zuerst den Typ und den aktuellen Zustand des
@@ -1437,27 +1477,6 @@ Beispiel für eine Verarbeitungsaktion:
   Operations- und Maschinenauswahl. Ohne solche Auswahl berechnet er für
   einen defekten Job keine Ersatzroute aus den Defektdaten.
 
-### Pick-Priorität im ActionGenerator
-
-[SpineActionGenerator.generate_actions()](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
-liefert Pick-Kandidaten bereits mit `queue_priority` im Payload.
-`SpineActionGenerator.calculate_edd_priority()` berechnet diesen Wert aus
-der Deadline des ausgewählten Jobs und der aktuellen Simulationszeit.
-Eine zusätzliche Vorbereitung durch Evaluator, Selector oder RL-Policy entfällt.
-
-Für `r = latest_end_time - current_time` gilt:
-
-| Situation | `queue_priority` |
-| --- | --- |
-| Vor oder genau an der Deadline (`r >= 0`) | `0.5 / (1 + r)` |
-| Nach der Deadline (`r < 0`, Überfälligkeit `u = -r`) | `0.5 + 0.5 * u / (1 + u)` |
-
-Die Priorität ist ein Payload-Wert für die spätere Store-Einordnung, kein
-fertiger Aktionsscore. Der Generator schreibt sie nicht direkt in den Job.
-`LocalHeuristicActionEvaluator` liest sie für die Pick-Bewertung aus dem Payload;
-`RLCandidatePolicy` verwendet die erzeugten Kandidaten ohne weitere Vorbereitung.
-`RandomPolicy` verwendet die EDD-Priorität nicht zur Auswahl und setzt im
-ausgewählten Pick-Payload ausdrücklich `queue_priority = 0.0`.
 
 <a id="generatorselectorpolicy"></a>
 

@@ -22,7 +22,7 @@ class HeuristicActionSelector(ActionSelector):
         # Ein eigener Generator trennt Policy-Zufall von Simulationszufall.
         self.random = rng if rng is not None else random
 
-    # Bereitet alle Kandidaten vor, bewertet sie und gibt die ausgewählte Aktion zurück.
+    # Bewertet die erzeugten Kandidaten und gibt die ausgewählte Aktion zurück.
     def select_action(
         self,
         actions: list[dict[str, Any]],
@@ -35,20 +35,16 @@ class HeuristicActionSelector(ActionSelector):
         if len(actions) == 0:
             return PolicyDecision([])
 
-        # Speichert jede vorbereitete Aktion gemeinsam mit ihrer Bewertung.
+        # Speichert jede Aktion unverändert gemeinsam mit ihrer Bewertung.
         evaluated_actions = []
 
-        # Ergänzt zuerst dynamische Payload-Werte und bewertet danach jeden Kandidaten.
+        # Der Generator hat alle Payload-Werte bereits eingetragen.
         for action in actions:
-            prepared_action = evaluator.prepare_action_candidate(
-                action,
-                observation,
-            )
-            score = evaluator.evaluate_action(prepared_action, observation)
-            evaluated_action = (prepared_action, score)
+            score = evaluator.evaluate_action(action, observation)
+            evaluated_action = (action, score)
             evaluated_actions.append(evaluated_action)
 
-        # Ermittelt den höchsten Score aller vorbereiteten Aktionen.
+        # Ermittelt den höchsten Score aller Kandidaten.
         max_score = evaluated_actions[0][1]
 
         for evaluated_action in evaluated_actions:

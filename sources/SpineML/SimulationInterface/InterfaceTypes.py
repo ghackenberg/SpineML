@@ -598,16 +598,7 @@ class ActionGenerator(ABC):
 
 
 class ActionEvaluator(ABC):
-    """Schnittstelle zum Vorbereiten und Bewerten von Aktionskandidaten."""
-
-    @abstractmethod
-    # Bereitet einen Aktionskandidaten für die Bewertung vor.
-    def prepare_action_candidate(
-        self,
-        action: dict[str, Any],
-        observation: "PolicyObservation",
-    ) -> dict[str, Any]:
-        pass
+    """Schnittstelle zum Bewerten vollständig erzeugter Aktionskandidaten."""
 
     @abstractmethod
     # Berechnet den Bewertungswert eines Aktionskandidaten.

@@ -1,12 +1,11 @@
 from typing import Any
 
 from ..ActionGeneration.ActionGenerator import SpineActionGenerator
-from ..ActionGeneration.ActionPreparation import ActionPreparation
 from ...SimulationInterface.InterfaceTypes import ActionEvaluator, PolicyObservation
 from .HeuristicWeights import HeuristicWeights
 
-class LocalHeuristicActionEvaluator(ActionPreparation, ActionEvaluator):
-    """Prepare action candidates and evaluate them with weights."""
+class LocalHeuristicActionEvaluator(ActionEvaluator):
+    """Bewertet die vollständigen Kandidaten des Generators mit lokalen Gewichten."""
 
     DEFAULT_WAIT_SCORE = 0.01
 
@@ -23,6 +22,48 @@ class LocalHeuristicActionEvaluator(ActionPreparation, ActionEvaluator):
             if action_generator is not None
             else SpineActionGenerator()
         )
+
+    @staticmethod
+    def inverse_scale(value: float) -> float:
+        return 1.0 / (1.0 + float(value))
+
+    @staticmethod
+    def direct_scale(value: float) -> float:
+        value = float(value)
+        return value / (1.0 + value)
+
+    @staticmethod
+    def calculate_edd_priority(latest_end_time: float, current_time: float) -> float:
+        return SpineActionGenerator.calculate_edd_priority(latest_end_time, current_time)
+
+    def find_store_state(self, value: object, store_id: str) -> dict:
+        stores_by_id: dict[str, dict] = {}
+
+        def collect_store_states(nested_value):
+            if isinstance(nested_value, dict):
+                if "store_id" in nested_value:
+                    stores_by_id[nested_value["store_id"]] = nested_value
+                for child_value in nested_value.values():
+                    collect_store_states(child_value)
+            elif isinstance(nested_value, list):
+                for child_value in nested_value:
+                    collect_store_states(child_value)
+
+        collect_store_states(value)
+        return stores_by_id[store_id]
+
+    def selected_job_state(
+        self, action: dict[str, Any], observation: PolicyObservation
+    ) -> dict:
+        payload = action["payload"]
+        selected_job_id = payload["selected_job_id"]
+        target_store_id = payload["target_store_id"]
+        snapshot = observation.simulation_configuration_snapshot
+        store_state = self.find_store_state(snapshot, str(target_store_id))
+        for job_state in store_state["job_summaries"]:
+            if job_state["job_id"] == selected_job_id:
+                return job_state
+        raise KeyError(selected_job_id)
 
     # Berechnet das Verhältnis value/maximum ohne Begrenzung oder Ersatzwert.
     @staticmethod

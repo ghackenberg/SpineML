@@ -1,6 +1,5 @@
-"""Gemeinsame Erzeugung und Vorbereitung technisch möglicher Aktionen."""
+"""Gemeinsame Erzeugung vollständiger, technisch möglicher Aktionskandidaten."""
 
 from .ActionGenerator import SpineActionGenerator
-from .ActionPreparation import ActionPreparation
 
-__all__ = ["SpineActionGenerator", "ActionPreparation"]
+__all__ = ["SpineActionGenerator"]

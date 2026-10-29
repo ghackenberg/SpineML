@@ -6,7 +6,6 @@ from numbers import Integral
 from typing import Callable
 
 from ..ActionGeneration.ActionGenerator import SpineActionGenerator
-from ..ActionGeneration.ActionPreparation import ActionPreparation
 from ...SimulationInterface.InterfaceTypes import (
     ActionGenerator,
     Policy,
@@ -60,8 +59,6 @@ class RLCandidatePolicy(Policy):
         self.action_generator = (
             action_generator if action_generator is not None else SpineActionGenerator()
         )
-        # Gemeinsame Payload-Vorbereitung ohne Heuristikgewichte oder Aktionsscores.
-        self._preparer = ActionPreparation()
 
     def make_decision(self, observation: PolicyObservation) -> PolicyDecision:
         # Auch lange Folgen erzwungener Aktionen müssen von außen abbrechbar sein.
@@ -76,35 +73,34 @@ class RLCandidatePolicy(Policy):
             if not state["is_waiting_for_action"]:
                 continue
             object_observation = PolicyObservation(snapshot, object_id)
-            prepared_actions = []
+            available_actions = []
             for action in self.action_generator.generate_actions(object_observation):
                 if action["action_type"].startswith("pick_"):
                     if str(action["payload"]["selected_job_id"]) in selected_pick_jobs:
                         continue
-                prepared_actions.append(
-                    self._preparer.prepare_action_candidate(action, object_observation)
-                )
-            if not prepared_actions:
+                # Der Generator liefert bereits vollständige Aktions-Payloads.
+                available_actions.append(action)
+            if not available_actions:
                 raise ValueError(f"No feasible RL action for waiting object {object_id!r}")
 
             index = 0
-            if len(prepared_actions) > 1 or self.expose_forced_actions:
+            if len(available_actions) > 1 or self.expose_forced_actions:
                 # Der Callback erhält keine Referenz auf die privaten Kandidaten.
                 request = DecisionRequest(
                     observation=deepcopy(object_observation),
-                    candidates=deepcopy(tuple(prepared_actions)),
+                    candidates=deepcopy(tuple(available_actions)),
                     selected_actions=deepcopy(tuple(selected_actions)),
                 )
                 index = self.decision_callback(request)
             if isinstance(index, bool) or not isinstance(index, Integral):
                 raise ValueError("The RL action must be an integer candidate index")
             index = int(index)
-            if not 0 <= index < len(prepared_actions):
+            if not 0 <= index < len(available_actions):
                 raise ValueError(
-                    f"RL candidate index {index} outside [0, {len(prepared_actions)}) "
+                    f"RL candidate index {index} outside [0, {len(available_actions)}) "
                     f"for object {object_id!r}"
                 )
-            chosen = deepcopy(prepared_actions[index])
+            chosen = deepcopy(available_actions[index])
             selected_actions.append(
                 SelectedObjectAction(object_id, chosen["action_type"], chosen["payload"])
             )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
-from ..ActionGeneration.ActionPreparation import EDD_AT_DEADLINE, SCORE_MAX
+from ..ActionGeneration.ActionGenerator import EDD_AT_DEADLINE, SCORE_MAX
 
 
 # Bewusst gewählte Zielgrenzen für die Standardparametrierung ab der Deadline.

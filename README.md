@@ -57,8 +57,7 @@ sources/
     ├── GlobalEvaluation/GlobalSimulationEvaluation.py
     └── Control/
         ├── ActionGeneration/
-        │   ├── ActionGenerator.py
-        │   └── ActionPreparation.py
+        │   └── ActionGenerator.py
         ├── HeuristicPolicy/
         │   ├── HeuristicPolicy.py
         │   ├── HeuristicActionSelector.py
@@ -83,7 +82,7 @@ sources/
 | [SimulationInterface](sources/SpineML/SimulationInterface) | Beobachtungen und Entscheidungen definieren; die Bridge verbindet die Simulationskomponenten mit einer Policy. |
 | [SimulationExecution](sources/SpineML/SimulationExecution) | Modelle laden sowie vollständige Läufe mit übergebenen Policies direkt oder im Prozesspool ausführen. |
 | [GlobalEvaluation](sources/SpineML/GlobalEvaluation) | Produktionskennzahlen, globale Zielgewichte und die Kostenbewertung von Laufergebnissen bereitstellen. |
-| [Control/ActionGeneration](sources/SpineML/Control/ActionGeneration) | Gemeinsame Aktionskandidaten erzeugen und Pick-Payloads vorbereiten; keine gewichtete Aktionsauswahl. |
+| [Control/ActionGeneration](sources/SpineML/Control/ActionGeneration) | Vollständige gemeinsame Aktionskandidaten einschließlich EDD-basierter Pick-Priorität erzeugen; keine gewichtete Aktionsauswahl. |
 | [Control/HeuristicPolicy](sources/SpineML/Control/HeuristicPolicy) | Einzelne Kandidaten mit lokalen Gewichten bewerten und daraus heuristisch auswählen. |
 | [Control/HeuristicPolicy/WeightOptimization](sources/SpineML/Control/HeuristicPolicy/WeightOptimization) | Lokale Heuristikgewichte durch wiederholte Simulationsläufe und deren globale Kosten vergleichen. |
 | [Control/RLPolicy](sources/SpineML/Control/RLPolicy) | Kandidatenauswahl, numerische Beobachtung und Episodenreward an eine Gymnasium-Schnittstelle anbinden; noch kein NN-Training. |
@@ -461,7 +460,7 @@ Produktionsablauf mit den vorhandenen Steuerungen.
 | Attribut | Startwert | Bedeutung | Wer ändert den Wert und wann? |
 | --- | --- | --- | --- |
 | `released` | `False` | Eine Freigabeaktion wurde übernommen. | Der Job übernimmt `True` aus `release_job`, bevor er gegebenenfalls bis zur Freigabezeit wartet und sich im Startlager ablegt. `True` bedeutet daher nicht, dass die Ablage bereits erfolgt ist. |
-| `queue_priority` | `0.0` | Termindruck-Teilwert für die heuristische Pick-Bewertung; zusätzlich Sortierwert des Jobs im Store. | Die gemeinsame [ActionPreparation](sources/SpineML/Control/ActionGeneration/ActionPreparation.py) berechnet ihn für Heuristik und RL aus Deadline und aktueller Zeit neu. Beim ausgewählten Pick speichern Roboter oder Maschine den Wert am Job. Die `RandomPolicy` übergibt weiterhin `0.0`. |
+| `queue_priority` | `0.0` | Termindruck-Teilwert für die heuristische Pick-Bewertung; zusätzlich Sortierwert des Jobs im Store. | Der gemeinsame [ActionGenerator](sources/SpineML/Control/ActionGeneration/ActionGenerator.py) trägt ihn aus Deadline und aktueller Zeit direkt in jeden Pick-Payload ein. Beim ausgewählten Pick speichern Roboter oder Maschine den Wert am Job. Die `RandomPolicy` ersetzt den Wert in ihrer ausgewählten Aktion durch `0.0`. |
 | `location` | `"start_storage"` | Zuletzt am Job gespeicherte Ortskennung, keine laufend berechnete Roboterposition. | Der Job schreibt den Store-Namen nach seiner Ablage; Roboter und Maschine schreiben bei ihren vorgesehenen Pick- und Place-Schritten Lade- oder Store-Kennungen. Die aktuelle Einschränkung steht direkt unter der Tabelle. |
 | `completed_time` | `None` | Gespeicherter Abschlusszeitpunkt für Terminbewertung und Makespan. | `SimRobotMain` ruft `job.mark_finished()` nach dem Absenken zum Endlager auf: vor der letzten Einlagerungszeit und vor `to_store()`. Der Wert ist deshalb nicht der Zeitpunkt der tatsächlichen Endlagerablage. |
 | `due_state` | `None` | Abschließende Terminbewertung, keine laufende Anzeige des Termindrucks. | Sobald `completed_time` vorliegt, erzeugt die Steuerung `complete_job`: `"late"` bei `completed_time > latest_end_time`, sonst `"on-time"`. Der Job übernimmt diesen Wert; genau bei der Deadline gilt der Job als pünktlich. |
@@ -1126,11 +1125,10 @@ diesen Kandidaten gehört zur jeweiligen Policy.
 
 | Baustein | Verhalten |
 | --- | --- |
-| `SpineActionGenerator` | Erzeugt objektspezifische Kandidaten anhand von Zustand, Routen und technischen Prüfungen. |
-| `ActionPreparation` | Kopiert Kandidaten und ergänzt Pick-Payloads um `queue_priority`; keine Aktionsscores. |
-| `HeuristicPolicy` | Übergibt Kandidaten dem Selector, der den Evaluator zur Vorbereitung und Bewertung aufruft. |
+| `SpineActionGenerator` | Erzeugt vollständige objektspezifische Kandidaten anhand von Zustand, Routen und technischen Prüfungen; Pick-Payloads enthalten bereits `queue_priority`. |
+| `HeuristicPolicy` | Übergibt die erzeugten Kandidaten dem Selector, der sie direkt vom Evaluator bewerten lässt. |
 | `RandomPolicy` | Wählt ohne Scores zufällig unter Nicht-Warteaktionen; verwendet bei Picks die Priorität `0.0`. |
-| `RLCandidatePolicy` | Lässt einen externen Callback einen vorbereiteten Kandidatenindex wählen; keine Aktionsscores. |
+| `RLCandidatePolicy` | Lässt einen externen Callback einen erzeugten Kandidatenindex wählen; keine zusätzliche Payload-Vorbereitung oder Aktionsscores. |
 
 `Policy`, `ActionGenerator`, `ActionEvaluator` und `ActionSelector` sind
 abstrakte Schnittstellen in
@@ -1145,7 +1143,8 @@ Die konkrete Klasse heißt `SpineActionGenerator`; sie steht in
 [ActionGeneration/ActionGenerator.py](sources/SpineML/Control/ActionGeneration/ActionGenerator.py).
 `generate_actions(observation)` liefert eine Liste aus Dictionaries mit
 `action_type` und `payload` für genau ein Objekt. Dessen ID steht in
-`observation.current_object_id`.
+`observation.current_object_id`. Die Payloads sind vollständig; bei Picks
+ist die EDD-basierte `queue_priority` bereits enthalten.
 
 Zuerst erzeugt `_generate_actions()` die Kandidaten anhand von Objekttyp und
 Zustand. Danach entfernt `generate_actions()` identische Einträge unter
@@ -1287,7 +1286,7 @@ eine gerade freie Maschine.
   `RandomPolicy` wählt zufällig und `RLCandidatePolicy` fragt einen externen
   Agenten. Der Generator führt keinen Kandidaten selbst aus.
 - **Payload-Beispiele lesen:** Die folgenden Beispiele zeigen jeweils
-  einen Rohkandidaten vor der Payload-Vorbereitung. Die Namen sind
+  einen Aktionskandidaten. Die Namen sind
   schematisch; bei einem echten Lauf müssen die IDs zur Konfiguration passen.
 
 **Beispiel: Herabstufung eines defekten Jobs**
@@ -1438,13 +1437,13 @@ Beispiel für eine Verarbeitungsaktion:
   Operations- und Maschinenauswahl. Ohne solche Auswahl berechnet er für
   einen defekten Job keine Ersatzroute aus den Defektdaten.
 
-### ActionPreparation: gemeinsame Payload-Vorbereitung
+### Pick-Priorität im ActionGenerator
 
-[ActionPreparation.py](sources/SpineML/Control/ActionGeneration/ActionPreparation.py)
-enthält die Vorbereitung, die Heuristik und RL gemeinsam verwenden.
-`prepare_action_candidate()` kopiert das Aktions-Dictionary und seinen Payload.
-Bei `pick_*` ergänzt es `queue_priority` aus der Deadline des ausgewählten Jobs
-und der aktuellen Simulationszeit; andere Payloads bleiben inhaltlich unverändert.
+[SpineActionGenerator.generate_actions()](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
+liefert Pick-Kandidaten bereits mit `queue_priority` im Payload.
+`SpineActionGenerator.calculate_edd_priority()` berechnet diesen Wert aus
+der Deadline des ausgewählten Jobs und der aktuellen Simulationszeit.
+Eine zusätzliche Vorbereitung durch Evaluator, Selector oder RL-Policy entfällt.
 
 Für `r = latest_end_time - current_time` gilt:
 
@@ -1454,11 +1453,11 @@ Für `r = latest_end_time - current_time` gilt:
 | Nach der Deadline (`r < 0`, Überfälligkeit `u = -r`) | `0.5 + 0.5 * u / (1 + u)` |
 
 Die Priorität ist ein Payload-Wert für die spätere Store-Einordnung, kein
-fertiger Aktionsscore. Die Vorbereitung schreibt sie nicht direkt in den Job.
-`LocalHeuristicActionEvaluator` erbt diese Implementierung; der heuristische
-Selector ruft sie über den Evaluator auf. `RLCandidatePolicy` verwendet eine
-eigene `ActionPreparation` ohne Heuristikgewichte. `RandomPolicy` setzt
-stattdessen ausdrücklich `queue_priority = 0.0`.
+fertiger Aktionsscore. Der Generator schreibt sie nicht direkt in den Job.
+`LocalHeuristicActionEvaluator` liest sie für die Pick-Bewertung aus dem Payload;
+`RLCandidatePolicy` verwendet die erzeugten Kandidaten ohne weitere Vorbereitung.
+`RandomPolicy` verwendet die EDD-Priorität nicht zur Auswahl und setzt im
+ausgewählten Pick-Payload ausdrücklich `queue_priority = 0.0`.
 
 <a id="generatorselectorpolicy"></a>
 
@@ -1468,8 +1467,8 @@ stattdessen ausdrücklich `queue_priority = 0.0`.
 koordiniert die heuristische Auswahl. Standardmäßig verbindet die Klasse
 `SpineActionGenerator`, `LocalHeuristicActionEvaluator(HeuristicWeights())`
 und `HeuristicActionSelector`. Generator, Evaluator und Selector können beim
-Erzeugen der Policy ausgetauscht werden. Ein übergebener Evaluator behält dabei
-seine eigene `prepare_action_candidate()`-Implementierung.
+Erzeugen der Policy ausgetauscht werden. Der Evaluator berechnet Scores aus
+den bereits vollständig erzeugten Kandidaten.
 
 #### Ablauf von `make_decision()`
 
@@ -1478,7 +1477,7 @@ seine eigene `prepare_action_candidate()`-Implementierung.
 2. Für jedes Objekt erstellt sie eine `PolicyObservation` mit dessen
    `current_object_id` und demselben Snapshot.
 3. Der Generator erzeugt die Kandidaten. Der Selector lässt sie durch den
-   Evaluator vorbereiten und bewerten und wählt eine Aktion.
+   Evaluator direkt bewerten und wählt eine Aktion.
 4. Die Policy sammelt die `SelectedObjectAction`-Objekte. Bei mehreren Picks
    desselben Jobs bleibt der zuerst ausgewählte Pick erhalten; spätere werden
    verworfen. Für diese Objekte wird in diesem Aufruf keine Ersatzaktion gewählt.
@@ -1490,8 +1489,8 @@ seine eigene `prepare_action_candidate()`-Implementierung.
 
 ```mermaid
 flowchart TD
-    A[PolicyObservation] --> B[Für jedes wartende Objekt:<br/>Kandidaten erzeugen]
-    B --> C[Evaluator bereitet vor<br/>und berechnet Aktionsscores]
+    A[PolicyObservation] --> B[Für jedes wartende Objekt:<br/>vollständige Kandidaten erzeugen<br/>Pick-Payload inklusive queue_priority]
+    B --> C[Evaluator berechnet direkt Aktionsscores]
     C --> D[HeuristicActionSelector<br/>wählt einen Kandidaten]
     D --> E[Auswahl aller Objekte sammeln]
     E --> F[Spätere doppelte Picks<br/>desselben Jobs verwerfen]
@@ -1517,10 +1516,9 @@ Der Standard-`HeuristicActionSelector` arbeitet in folgenden Schritten:
 
 1. Gibt es für das wartende Objekt keine Aktion, gibt er eine leere
    `PolicyDecision` zurück.
-2. Der Selector lässt jede Aktion vorbereiten und bewerten. Der standardmäßige
-   `LocalHeuristicActionEvaluator` nutzt dafür die geerbte
-   [ActionPreparation](sources/SpineML/Control/ActionGeneration/ActionPreparation.py)
-   für die Payload-Werte und berechnet danach den Score.
+2. Der Selector lässt jeden erzeugten Kandidaten unmittelbar durch
+   `LocalHeuristicActionEvaluator.evaluate_action()` bewerten. Er ruft keine
+   zusätzliche Payload-Vorbereitung auf und übernimmt den Kandidaten unverändert.
 3. Der höchste Score wird gesucht. Alle Aktionen mit genau diesem Score gelten
    als beste Aktionen.
 4. Zusätzlich gelten Aktionen als fast gleich gut, wenn ihr Score höchstens
@@ -1561,7 +1559,8 @@ wie die Heuristik, benötigt aber keinen Evaluator oder Selector.
 - **Gemeinsame technische Grundlage:** Sie verwendet denselben
   `SpineActionGenerator` und dieselbe `SimulationBridge` wie die Heuristik.
 - **Keine heuristische Bewertung:** Sie verwendet keine Aktionsscores,
-  lokalen Gewichte oder EDD-Vorbereitung.
+  lokalen Gewichte oder EDD-Priorität zur Auswahl. Die vom Generator gelieferte
+  Pick-Priorität ersetzt sie in ihrer ausgewählten Aktion durch `0.0`.
 
 `make_decision()` wählt für jedes wartende Objekt:
 
@@ -1632,11 +1631,10 @@ Ein höherer Score ist vorteilhafter.
 - **Umsetzung:** Der Bewertungsteil der Policy steht in
   [LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicPolicy/LocalHeuristicActionEvaluator.py).
 
-1. **Kandidaten vorbereiten:** Die aus
-   [ActionPreparation.py](sources/SpineML/Control/ActionGeneration/ActionPreparation.py)
-   geerbte Methode `prepare_action_candidate()` kopiert den Kandidaten und ergänzt
-   bei Picks die aktuelle Termindruckpriorität als `queue_priority` im Payload.
-   Dabei wird noch kein Aktionsscore berechnet.
+1. **Vollständige Kandidaten übernehmen:** Der Generator hat die Payloads
+   bereits erzeugt und bei Picks die aktuelle `queue_priority` eingetragen.
+   Der Evaluator verwendet diesen Wert direkt; er bereitet den Kandidaten
+   nicht nochmals vor.
 2. **Rohwerte ermitteln:** `evaluate_action()` ruft je nach `action_type`
    die passende Bewertungsmethode auf, etwa `evaluate_machine_pick_action()`.
    Diese liest die **Bewertungsgrößen** (Rohwerte der Kriterien, zum Beispiel
@@ -1672,12 +1670,16 @@ Ein höherer Score ist vorteilhafter.
   `latest_end_time` ist die Deadline des Auftrags, zu dem der Job gehört.
 - **Regel:** Je näher die Deadline liegt oder je weiter sie überschritten
   ist, desto höher ist die EDD-Priorität (`Earliest Due Date`).
-- **Abbildung in [`calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionPreparation.py):**
+- **Abbildung in [`SpineActionGenerator.calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionGenerator.py):**
   - Bei `t >= 0`: `Teilwert = 0.5 × inverse_scale(t)`.
   - Bei `t < 0`: `Teilwert = 0.5 + 0.5 × direct_scale(-t)`.
 - **Beispiel:** Zwei Zeiteinheiten vor der Deadline ergibt sich etwa
   `0.167`, genau bei der Deadline `0.5` und zwei Zeiteinheiten danach etwa
   `0.833`. Negative Restzeit wird also als Überfälligkeit behandelt.
+- **Verwendung:** Bei Picks steht der Wert bereits im Payload. Für Freigabe
+  und Warten delegiert der Evaluator seine EDD-Berechnung an dieselbe
+  Generator-Methode. Die allgemeinen Skalierer `inverse_scale()` und
+  `direct_scale()` sind im Evaluator definiert.
 
 - **Wertebereich:** Vor der Deadline liegt die Priorität unter `0.5`, genau
   bei der Deadline beträgt sie `0.5`, danach liegt sie darüber. Bei sehr
@@ -2151,7 +2153,7 @@ Beide Gewichte haben im Standardgewichtssatz den Wert `0.5`:
 - **Zweck:** Der defekte Job wartet zunächst, statt eine neue Nacharbeit
   oder Herabstufung einzuleiten. Warten behebt den Defekt nicht.
 - **Bewertungsgröße:** Die gemeinsame
-  [`calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionPreparation.py)
+  [`calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
   berechnet den
   [Termindruck als EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen).
   Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
@@ -2454,7 +2456,7 @@ nicht implementiert.
 | Klasse | Aufgabe |
 | --- | --- |
 | [SpineRLEnv](sources/SpineML/Control/RLPolicy/SpineRLEnv.py) | Episoden starten, zwischen Kandidatenentscheidungen anhalten und `reset()`/`step()` anbieten. |
-| [RLCandidatePolicy](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) | Gemeinsame Aktionskandidaten erzeugen und vorbereiten; eine externe Auswahl in eine `PolicyDecision` übersetzen. |
+| [RLCandidatePolicy](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) | Vollständige Kandidaten vom gemeinsamen Generator anfordern und eine externe Auswahl in eine `PolicyDecision` übersetzen. |
 | [RLObservationEncoder](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py) | ID-basierte Beobachtungen in feste, gepaddete numerische Arrays und Masken umwandeln. |
 | [RLReward](sources/SpineML/Control/RLPolicy/RLReward.py) | Die gemeinsamen globalen Produktionskosten am Episodenende in einen Reward umrechnen. |
 
@@ -2490,9 +2492,9 @@ eigenständige, direkt ausführbare Policies.
   `--help` startet keinen Lauf und benötigt Gymnasium nicht.
 
 Die CLI-Auswahl `random` ist nicht das Einsetzen der Klasse `RandomPolicy`:
-Sie arbeitet innerhalb des RL-Adapters mit dessen vorbereiteten Kandidaten
-und übersprungenen Einzelaktionen. Insbesondere bleibt dort die gemeinsame
-EDD-Payload-Vorbereitung aktiv. Deshalb ist der CLI-Test kein zugesicherter
+Sie arbeitet innerhalb des RL-Adapters mit den erzeugten Kandidaten
+und übersprungenen Einzelaktionen. Insbesondere bleibt dort die vom Generator
+eingetragene EDD-Priorität erhalten. Deshalb ist der CLI-Test kein zugesicherter
 identischer Ersatz für einen direkten Lauf der jeweiligen Vergleichspolicy.
 
 ### Vom Bridge-Aufruf zur Kandidatenentscheidung
@@ -2503,9 +2505,9 @@ identischer Ersatz für einen direkten Lauf der jeweiligen Vergleichspolicy.
 2. Für jedes Objekt erzeugt `SpineActionGenerator` die Kandidaten. Picks für
    einen in diesem Bridge-Aufruf bereits ausgewählten Job werden vor der
    nächsten Auswahl ausgeschlossen.
-3. `ActionPreparation` kopiert die Kandidaten und ergänzt bei Picks die
-   EDD-basierte `queue_priority`. Das ist dieselbe Payload-Vorbereitung wie bei
-   der Heuristik, aber keine Berechnung eines gewichteten Aktionsscores.
+3. Die erzeugten Pick-Payloads enthalten bereits die EDD-basierte
+   `queue_priority`. Die RL-Policy verwendet diese Kandidaten direkt;
+   eine zusätzliche Vorbereitung oder gewichtete Score-Berechnung entfällt.
 4. Ein einzelner verbleibender Kandidat wird ohne externen Schritt ausgewählt.
    Bei mindestens zwei Kandidaten erhält der Callback einen `DecisionRequest`
    mit Beobachtung, Kandidaten und bereits vorgemerkten Aktionen. Die Daten

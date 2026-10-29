@@ -1,11 +1,25 @@
 from ...SimulationInterface.InterfaceTypes import ActionGenerator, PolicyObservation
 
+SCORE_MAX = 1.0
+EDD_AT_DEADLINE = 0.5
+
 
 class SpineActionGenerator(ActionGenerator):
-    """Erzeugt technisch mögliche Aktionen aus einer Policy-Beobachtung."""
+    """Erzeugt technisch mögliche Aktionen einschließlich ihrer Pick-Priorität."""
 
     MIN_REWORK_DEFECT_SEVERITY = 0.001
     MAX_REWORK_DEFECT_SEVERITY = 0.6
+
+    @staticmethod
+    def calculate_edd_priority(latest_end_time: float, current_time: float) -> float:
+        """Berechnet die gemeinsame EDD-Priorität aus Deadline und aktueller Zeit."""
+        time_until_deadline = latest_end_time - current_time
+        if time_until_deadline >= 0:
+            return EDD_AT_DEADLINE * (1.0 / (1.0 + float(time_until_deadline)))
+        overdue_time = float(-time_until_deadline)
+        return EDD_AT_DEADLINE + (
+            SCORE_MAX - EDD_AT_DEADLINE
+        ) * (overdue_time / (1.0 + overdue_time))
 
 
     # Erzeugt technisch mögliche Aktionskandidaten und verhindert doppelte Einträge.
@@ -22,7 +36,7 @@ class SpineActionGenerator(ActionGenerator):
                 unique_actions.append(action)
         return unique_actions
 
-    # Erzeugt anhand des Objektzustands die rohen Aktionskandidaten.
+    # Erzeugt Aktionskandidaten passend zum beobachteten Objektzustand.
     # Beispiel: Ein Maschinenzustand ohne aktuellen Job erzeugt Pick-Kandidaten.
     def _generate_actions(self, observation: PolicyObservation) -> list[dict]:
         """Erzeugt technisch mögliche Aktionen je nach Typ und Zustand des Objekts."""
@@ -130,6 +144,8 @@ class SpineActionGenerator(ActionGenerator):
         target_type: str,
         target_store: dict,
         extra_payload: dict | None = None,
+        *,
+        current_time: float,
     ) -> list[dict]:
         actions = []
         extra_payload = {} if extra_payload is None else extra_payload
@@ -138,6 +154,9 @@ class SpineActionGenerator(ActionGenerator):
                 "target_type": target_type,
                 "target_store_id": target_store["store_id"],
                 "selected_job_id": self.job_id(job),
+                "queue_priority": self.calculate_edd_priority(
+                    float(job["latest_end_time"]), current_time
+                ),
             }
             payload.update(extra_payload)
             actions.append({
@@ -499,6 +518,7 @@ class SpineActionGenerator(ActionGenerator):
     def create_main_robot_pick_actions(self, observation: PolicyObservation) -> list[dict]:
 
         current_state = self.current_state(observation)
+        current_time = float(observation.simulation_configuration_snapshot["time"])
         actions = []
 
         actions.extend(self.create_pick_actions_for_store(
@@ -508,6 +528,7 @@ class SpineActionGenerator(ActionGenerator):
             {
                 "storage_out_time": current_state["storage_out_time"],
             },
+            current_time=current_time,
         ))
 
         for corridor_index, corridor_storage in enumerate(current_state["corridor_storages"]):
@@ -520,6 +541,7 @@ class SpineActionGenerator(ActionGenerator):
                     "corridor_index": corridor_index,
                     "storage_out_time": self.model(observation)["corridors_by_id"][corridor_storage["corridor_id"]]["storage_out_time"],
                 },
+                current_time=current_time,
             ))
 
         actions.extend(self.create_main_robot_wait_actions(observation))
@@ -697,6 +719,7 @@ class SpineActionGenerator(ActionGenerator):
     # Beispiel: Jobs in diesen Puffern werden zu pick_corridor_arm_robot-Aktionen.
     def create_corridor_arm_robot_pick_actions(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
+        current_time = float(observation.simulation_configuration_snapshot["time"])
         actions = []
 
         actions.extend(self.create_pick_actions_for_store(
@@ -706,6 +729,7 @@ class SpineActionGenerator(ActionGenerator):
             {
                 "storage_out_time": current_state["storage_out_time"],
             },
+            current_time=current_time,
         ))
 
         for machine_index, machine_storage in enumerate(current_state["machine_storages"]):
@@ -717,6 +741,7 @@ class SpineActionGenerator(ActionGenerator):
                     "sim_machine_id": machine_storage["sim_machine_id"],
                     "machine_index": machine_index,
                 },
+                current_time=current_time,
             ))
 
         actions.extend(self.create_corridor_arm_robot_wait_actions(observation))
@@ -840,6 +865,7 @@ class SpineActionGenerator(ActionGenerator):
     # Beispiel: Jobs im Eingangspuffer werden zu pick_machine_job-Aktionen.
     def create_machine_pick_actions(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
+        current_time = float(observation.simulation_configuration_snapshot["time"])
         actions = []
         input_storage = current_state["input_storage"]
         for job in self.store_jobs(input_storage):
@@ -848,6 +874,9 @@ class SpineActionGenerator(ActionGenerator):
                 "payload": {
                     "target_store_id": input_storage["store_id"],
                     "selected_job_id": self.job_id(job),
+                    "queue_priority": self.calculate_edd_priority(
+                        float(job["latest_end_time"]), current_time
+                    ),
                 },
             })
         actions.extend(self.create_machine_wait_actions(observation))

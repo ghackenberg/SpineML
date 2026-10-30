@@ -3252,13 +3252,9 @@ das `layout` mit dem Fabrikaufbau und das `scenario` mit den Produktionsaufträg
 
 Die Funktion führt diese Schritte aus:
 
-1. **Datei finden:** `_resolve_model_path()` prüft den angegebenen Dateipfad oder den exakten Dateinamen im Beispielordner `sources/examples/normal`, beispielsweise `example-5.py`.
+1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
 2. **Konfiguration erstellen:** `_load_model()` erstellt die Fabrikkonfiguration aus der Beispieldatei.
-3. **Layout und Szenario auswählen:** `_find_layout_and_scenario()` liest,
-   welche Variablen im `simulate(layout, scenario)`-Aufruf angegeben sind.
-   Fehlt eine solche eindeutige Auswahl, verwendet die Funktion das einzige
-   vorhandene Layout-Szenario-Paar. Bei mehreren nicht eindeutig
-   zuordenbaren Paaren meldet sie einen Fehler.
+3. **Layout und Szenario zurückgeben:** `_find_layout_and_scenario()` gibt das ausgewählte Layout und Szenario als Tupel zurück.
 
 **Nach dem Laden sind Fabrik und Aufträge konfiguriert. Ein Produktionslauf
 wurde dadurch noch nicht gestartet.**

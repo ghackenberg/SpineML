@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-import re
 import runpy
 from typing import TYPE_CHECKING
 
@@ -14,41 +13,19 @@ if TYPE_CHECKING:
 
 # parents[0] = SimulationExecution, parents[1] = SpineML, parents[2] = sources.
 SOURCES_DIRECTORY = Path(__file__).resolve().parents[2]
-EXAMPLES_DIRECTORY = SOURCES_DIRECTORY / "examples"
-NORMAL_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "normal"
-OPTIMIZATION_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "optimization"
+NORMAL_EXAMPLES_DIRECTORY = SOURCES_DIRECTORY / "examples" / "normal"
 
 
 def _resolve_model_path(model_file: str | Path) -> Path:
-    """Sucht die Python-Datei und gibt ihren absoluten Pfad zurück."""
-    requested = Path(model_file)
-    names = [requested]
-
-    # Erkennt zusätzlich example5 und example_5 als Schreibweisen von example-5.
-    match = re.fullmatch(r"example[-_]?(\d+)(\.py)?", requested.name, re.IGNORECASE)
-    if match:
-        normalized = requested.with_name(f"example-{match.group(1)}{requested.suffix}")
-        if normalized != requested:
-            names.append(normalized)
-
-    searched = []
-    for name in names:
-        folders = (Path(),) if name.is_absolute() else (
-            Path.cwd(), SOURCES_DIRECTORY,
-            NORMAL_EXAMPLES_DIRECTORY, OPTIMIZATION_EXAMPLES_DIRECTORY,
-        )
-        for folder in folders:
-            path = folder / name
-            if not path.suffix:
-                path = path.with_suffix(".py")
-            searched.append(str(path))
-            if path.suffix == ".py" and path.is_file():
-                return path.resolve()
-
-    raise FileNotFoundError(
-        f"Beispieldatei {model_file!r} nicht gefunden. Gesucht wurde in:\n"
-        + "\n".join(searched)
-    )
+    """Prüft den Dateipfad oder den exakten Dateinamen im Beispielordner."""
+    path = Path(model_file)
+    if path.suffix != ".py":
+        raise ValueError("Bitte den vollständigen Dateinamen angeben, z. B. example-5.py.")
+    if not path.is_file():
+        path = NORMAL_EXAMPLES_DIRECTORY / path
+    if not path.is_file():
+        raise FileNotFoundError(f"Modelldatei nicht gefunden: {model_file}")
+    return path.resolve()
 
 
 def _load_model(model_path: Path) -> dict[str, object]:
@@ -100,7 +77,6 @@ def _find_layout_and_scenario(
 
 # Lädt die Beispieldatei und gibt das ausgewählte Layout und Szenario als Tupel zurück.
 def load_layout_and_scenario(model_path: str | Path) -> tuple[Layout, Scenario]:
-    """Datei finden, Konfiguration laden und (layout, scenario) zurückgeben."""
-    path = _resolve_model_path(model_path)
-    model = _load_model(path)
-    return _find_layout_and_scenario(model, path)
+    path = _resolve_model_path(model_path)       # Pfad zur Beispieldatei finden
+    model = _load_model(path)                    # Konfiguration laden: Dictionary mit Variablen
+    return _find_layout_and_scenario(model, path) # Daraus (layout, scenario) zurückgeben

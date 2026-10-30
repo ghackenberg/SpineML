@@ -1587,7 +1587,7 @@ from SpineML.Control.RandomPolicy.RandomPolicy import RandomPolicy
 from SpineML.SimulationExecution.ModelLoader import load_layout_and_scenario
 from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
 
-layout, scenario = load_layout_and_scenario("example-5")
+layout, scenario = load_layout_and_scenario("example-5.py")
 runner = SimulationRunner(layout, scenario)
 metrics = runner.run_policy(RandomPolicy(seed=101), seed=101)
 ```
@@ -3252,7 +3252,7 @@ das `layout` mit dem Fabrikaufbau und das `scenario` mit den Produktionsaufträg
 
 Die Funktion führt diese Schritte aus:
 
-1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
+1. **Datei finden:** `_resolve_model_path()` prüft den angegebenen Dateipfad oder den exakten Dateinamen im Beispielordner `sources/examples/normal`, beispielsweise `example-5.py`.
 2. **Konfiguration erstellen:** `_load_model()` erstellt die Fabrikkonfiguration aus der Beispieldatei.
 3. **Layout und Szenario auswählen:** `_find_layout_and_scenario()` liest,
    welche Variablen im `simulate(layout, scenario)`-Aufruf angegeben sind.

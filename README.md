@@ -3253,12 +3253,7 @@ das `layout` mit dem Fabrikaufbau und das `scenario` mit den Produktionsaufträg
 Die Funktion führt diese Schritte aus:
 
 1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
-2. **Konfiguration erstellen:** `_load_model()` führt den Python-Code der
-   Beispieldatei mit `run_name="spine_model"` aus. Der Simulationsstart
-   muss in der Beispieldatei unter `if __name__ == "__main__":` stehen.
-   Weil der Name beim Laden `"spine_model"` ist, wird dieser Block nicht
-   ausgeführt. Das ist in `example-5.py` bereits so umgesetzt; ein
-   vorübergehender Austausch von `SpineML.simulate` ist nicht mehr nötig.
+2. **Konfiguration erstellen:** `_load_model()` erstellt die Fabrikkonfiguration aus der Beispieldatei.
 3. **Layout und Szenario auswählen:** `_find_layout_and_scenario()` liest,
    welche Variablen im `simulate(layout, scenario)`-Aufruf angegeben sind.
    Fehlt eine solche eindeutige Auswahl, verwendet die Funktion das einzige

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 import multiprocessing
 import os
 from pathlib import Path
 import time
-from typing import Callable, Iterable, cast
+from typing import Callable, Iterable
 
 from ..SimulationInterface.InterfaceTypes import Policy
 from ..GlobalEvaluation.GlobalSimulationEvaluation import GlobalSimulationMetrics
@@ -18,7 +18,7 @@ from .SimulationRunner import SimulationRunner
 
 @dataclass(frozen=True)
 class SimulationRunRequest:
-    """Serialisierbarer Auftrag für genau einen unabhängigen Simulationslauf."""
+    """Eine Policy-Erstellung und ein Seed für einen Simulationslauf."""
 
     policy_factory: Callable[[int], Policy]
     seed: int
@@ -32,21 +32,21 @@ class SimulationRunRequest:
 
 @dataclass(frozen=True)
 class SimulationRunResult:
-    """Kennzahlen und Messdaten eines abgeschlossenen Worker-Laufs."""
+    """Produktionskennzahlen, Laufzeit und Prozess-ID eines fertigen Laufs."""
 
     metrics: GlobalSimulationMetrics
     elapsed_seconds: float
     worker_pid: int
 
 
-# Jeder Spawn-Prozess besitzt seine eigene Konfiguration und seinen eigenen Runner.
+# Jeder Prozess verwendet seinen eigenen Runner.
 _worker_runner: SimulationRunner | None = None
 
 
 def _initialize_simulation_worker(model_file: str) -> None:
+    """Lädt die Fabrikkonfiguration einmal pro Prozess."""
     global _worker_runner
 
-    # Der Initializer läuft einmal pro Worker, nicht für jeden einzelnen Auftrag.
     layout, scenario = load_layout_and_scenario(model_file)
     _worker_runner = SimulationRunner(layout, scenario)
 
@@ -56,8 +56,7 @@ def _execute_simulation_request(request: SimulationRunRequest) -> SimulationRunR
         raise RuntimeError("Der Simulationsworker wurde noch nicht initialisiert.")
 
     started_at = time.perf_counter()
-    # Die serialisierbare Factory erstellt für jeden Auftrag eine frische Policy.
-    # Sie muss auf Modulebene definiert sein; Lambdas und lokale Funktionen eignen sich nicht.
+    # Die Factory muss zwischen Prozessen übertragbar sein und eine neue Policy erstellen.
     policy = request.policy_factory(request.seed)
     if not callable(getattr(policy, "make_decision", None)):
         raise TypeError("policy_factory muss eine Policy mit make_decision() liefern.")
@@ -71,14 +70,13 @@ def _execute_simulation_request(request: SimulationRunRequest) -> SimulationRunR
 
 
 class ParallelSimulationRunner:
-    """Führt unabhängige Läufe in einem persistenten, verzögert gestarteten Pool aus."""
+    """Verteilt Simulationsläufe auf mehrere Prozesse und sammelt ihre Ergebnisse."""
 
     def __init__(
         self,
         model_file: str | Path,
         max_workers: int | None = None,
     ) -> None:
-        # Nur der Pfad wird im Elternprozess aufgelöst; das Modell laden die Worker.
         self.model_path = _resolve_model_path(model_file)
         if max_workers is None:
             max_workers = os.cpu_count() or 1
@@ -91,26 +89,9 @@ class ParallelSimulationRunner:
         if os.name == "nt" and max_workers > 61:
             raise ValueError("Unter Windows sind höchstens 61 Worker erlaubt.")
 
-        self._max_workers = max_workers
+        self.max_workers = max_workers
         self._executor: ProcessPoolExecutor | None = None
         self._closed = False
-
-    @property
-    def max_workers(self) -> int:
-        return self._max_workers
-
-    # Auch ein einzelner Worker läuft im eigenen Spawn-Prozess.
-    def _get_executor(self) -> ProcessPoolExecutor:
-        if self._closed:
-            raise RuntimeError("Der ParallelSimulationRunner wurde bereits geschlossen.")
-        if self._executor is None:
-            self._executor = ProcessPoolExecutor(
-                max_workers=self.max_workers,
-                mp_context=multiprocessing.get_context("spawn"),
-                initializer=_initialize_simulation_worker,
-                initargs=(str(self.model_path),),
-            )
-        return self._executor
 
     def run_many(
         self,
@@ -128,14 +109,23 @@ class ParallelSimulationRunner:
         if not batch:
             return ()
 
-        executor = self._get_executor()
-        futures: dict[Future[SimulationRunResult], int] = {}
-        results: list[SimulationRunResult | None] = [None] * len(batch)
+        # Den Pool beim ersten Auftrag starten und für weitere Aufrufe behalten.
+        if self._executor is None:
+            self._executor = ProcessPoolExecutor(
+                max_workers=self.max_workers,
+                mp_context=multiprocessing.get_context("spawn"),
+                initializer=_initialize_simulation_worker,
+                initargs=(str(self.model_path),),
+            )
+
+        futures = {}
+        results: dict[int, SimulationRunResult] = {}
         try:
             for index, request in enumerate(batch):
-                futures[executor.submit(_execute_simulation_request, request)] = index
+                future = self._executor.submit(_execute_simulation_request, request)
+                futures[future] = index
 
-            # Der Callback läuft hier im Elternprozess, nicht im Worker oder Pool-Thread.
+            # Fertige Läufe sofort melden, auch wenn frühere Aufträge noch laufen.
             for future in as_completed(futures):
                 index = futures[future]
                 result = future.result()
@@ -148,7 +138,8 @@ class ParallelSimulationRunner:
                 future.cancel()
             raise
 
-        return cast(tuple[SimulationRunResult, ...], tuple(results))
+        # Die Rückgabe folgt der Auftragsreihenfolge, nicht der Fertigstellung.
+        return tuple(results[index] for index in range(len(batch)))
 
     def run_policy_factory(
         self, policy_factory: Callable[[int], Policy], seed: int

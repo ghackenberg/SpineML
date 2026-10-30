@@ -2629,7 +2629,7 @@ Die zugehörigen Aufrufe im Code:
 | `_start_optimization()` | Setzt alte Anzeigeergebnisse zurück und startet den Hintergrundthread. |
 | `worker()` | Koordiniert Vorbereitung, Baseline, Gewichtssuche, Testvergleich und Abschluss. |
 | `create_optimizer()` | Erstellt den gewählten Runner, die globale Bewertung und den Gewichtssatz-Optimierer; startet noch keine Produktionssimulation. |
-| `load_layout_and_scenario()` | Lädt die Fabrikkonfiguration und wählt Layout und Szenario. Der Simulationsstart der Beispieldatei steht unter `if __name__ == "__main__":` und wird beim Laden nicht ausgeführt. Im direkten Modus wird das Modell bei der Vorbereitung geladen, im Pool einmal je Worker bei dessen Start. |
+| `load_layout_and_scenario()` | Lädt die Fabrikkonfiguration und gibt die Variablen `layout` und `scenario` zurück. Im direkten Modus wird das Modell bei der Vorbereitung geladen, im Pool einmal je Worker bei dessen Start. |
 | `optimizer.optimize_iteratively(...)` | Führt nach der Baseline die Schritte 2 bis 5 aus. Die Methode gehört zu `LocalHeuristicWeightOptimizer`. |
 | `_benchmark_policies()` | Führt nach der Suche den Steuerungsvergleich aus Schritt 6 aus. |
 
@@ -3254,7 +3254,7 @@ Die Funktion führt diese Schritte aus:
 
 1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
 2. **Konfiguration erstellen:** `_load_model()` erstellt die Fabrikkonfiguration aus der Beispieldatei.
-3. **Layout und Szenario zurückgeben:** `_find_layout_and_scenario()` gibt das ausgewählte Layout und Szenario als Tupel zurück.
+3. **Layout und Szenario zurückgeben:** `_find_layout_and_scenario()` gibt die Variablen `layout` und `scenario` als Tupel zurück.
 
 **Nach dem Laden sind Fabrik und Aufträge konfiguriert. Ein Produktionslauf
 wurde dadurch noch nicht gestartet.**

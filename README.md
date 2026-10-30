@@ -2629,7 +2629,7 @@ Die zugehörigen Aufrufe im Code:
 | `_start_optimization()` | Setzt alte Anzeigeergebnisse zurück und startet den Hintergrundthread. |
 | `worker()` | Koordiniert Vorbereitung, Baseline, Gewichtssuche, Testvergleich und Abschluss. |
 | `create_optimizer()` | Erstellt den gewählten Runner, die globale Bewertung und den Gewichtssatz-Optimierer; startet noch keine Produktionssimulation. |
-| `load_layout_and_scenario()` | Lädt die Fabrikkonfiguration ohne direkten `simulate(...)`-Start und wählt Layout und Szenario. Im direkten Modus geschieht das bei der Vorbereitung, im Pool einmal je Worker bei dessen Start. |
+| `load_layout_and_scenario()` | Lädt die Fabrikkonfiguration und wählt Layout und Szenario. Der Simulationsstart der Beispieldatei steht unter `if __name__ == "__main__":` und wird beim Laden nicht ausgeführt. Im direkten Modus wird das Modell bei der Vorbereitung geladen, im Pool einmal je Worker bei dessen Start. |
 | `optimizer.optimize_iteratively(...)` | Führt nach der Baseline die Schritte 2 bis 5 aus. Die Methode gehört zu `LocalHeuristicWeightOptimizer`. |
 | `_benchmark_policies()` | Führt nach der Suche den Steuerungsvergleich aus Schritt 6 aus. |
 
@@ -3254,8 +3254,11 @@ Die Funktion führt diese Schritte aus:
 
 1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
 2. **Konfiguration erstellen:** `_load_model()` führt den Python-Code der
-   Beispieldatei aus. Dabei verhindert `_suppress_model_visualization()`,
-   dass deren `simulate(...)`-Aufruf bereits eine Simulation startet.
+   Beispieldatei mit `run_name="spine_model"` aus. Der Simulationsstart
+   muss in der Beispieldatei unter `if __name__ == "__main__":` stehen.
+   Weil der Name beim Laden `"spine_model"` ist, wird dieser Block nicht
+   ausgeführt. Das ist in `example-5.py` bereits so umgesetzt; ein
+   vorübergehender Austausch von `SpineML.simulate` ist nicht mehr nötig.
 3. **Layout und Szenario auswählen:** `_find_layout_and_scenario()` liest,
    welche Variablen im `simulate(layout, scenario)`-Aufruf angegeben sind.
    Fehlt eine solche eindeutige Auswahl, verwendet die Funktion das einzige

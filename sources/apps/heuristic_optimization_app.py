@@ -756,7 +756,6 @@ from SpineML.SimulationExecution.ModelLoader import (
     _find_layout_and_scenario as _find_layout_and_scenario,
     _load_model as _load_model,
     _resolve_model_path as _resolve_model_path,
-    _suppress_model_visualization as _suppress_model_visualization,
 )
 
 # Wird nach main() im Streamlit-Webserver aufgerufen und baut die Oberfläche

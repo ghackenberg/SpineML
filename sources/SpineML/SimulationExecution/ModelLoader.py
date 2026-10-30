@@ -1,9 +1,8 @@
-"""Lädt Layout und Szenario ohne einen direkten Simulationsstart."""
+"""Lädt die Fabrikkonfiguration und liefert Layout und Szenario zurück."""
 
 from __future__ import annotations
 
 import ast
-from contextlib import contextmanager
 from pathlib import Path
 import re
 import runpy
@@ -13,143 +12,95 @@ if TYPE_CHECKING:
     from ..Configuration import Layout, Scenario
 
 
-# Die Datei liegt zwei Verzeichnisebenen unter dem Sources-Verzeichnis.
+# parents[0] = SimulationExecution, parents[1] = SpineML, parents[2] = sources.
 SOURCES_DIRECTORY = Path(__file__).resolve().parents[2]
 EXAMPLES_DIRECTORY = SOURCES_DIRECTORY / "examples"
 NORMAL_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "normal"
 OPTIMIZATION_EXAMPLES_DIRECTORY = EXAMPLES_DIRECTORY / "optimization"
 
 
-# Sucht die Beispieldatei, ohne ihre Modelldefinition auszuführen.
 def _resolve_model_path(model_file: str | Path) -> Path:
-    """Findet eine Beispieldatei im Arbeitsordner oder in einem Examples-Ordner."""
-    requested = Path(str(model_file))
-    requested_names = [requested]
+    """Sucht die Python-Datei und gibt ihren absoluten Pfad zurück."""
+    requested = Path(model_file)
+    names = [requested]
 
-    example_number = re.fullmatch(
-        r"example[-_]?(\d+)(\.py)?",
-        requested.name,
-        flags=re.IGNORECASE,
-    )
-    if example_number:
-        suffix = example_number.group(2) or requested.suffix
-        requested_names.append(
-            requested.with_name(
-                f"example-{example_number.group(1)}{suffix}"
-            )
+    # Erkennt zusätzlich example5 und example_5 als Schreibweisen von example-5.
+    match = re.fullmatch(r"example[-_]?(\d+)(\.py)?", requested.name, re.IGNORECASE)
+    if match:
+        normalized = requested.with_name(f"example-{match.group(1)}{requested.suffix}")
+        if normalized != requested:
+            names.append(normalized)
+
+    searched = []
+    for name in names:
+        folders = (Path(),) if name.is_absolute() else (
+            Path.cwd(), SOURCES_DIRECTORY,
+            NORMAL_EXAMPLES_DIRECTORY, OPTIMIZATION_EXAMPLES_DIRECTORY,
         )
+        for folder in folders:
+            path = folder / name
+            if not path.suffix:
+                path = path.with_suffix(".py")
+            searched.append(str(path))
+            if path.suffix == ".py" and path.is_file():
+                return path.resolve()
 
-    possible_paths = []
-    for requested_name in requested_names:
-        if requested_name.is_absolute():
-            possible_paths.append(requested_name)
-        else:
-            possible_paths.append(Path.cwd() / requested_name)
-            possible_paths.append(SOURCES_DIRECTORY / requested_name)
-            possible_paths.append(NORMAL_EXAMPLES_DIRECTORY / requested_name)
-            possible_paths.append(OPTIMIZATION_EXAMPLES_DIRECTORY / requested_name)
-
-    expanded_paths = []
-    for path in possible_paths:
-        expanded_paths.append(path)
-        if path.suffix == "":
-            expanded_paths.append(path.with_suffix(".py"))
-
-    for path in expanded_paths:
-        if path.is_file() and path.suffix == ".py":
-            return path.resolve()
-
-    searched = "\n".join(str(path) for path in expanded_paths)
     raise FileNotFoundError(
-        f"Beispieldatei {model_file!r} wurde nicht gefunden. Gesucht wurde in:\n{searched}"
+        f"Beispieldatei {model_file!r} nicht gefunden. Gesucht wurde in:\n"
+        + "\n".join(searched)
     )
 
 
-# Wählt das in einem simulate-Aufruf angegebene Layout-Szenario-Paar aus.
+def _load_model(model_path: Path) -> dict[str, object]:
+    """Führt die Beispieldatei aus und gibt ihre globalen Variablen zurück."""
+    # Der Simulationsstart muss in der Datei unter if __name__ == "__main__": stehen.
+    # run_name="spine_model" sorgt dafür, dass dieser Block beim Laden nicht läuft.
+    return runpy.run_path(str(model_path), run_name="spine_model")
+
+
 def _find_layout_and_scenario(
     model: dict[str, object],
     model_path: Path,
 ) -> tuple[Layout, Scenario]:
-    """Liest und wählt die Konfiguration des Beispiels für die Optimierung."""
+    """Wählt Layout und Szenario aus und gibt sie als Tupel zurück."""
     from ..Configuration import Layout, Scenario
 
-    layouts = []
-    scenarios = []
-    for name, value in model.items():
-        if isinstance(value, Layout):
-            layouts.append((name, value))
-        if isinstance(value, Scenario):
-            scenarios.append((name, value))
-
-    # Die AST-Auswertung führt die Modelldatei kein zweites Mal aus.
-    source = model_path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(model_path))
-    simulate_calls = []
+    # Liest simulate(layout, scenario) im Quelltext, ohne diesen erneut auszuführen.
+    tree = ast.parse(model_path.read_text(encoding="utf-8"), filename=str(model_path))
+    calls = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if not isinstance(node.func, ast.Name) or node.func.id != "simulate":
-            continue
-        simulate_calls.append(node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "simulate":
+                calls.append(node)
+    calls.sort(key=lambda call: (call.lineno, call.col_offset))
 
-    simulate_calls.sort(
-        key=lambda node: (
-            getattr(node, "lineno", 0),
-            getattr(node, "col_offset", 0),
-        )
-    )
-    for node in simulate_calls:
-        if len(node.args) < 2:
+    for call in calls:
+        if len(call.args) < 2:
             continue
-        layout_node = node.args[0]
-        scenario_node = node.args[1]
-        if not isinstance(layout_node, ast.Name):
+        layout_name, scenario_name = call.args[:2]
+        if not isinstance(layout_name, ast.Name) or not isinstance(scenario_name, ast.Name):
             continue
-        if not isinstance(scenario_node, ast.Name):
-            continue
-
-        layout = model.get(layout_node.id)
-        scenario = model.get(scenario_node.id)
-        if layout is not None and scenario is not None:
+        layout = model.get(layout_name.id)
+        scenario = model.get(scenario_name.id)
+        if isinstance(layout, Layout) and isinstance(scenario, Scenario):
             return layout, scenario
 
+    # Ohne passenden simulate-Aufruf muss jeweils genau ein Objekt vorhanden sein.
+    layouts = [value for value in model.values() if isinstance(value, Layout)]
+    scenarios = [value for value in model.values() if isinstance(value, Scenario)]
     if len(layouts) == 1 and len(scenarios) == 1:
-        return layouts[0][1], scenarios[0][1]
+        return layouts[0], scenarios[0]
 
-    layout_names = [name for name, value in layouts]
-    scenario_names = [name for name, value in scenarios]
     raise ValueError(
-        "Layout und Szenario konnten nicht eindeutig ausgewählt werden. "
-        f"Layouts: {layout_names}; Szenarien: {scenario_names}. "
-        "Im Beispiel muss ein simulate(layout, scenario)-Aufruf vorhanden sein."
+        "Layout und Szenario sind nicht eindeutig: "
+        f"{len(layouts)} Layout-Einträge und {len(scenarios)} Szenario-Einträge gefunden. "
+        "Bei mehreren Paaren muss simulate(layout, scenario) die gewünschten Variablen angeben."
     )
 
 
-@contextmanager
-# Unterdrückt den direkten Simulationsaufruf während des Modellladens.
-def _suppress_model_visualization():
-    """Verhindert, dass ein Beispiel beim Laden selbst eine Simulation startet."""
-    import SpineML
-
-    original_simulate = getattr(SpineML, "simulate", None)
-    SpineML.simulate = lambda *args, **kwargs: None
-    try:
-        yield
-    finally:
-        if original_simulate is not None:
-            SpineML.simulate = original_simulate
-
-
-# Gibt wie der bisherige Lader die globalen Variablen des Modells zurück.
-def _load_model(model_path: Path) -> dict[str, object]:
-    """Führt nur die Modelldefinition aus und gibt deren globale Variablen zurück."""
-    with _suppress_model_visualization():
-        return runpy.run_path(str(model_path), run_name="spine_model")
-
-
-# Öffentlicher Einstieg für direkte Läufe und die Initialisierung eines Workers.
+# Lädt die Beispieldatei und gibt das ausgewählte Layout und Szenario als Tupel zurück.
 def load_layout_and_scenario(model_path: str | Path) -> tuple[Layout, Scenario]:
-    """Lädt ein Beispiel ohne Simulationsstart und liefert Layout und Szenario."""
-    resolved_path = _resolve_model_path(model_path)
-    model = _load_model(resolved_path)
-    return _find_layout_and_scenario(model, resolved_path)
+    """Datei finden, Konfiguration laden und (layout, scenario) zurückgeben."""
+    path = _resolve_model_path(model_path)
+    model = _load_model(path)
+    return _find_layout_and_scenario(model, path)

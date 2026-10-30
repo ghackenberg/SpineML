@@ -27,7 +27,7 @@ def _positive_size(name: str, value: int) -> int:
 
 
 class CandidateFeaturesExtractor(BaseFeaturesExtractor):
-    """Geteilte Zeilenencoder und maskierte, reihenfolgeinvariante Zustands-Pools."""
+    """Verarbeitet Kontext, Objekte und verfügbare Aktionskandidaten."""
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class CandidateFeaturesExtractor(BaseFeaturesExtractor):
         if observation_space["entity_mask"].shape != (max_entities,):
             raise ValueError("entity_mask muss genau eine Stelle pro Entitätszeile haben.")
 
-        # Kontext + Mittelwert/Maximum beider Mengen; Zeilen bleiben separat erhalten.
+        # Kontext sowie Mittelwert und Maximum der Objekt- und Kandidatenmerkmale.
         summary_dim = 5 * embedding_dim
         super().__init__(
             observation_space,
@@ -78,40 +78,36 @@ class CandidateFeaturesExtractor(BaseFeaturesExtractor):
     @staticmethod
     def _pool(rows: th.Tensor, mask: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         valid = mask.to(dtype=th.bool).unsqueeze(-1)
-        selected = th.where(valid, rows, th.zeros_like(rows))
+        selected = rows.masked_fill(~valid, 0)
         count = valid.sum(dim=1).clamp_min(1).to(dtype=rows.dtype)
         mean = selected.sum(dim=1) / count
         maximum = rows.masked_fill(~valid, th.finfo(rows.dtype).min).amax(dim=1)
-        maximum = th.where(valid.any(dim=1), maximum, th.zeros_like(maximum))
+        maximum = maximum.masked_fill(~valid.any(dim=1), 0)
         return mean, maximum
 
     def forward(self, observations: dict[str, th.Tensor]) -> th.Tensor:
-        # predict()/Rollout-Puffer liefern Batches; direkte Tensoraufrufe dürfen unbatched sein.
+        # Auch eine einzelne Beobachtung als Batch mit einem Eintrag verarbeiten.
         if observations["context"].ndim == 1:
             observations = {name: value.unsqueeze(0) for name, value in observations.items()}
         action_mask = observations["action_mask"].to(dtype=th.bool)
         entity_mask = observations["entity_mask"].to(dtype=th.bool)
         context = self.context_encoder(observations["context"])
-        # Padding wird bereits vor dem Encoder entfernt, auch bei später verändertem Füllwert.
-        entities = self.entity_encoder(th.where(
-            entity_mask.unsqueeze(-1), observations["entities"],
-            th.zeros_like(observations["entities"]),
-        ))
-        candidates = self.candidate_encoder(th.where(
-            action_mask.unsqueeze(-1), observations["candidates"],
-            th.zeros_like(observations["candidates"]),
-        ))
+        # Unbenutzte Zeilen vor und nach der Verarbeitung auf null setzen.
+        entities = observations["entities"].masked_fill(~entity_mask.unsqueeze(-1), 0)
+        candidates = observations["candidates"].masked_fill(~action_mask.unsqueeze(-1), 0)
+        entities = self.entity_encoder(entities)
+        candidates = self.candidate_encoder(candidates)
         entity_mean, entity_max = self._pool(entities, entity_mask)
         candidate_mean, candidate_max = self._pool(candidates, action_mask)
         summary = th.cat((context, entity_mean, entity_max, candidate_mean, candidate_max), dim=1)
-        candidates = th.where(action_mask.unsqueeze(-1), candidates, th.zeros_like(candidates))
+        candidates = candidates.masked_fill(~action_mask.unsqueeze(-1), 0)
         return th.cat((
             summary, candidates.flatten(start_dim=1), action_mask.to(dtype=context.dtype),
         ), dim=1)
 
 
 class _CandidateLatentExtractor(nn.Module):
-    """Trennt zeilenweise Actor-Eingaben von der gepoolten Critic-Eingabe."""
+    """Bereitet die Eingaben für Aktionsauswahl und Zustandsbewertung vor."""
 
     def __init__(
         self,
@@ -144,12 +140,7 @@ class _CandidateLatentExtractor(nn.Module):
 
 
 class CandidateActorCriticPolicy(MaskableMultiInputActorCriticPolicy):
-    """MaskablePPO-Policy: derselbe Actor bewertet jede tatsächlich angebotene Zeile.
-
-    Kandidatenindizes bleiben unverändert; es gibt keine pro Index gelernten
-    Aktionsgewichte. Der Critic nutzt Kontext sowie maskierte Entitäts- und
-    Kandidaten-Pools, auch bei Terminalzuständen ohne wählbare Aktion.
-    """
+    """Bewertet jeden Kandidaten mit demselben Netz und wählt nur gültige Aktionen."""
 
     def __init__(
         self,
@@ -190,7 +181,7 @@ class CandidateActorCriticPolicy(MaskableMultiInputActorCriticPolicy):
         ).to(self.device)
 
     def _build(self, lr_schedule: Schedule) -> None:
-        # Vor dem Optimizer anlegen: kein globaler Linear(latent, max_actions)-Kopf.
+        # Ein gemeinsames Aktionsnetz statt eines eigenen Gewichts pro Kandidatenindex.
         self._build_mlp_extractor()
         self.action_net = nn.Sequential(
             nn.Linear(self.mlp_extractor.latent_dim_pi - 1, self.hidden_dim),
@@ -263,7 +254,7 @@ class CandidateActorCriticPolicy(MaskableMultiInputActorCriticPolicy):
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
         data = super()._get_constructor_parameters()
-        # Basisklassenparameter sind hier festgelegt, nicht zusätzliche öffentliche Optionen.
+        # Diese Optionen sind bereits im Konstruktor festgelegt.
         for name in ("net_arch", "features_extractor_class", "features_extractor_kwargs"):
             data.pop(name, None)
         data.update(embedding_dim=self.embedding_dim, hidden_dim=self.hidden_dim)

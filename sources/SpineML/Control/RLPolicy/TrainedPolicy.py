@@ -1,8 +1,6 @@
-"""Gespeichertes Kandidaten-NN als normale, optionale Simulations-Policy.
+"""Verwendet ein gespeichertes Kandidaten-NN als Simulations-Policy.
 
 Nur eigene/vertraute Checkpoints laden: das SB3-ZIP enthält Python-Objekte.
-Der Runner muss das hier geprüfte ``model_path`` verwenden; Bridge-Snapshots
-enthalten selbst keinen Hash ihrer Modelldatei.
 """
 
 from __future__ import annotations
@@ -30,12 +28,7 @@ def _validate_options(deterministic: bool, seed: int) -> int:
 
 
 class TrainedCandidatePolicy(Policy):
-    """Lädt ``manifest.json``/``model.zip`` und wählt ausschließlich NN-Aktionen.
-
-    ``model_file`` darf eine identische Modelldatei an einem neuen Ort angeben.
-    Stochastische Vorhersagen besitzen einen eigenen Torch-Zufallszustand;
-    Python-/NumPy-Zufallsfolgen der Simulation werden nicht neu gesetzt.
-    """
+    """Lädt manifest.json und model.zip und lässt das NN Kandidaten auswählen."""
 
     def __init__(
         self,
@@ -71,6 +64,7 @@ class TrainedCandidatePolicy(Policy):
         context = manifest.get("artifact_context")
         if not isinstance(context, Mapping):
             raise ValueError("Im Manifest fehlt ein gültiger artifact_context.")
+        # Der Runner muss dieselbe geprüfte Fabrikkonfiguration verwenden.
         self.model_path = validate_artifact_context(context, model_file=model_file)
         if not checkpoint_path.is_file():
             raise FileNotFoundError(f"Der NN-Checkpoint fehlt: {checkpoint_path}")
@@ -85,11 +79,13 @@ class TrainedCandidatePolicy(Policy):
         selected_device = get_device(device)
         if selected_device.type not in ("cpu", "cuda"):
             raise ValueError("Die isolierte NN-Vorhersage unterstützt device='cpu' oder CUDA.")
-        self._rng_devices = (
-            [selected_device.index if selected_device.index is not None else th.cuda.current_device()]
-            if selected_device.type == "cuda" else []
-        )
-        # Auch die Netzinitialisierung beim Laden darf den Simulations-RNG nicht ändern.
+        self._rng_devices = []
+        if selected_device.type == "cuda":
+            device_index = selected_device.index
+            if device_index is None:
+                device_index = th.cuda.current_device()
+            self._rng_devices.append(device_index)
+        # Laden und Vorhersagen dürfen den Zufall der Simulation nicht verändern.
         # seed=None verhindert SB3s globales Python-/NumPy-Seeding beim Laden.
         python_rng = random.getstate()
         numpy_rng = np.random.get_state()

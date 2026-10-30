@@ -1,8 +1,4 @@
-"""Gemeinsame Kalibrierung und Checkpoint-Kontexte der optionalen RL-Werkzeuge.
-
-Factories enthalten nur serialisierbare Konfiguration, keine laufende Simulation.
-Dieses Modul importiert weder PyTorch noch Stable-Baselines3 beim Laden.
-"""
+"""Bereitet Referenzwerte, gespeicherte Einstellungen und Trainingsumgebungen vor."""
 
 from __future__ import annotations
 
@@ -43,12 +39,9 @@ _DEBUG_INFO_KEYS = frozenset(("policy_observation", "candidates", "pending_actio
 
 
 def load_app_configuration() -> dict:
-    """Liest die App-Vorgaben ohne GUI-Import oder Serverstart.
-
-    Unter ``__mp_main__`` überspringt die App ihre GUI-Imports. Auch ihre
-    Main-Guards bleiben inaktiv; ausgeführt wird nur die Konfiguration.
-    """
+    """Liest die App-Vorgaben, ohne die Oberfläche zu starten."""
     app_path = Path(__file__).resolve().parents[3] / "apps" / "heuristic_optimization_app.py"
+    # Unter diesem Namen überspringt die App ihre GUI-Imports und ihren Start.
     configuration = runpy.run_path(str(app_path), run_name="__mp_main__")
     evaluation = configuration["_global_evaluation"]()
     return {
@@ -75,11 +68,7 @@ def calibrate_references(
     global_evaluation: GlobalSimulationEvaluation | None = None,
     progress: Callable[[int], None] | None = None,
 ) -> tuple[GlobalSimulationEvaluation, dict]:
-    """Kalibriert feste Referenzen mit vollständigen Standard-Heuristikläufen.
-
-    Bei Baseline-Mittelwert null bleibt der ValueError der globalen Bewertung
-    erhalten. Es gibt weder Ersatzdivisoren noch zwischengespeicherte Referenzen.
-    """
+    """Berechnet feste Referenzen aus vollständigen Läufen der Standardheuristik."""
     from ..HeuristicPolicy.HeuristicPolicyFactory import HeuristicPolicyFactory
     from ...SimulationExecution.ModelLoader import load_layout_and_scenario
     from ...SimulationExecution.SimulationRunner import SimulationRunner
@@ -91,7 +80,7 @@ def calibrate_references(
         weights = asdict(global_evaluation.weights)
     evaluation = GlobalSimulationEvaluation(GlobalSimulationWeights(**weights))
     started_at = perf_counter()
-    layout, scenario = load_layout_and_scenario(_resolve_model_path(model_file))
+    layout, scenario = load_layout_and_scenario(model_file)
     runner = SimulationRunner(layout, scenario)
     policy_factory = HeuristicPolicyFactory()
     metrics_by_seed = []
@@ -188,13 +177,9 @@ def validate_artifact_context(
     model_file: str | Path | None = None,
     env_config: Mapping | None = None,
 ) -> Path:
-    """Lehnt andere Modelle, geänderte Features und inkompatible Einstellungen ab.
-
-    Eine explizite Modelldatei darf an einem anderen Ort liegen, muss aber
-    denselben SHA256-Hash haben. Gespeicherte Gewichte und Referenzen bleiben
-    unverändert; aktuelle App-Vorgaben ersetzen sie nicht.
-    """
-    if isinstance(context.get("schema_version"), bool) or context.get("schema_version") != 1:
+    """Prüft Dateihash, Features und Einstellungen eines gespeicherten Modells."""
+    version = context.get("schema_version")
+    if isinstance(version, bool) or version != 1:
         raise ValueError("Nicht unterstützte schema_version im RL-Checkpoint-Kontext.")
     if context.get("observation_schema") != observation_schema():
         raise ValueError("Das Beobachtungs-Featureschema des RL-Checkpoints weicht vom Quellcode ab.")
@@ -219,17 +204,7 @@ def validate_artifact_context(
 
 
 class EpisodeSeedWrapper(gym.Wrapper):
-    """Wechselt zyklisch durch feste Trainings-Seeds mit reproduzierbarem Offset.
-
-    Übergebene Reset-Seeds, auch SB3s automatischer erster Seed, ersetzen die
-    Trainings-Seeds nicht. Jeder Reset verwendet den nächsten konfigurierten
-    Seed. Evaluationen setzen explizite Seeds direkt am unverpackten SpineRLEnv.
-
-    Entscheidungs-/Zeitlimits sind im Trainingsziel terminale Fehlschläge mit -1.
-    Deshalb werden sie für SB3 als terminated markiert, ohne TimeLimit-Value-
-    Bootstrapping. Grund und Kennzahlen bleiben in info; das zugrunde liegende
-    Environment behält seine Gymnasium-Trunkierungssemantik.
-    """
+    """Wiederholt die Trainings-Seeds und behandelt Zeit-/Entscheidungslimits als Fehlschlag."""
 
     def __init__(self, env: gym.Env, seeds: Iterable[int], rank: int = 0, *, compact_info: bool = True):
         super().__init__(env)
@@ -241,9 +216,12 @@ class EpisodeSeedWrapper(gym.Wrapper):
         self.compact_info = compact_info
 
     def _info(self, info):
-        return {key: value for key, value in info.items() if key not in _DEBUG_INFO_KEYS} if self.compact_info else info
+        if not self.compact_info:
+            return info
+        return {key: value for key, value in info.items() if key not in _DEBUG_INFO_KEYS}
 
     def reset(self, *, seed=None, options=None):
+        # Auch bei übergebenem seed den nächsten konfigurierten Trainings-Seed verwenden.
         episode_seed = self.seeds[(self.rank + self.episode_index) % len(self.seeds)]
         observation, info = self.env.reset(seed=episode_seed, options=options)
         self.episode_index += 1
@@ -252,6 +230,7 @@ class EpisodeSeedWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.env.step(action)
         if truncated:
+            # SB3 darf bei diesem Fehlschlag keinen geschätzten Folgewert hinzurechnen.
             info = {**info, "training_limit_terminated": True}
             terminated, truncated = True, False
         return observation, reward, terminated, truncated, self._info(info)
@@ -262,7 +241,7 @@ class EpisodeSeedWrapper(gym.Wrapper):
 
 @dataclass(frozen=True)
 class EnvironmentFactory:
-    """Spawn-fähiger Aufruf: genau ein aktives Salabim-Environment pro Prozess."""
+    """Erstellt eine Trainingsumgebung mit den gespeicherten Einstellungen."""
 
     model_file: str | Path
     evaluation_context: dict
@@ -276,8 +255,11 @@ class EnvironmentFactory:
         from .SpineRLEnv import SpineRLEnv
 
         model_path = validate_artifact_context(self.evaluation_context, self.model_file, self.env_config)
+        evaluation = evaluation_from_context(self.evaluation_context)
+        config = _environment_config(self.env_config)
+        environment = SpineRLEnv(model_path, evaluation, **config)
         environment = EpisodeSeedWrapper(
-            SpineRLEnv(model_path, evaluation_from_context(self.evaluation_context), **_environment_config(self.env_config)),
+            environment,
             self.seeds,
             self.rank,
             compact_info=self.compact_info,

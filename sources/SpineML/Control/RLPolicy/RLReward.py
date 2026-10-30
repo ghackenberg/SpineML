@@ -22,20 +22,16 @@ class RLReward:
     )
 
     def __init__(self, global_evaluation: GlobalSimulationEvaluation) -> None:
-        # Eigene Kopien verhindern, dass spätere Baseline- oder Gewichtsänderungen
-        # des aufrufenden Optimierers die Belohnung einer Episode verändern.
+        # Gewichte und Referenzen bleiben während der Episode unverändert.
         weight_values = {}
         for name, value in asdict(global_evaluation.weights).items():
+            message = f"Das globale Gewicht {name!r} muss endlich und nichtnegativ sein."
             try:
                 numeric_value = float(value)
             except (TypeError, ValueError) as error:
-                raise ValueError(
-                    f"Das globale Gewicht {name!r} muss endlich und nichtnegativ sein."
-                ) from error
+                raise ValueError(message) from error
             if not math.isfinite(numeric_value) or numeric_value < 0.0:
-                raise ValueError(
-                    f"Das globale Gewicht {name!r} muss endlich und nichtnegativ sein."
-                )
+                raise ValueError(message)
             weight_values[name] = numeric_value
 
         references = global_evaluation.baseline_reference_values
@@ -54,16 +50,13 @@ class RLReward:
                     f"Der Baseline-Referenzwert {name!r} fehlt. "
                     "RLReward benötigt alle vier Zeitreferenzen vor Episodenbeginn."
                 )
+            message = f"Der Baseline-Referenzwert {name!r} muss endlich und größer als 0 sein."
             try:
                 numeric_value = float(references[name])
             except (TypeError, ValueError) as error:
-                raise ValueError(
-                    f"Der Baseline-Referenzwert {name!r} muss endlich und größer als 0 sein."
-                ) from error
+                raise ValueError(message) from error
             if not math.isfinite(numeric_value) or numeric_value <= 0.0:
-                raise ValueError(
-                    f"Der Baseline-Referenzwert {name!r} muss endlich und größer als 0 sein."
-                )
+                raise ValueError(message)
             reference_values[name] = numeric_value
 
         self._evaluation = GlobalSimulationEvaluation(

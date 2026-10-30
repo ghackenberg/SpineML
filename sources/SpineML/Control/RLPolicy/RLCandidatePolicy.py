@@ -17,12 +17,7 @@ from ...SimulationInterface.InterfaceTypes import (
 
 @dataclass(frozen=True)
 class DecisionRequest:
-    """ID-basierter, vom Simulationszustand entkoppelter Entscheidungsschritt.
-
-    Die äußere Struktur ist unveränderlich; enthaltene Dictionaries bleiben
-    absichtlich kopier- und serialisierbar. Auch Änderungen daran durch den
-    Empfänger verändern weder den Snapshot noch die später ausgeführte Aktion.
-    """
+    """Kopierter Zustand, Kandidaten und bisher gewählte Aktionen einer Entscheidung."""
 
     observation: PolicyObservation
     candidates: tuple[dict, ...]
@@ -30,13 +25,9 @@ class DecisionRequest:
 
 
 class RLCandidatePolicy(Policy):
-    """Lässt einen Callback unter technisch erzeugten Aktionen auswählen.
+    """Lässt eine Entscheidungsfunktion den Index eines erzeugten Kandidaten wählen.
 
-    Der Callback läuft synchron im Simulationsthread. Zwischen den einzelnen
-    Objekten eines Bridge-Aufrufs verstreicht keine Simulationszeit. Es werden
-    keine heuristischen Aktionsscores berechnet. Einzelne technisch erzwungene
-    Aktionen werden standardmäßig direkt übernommen; expose_forced_actions=True
-    macht auch diese Schritte für Debugging im Callback sichtbar.
+    Bei nur einem Kandidaten wird dieser ohne Rückfrage gewählt, außer bei expose_forced_actions.
     """
 
     def __init__(
@@ -68,17 +59,18 @@ class RLCandidatePolicy(Policy):
         selected_actions: list[SelectedObjectAction] = []
         selected_pick_jobs: set[str] = set()
 
-        # Die Einfügereihenfolge entspricht der bestehenden Generator-Policy.
         for object_id, state in snapshot["simulation_object_states_by_id"].items():
             if not state["is_waiting_for_action"]:
                 continue
             object_observation = PolicyObservation(snapshot, object_id)
             available_actions = []
             for action in self.action_generator.generate_actions(object_observation):
-                if action["action_type"].startswith("pick_"):
-                    if str(action["payload"]["selected_job_id"]) in selected_pick_jobs:
-                        continue
-                # Der Generator liefert bereits vollständige Aktions-Payloads.
+                # Derselbe Job darf in dieser Auswahl nur einmal aufgenommen werden.
+                if (
+                    action["action_type"].startswith("pick_")
+                    and str(action["payload"]["selected_job_id"]) in selected_pick_jobs
+                ):
+                    continue
                 available_actions.append(action)
             if not available_actions:
                 raise ValueError(f"No feasible RL action for waiting object {object_id!r}")

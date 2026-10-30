@@ -49,12 +49,10 @@ class _Episode:
 
 
 class SpineRLEnv(gym.Env):
-    """Schrittweise RL-Schnittstelle vor derselben Bridge und Salabim-Simulation.
+    """Pausiert die Simulation, bis step() einen angebotenen Kandidaten auswählt.
 
-    Ein Schritt wählt zwischen mehreren Kandidaten eines wartenden Objekts.
-    Erzwungene Einzelaktionen benötigen keine Entscheidung des Agenten. Entscheidungen
-    derselben Bridge-Gruppe werden zuerst gesammelt und danach zusammen zugestellt.
-    Mehrere Schritte können deshalb dieselbe Simulationszeit haben.
+    Bei nur einem Kandidaten wird dieser automatisch gewählt. Mehrere Entscheidungen
+    können zur selben Simulationszeit gehören.
     """
 
     metadata = {"render_modes": []}
@@ -74,7 +72,10 @@ class SpineRLEnv(gym.Env):
         super().__init__()
         if isinstance(max_decisions, bool) or not isinstance(max_decisions, int) or max_decisions < 1:
             raise ValueError("max_decisions muss eine positive ganze Zahl sein.")
-        for name, value in (("max_simulation_time", max_simulation_time), ("response_timeout", response_timeout)):
+        for name, value in (
+            ("max_simulation_time", max_simulation_time),
+            ("response_timeout", response_timeout),
+        ):
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} muss endlich und positiv sein.")
         self.model_file = _resolve_model_path(model_file)
@@ -123,7 +124,7 @@ class SpineRLEnv(gym.Env):
             self._finished = True
             _ACTIVE_SIMULATION.release()
             raise
-        observation, reward, terminated, truncated, info = self._next_transition()
+        observation, _, terminated, truncated, info = self._next_transition()
         if terminated or truncated:
             raise RuntimeError("Die Episode endete vor der ersten Entscheidung: " + str(info.get("truncation_reason", "")))
         return observation, info
@@ -178,16 +179,14 @@ class SpineRLEnv(gym.Env):
             while True:
                 kind, value = episode.messages.get(timeout=self.response_timeout)
                 if kind == "decision":
+                    self._observation = self.encoder.encode(value)
                     if self._steps >= self.max_decisions:
-                        # Der Zustand an der externen Abbruchgrenze bleibt für
-                        # späteres RL-Bootstrapping erhalten, statt Nullzustand.
-                        self._observation = self.encoder.encode(value)
+                        # Den letzten Zustand für den abgebrochenen Schritt behalten.
                         episode.abort_reason = "max_decisions"
                         episode.cancelled.set()
                         episode.answers.put(_EpisodeAbort("max_decisions"))
                         continue
                     self._request = value
-                    self._observation = self.encoder.encode(value)
                     info = {
                         "episode_seed": episode.seed,
                         "decision_count": self._steps,
@@ -204,12 +203,17 @@ class SpineRLEnv(gym.Env):
                     self._join_episode(episode)
                     self._request = None
                     self._finished = True
-                    if value["terminated"]:
+                    terminated = value["terminated"]
+                    info = value["info"]
+                    if terminated:
                         self._observation = self.encoder.empty_observation()
-                    elif value["info"]["truncation_reason"] != "max_decisions":
+                    elif info["truncation_reason"] != "max_decisions":
                         self._observation = self.encoder.encode_snapshot(value["snapshot"])
-                    value["info"].update(episode_seed=episode.seed, decision_count=self._steps)
-                    return self._observation_copy(), value["reward"], value["terminated"], value["truncated"], copy.deepcopy(value["info"])
+                    info.update(episode_seed=episode.seed, decision_count=self._steps)
+                    return (
+                        self._observation_copy(), value["reward"], terminated,
+                        value["truncated"], copy.deepcopy(info),
+                    )
                 raise RuntimeError("Unbekannte Nachricht der RL-Simulation.")
         except queue.Empty as error:
             self._stop_episode("response_timeout")
@@ -239,8 +243,7 @@ class SpineRLEnv(gym.Env):
                 answer = episode.answers.get()
                 if isinstance(answer, _EpisodeAbort):
                     raise answer
-                if episode.cancelled.is_set():
-                    raise _EpisodeAbort(episode.abort_reason)
+                check_cancelled()
                 return answer
 
             sim.yieldless(False)

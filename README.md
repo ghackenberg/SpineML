@@ -3232,243 +3232,351 @@ auf separaten Test-Seeds.
 
 ## SimulationExecution: Simulationsläufe ausführen
 
-Der Ordner [SimulationExecution](sources/SpineML/SimulationExecution)
-enthält die gemeinsame Ausführung für verschiedene Policies.
-**Die Policy entscheidet über Aktionen; der Runner führt mit ihr eine
-Simulation aus und liefert die Produktionskennzahlen.** Er sucht selbst
-keine Gewichtssätze und berechnet keine globale Bewertungszahl.
+[SimulationExecution](sources/SpineML/SimulationExecution) enthält die
+Werkzeuge zum Laden des Fabrikmodells und zum Ausführen von Simulationsläufen.
+Der Runner startet einen Lauf mit einer übergebenen Policy und einem Seed.
+**Die Policy wählt Aktionen aus; die Simulationskomponenten führen sie aus.**
+Nach dem Lauf liefert der Runner die Produktionskennzahlen zurück.
+
+Derselbe Runner kann verschiedene Policies verwenden, beispielsweise die
+Zufallspolicy, die Standardheuristik, die Heuristik mit einem optimierten
+Gewichtssatz oder ein trainiertes RL-Netz. Der Unterschied liegt in der
+Aktionsauswahl, nicht in einem eigenen Simulationskern je Policy.
 
 ### Modell laden: `ModelLoader.py`
 
-[`load_layout_and_scenario(model_path)`](sources/SpineML/SimulationExecution/ModelLoader.py)
-erhält den Modellpfad oder Beispielnamen und gibt `(layout, scenario)` zurück.
-Beim Laden werden die Fabrikkonfiguration und die Aufträge erstellt.
-Ein `simulate(...)`-Aufruf der Beispieldatei wird dabei unterdrückt:
-Das Laden startet noch keinen Produktionslauf.
+Der Aufruf
+[`load_layout_and_scenario("example-5.py")`](sources/SpineML/SimulationExecution/ModelLoader.py)
+liest die Beispieldatei und liefert zwei Konfigurationsobjekte zurück:
+das `layout` mit dem Fabrikaufbau und das `scenario` mit den Produktionsaufträgen.
+
+Die Funktion führt diese Schritte aus:
+
+1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
+2. **Konfiguration erstellen:** `_load_model()` führt den Python-Code der
+   Beispieldatei aus. Dabei verhindert `_suppress_model_visualization()`,
+   dass deren `simulate(...)`-Aufruf bereits eine Simulation startet.
+3. **Layout und Szenario auswählen:** `_find_layout_and_scenario()` liest,
+   welche Variablen im `simulate(layout, scenario)`-Aufruf angegeben sind.
+   Fehlt eine solche eindeutige Auswahl, verwendet die Funktion das einzige
+   vorhandene Layout-Szenario-Paar. Bei mehreren nicht eindeutig
+   zuordenbaren Paaren meldet sie einen Fehler.
+
+**Nach dem Laden sind Fabrik und Aufträge konfiguriert. Ein Produktionslauf
+wurde dadurch noch nicht gestartet.**
 
 ### Einen vollständigen Lauf ausführen: `SimulationRunner.py`
 
 [`SimulationRunner`](sources/SpineML/SimulationExecution/SimulationRunner.py)
-führt die Simulation ohne 3D-Anzeige im aufrufenden Prozess aus.
+startet eine Simulation ohne 3D-Anzeige und wartet auf deren Ende.
 
-| Aufruf | Aufgabe |
-| --- | --- |
-| `SimulationRunner(layout, scenario, till=sim.inf)` | Speichert Layout, Szenario und die maximale Simulationszeit. Startet noch keinen Lauf. |
-| `runner.run_policy(policy, seed)` | Startet einen Lauf mit der übergebenen Policy und dem Seed. Gibt danach `GlobalSimulationMetrics` zurück. |
-| `runner.collect_global_metrics(sim_layout, sim_scenario, simulation_end_time)` | Liest die Produktionskennzahlen aus den Laufzeitobjekten. Startet selbst keine Simulation. |
+- **Runner erstellen:** `runner = SimulationRunner(layout, scenario)`
+  speichert das gewählte Layout und Szenario. Dieser Aufruf startet noch
+  keine Simulation.
+- **Lauf starten:** `metrics = runner.run_policy(policy, seed)` übergibt
+  die Steuerung und den Startwert für die Zufallszahlen. Die Policy muss
+  bereits erstellt sein.
+- **Ergebnis erhalten:** Wenn der Lauf beendet ist, enthält `metrics` ein
+  `GlobalSimulationMetrics`-Objekt mit den
+  [Produktionskennzahlen](#produktionskennzahlen).
 
-Jeder `run_policy()`-Aufruf erstellt eine neue Salabim-Umgebung,
-`SimulationBridge`, `SimLayout` und `SimScenario`. Der Seed setzt die
-Zufallszahlengeneratoren und den Qualitäts-Seed der Maschinen.
-Endet der Lauf mit unfertigen Jobs, meldet der Runner einen Fehler.
+Innerhalb von `run_policy()` passiert Folgendes:
+
+1. Der Seed setzt den Python-Zufallsgenerator, den Salabim-Zufall und
+   den Qualitäts-Seed der Maschinen.
+2. Für diesen Lauf werden eine neue Salabim-Umgebung, eine neue
+   `SimulationBridge`, ein neues `SimLayout` und ein neues
+   `SimScenario` erstellt.
+3. Die Simulation läuft. Die Bridge fordert Entscheidungen von der Policy
+   an; Jobs, Roboter und Maschinen führen die gewählten Aktionen aus.
+4. Nach dem Lauf liest `collect_global_metrics()` die Ergebnisse aus den
+   Jobs, Robotern und Maschinen und gibt sie gebündelt zurück.
+
+Mit `SimulationRunner(layout, scenario, till=...)` lässt sich eine maximale
+**Simulationszeit** angeben. Ohne diese Grenze läuft die Simulation bis zum
+regulären Abschluss. Endet sie mit unfertigen Jobs, wirft `run_policy()`
+einen Fehler statt eines gültigen Optimierungsergebnisses.
 
 ### Mehrere Läufe beauftragen: `ParallelSimulationRunner.py`
 
 [`ParallelSimulationRunner`](sources/SpineML/SimulationExecution/ParallelSimulationRunner.py)
-verteilt unabhängige Laufaufträge auf getrennte CPU-Prozesse.
-Ein Auftrag enthält eine **Policy-Factory und einen Seed**.
-Die Factory ist eine aufrufbare Funktion oder Klasse, die für diesen Seed
-eine frische Policy erstellt.
+kann mehrere voneinander unabhängige Simulationen gleichzeitig ausführen.
+Dazu verwendet er zusätzliche Python-Prozesse. Ein solcher
+**Worker-Prozess** übernimmt jeweils einen vollständigen Simulationslauf.
+Die Gruppe dieser Worker-Prozesse heißt **Prozesspool**.
 
-| Aufruf oder Datentyp | Aufgabe |
+Der Ablauf ist:
+
+1. **Parallelen Runner erstellen:**
+   `runner = ParallelSimulationRunner(model_file, max_workers=20)`
+   legt die Modelldatei und die Obergrenze von 20 gleichzeitig arbeitenden
+   Prozessen fest. Dieser Aufruf startet noch keinen Prozesspool.
+
+2. **Eine neue Policy je Lauf ermöglichen:** Der Auftrag enthält keine
+   bereits laufende Policy, sondern eine `policy_factory`.
+   Das ist ein aufrufbares Objekt, das einen Seed erhält und eine neue
+   Policy zurückgibt. Beispielsweise speichert
+   [`HeuristicPolicyFactory(weights)`](sources/SpineML/Control/HeuristicPolicy/HeuristicPolicyFactory.py)
+   einen Gewichtssatz und erstellt daraus bei `factory(seed)` die
+   heuristische Steuerung für diesen Lauf.
+
+3. **Laufaufträge zusammenstellen:**
+   `SimulationRunRequest(policy_factory, seed)` beschreibt genau einen
+   Lauf. Für denselben Gewichtssatz mit zwei Seeds werden zwei Aufträge
+   erstellt.
+
+4. **Läufe ausführen:** `results = runner.run_many(requests)` übergibt die
+   Aufträge an den Pool. Beim ersten nicht leeren Aufruf werden die
+   zusätzlichen Prozesse gestartet. Jeder Prozess lädt das Modell einmal.
+   Für jeden übernommenen Auftrag erstellt er eine neue Policy und ruft
+   seinen `SimulationRunner.run_policy()` auf.
+
+5. **Ergebnisse zurückgeben:** `run_many()` wartet auf alle Aufträge und
+   gibt die `SimulationRunResult`-Objekte als geordnete Sammlung (`tuple`)
+   zurück. Die Reihenfolge entspricht den ursprünglichen Aufträgen, nicht
+   der Reihenfolge ihrer Fertigstellung.
+
+6. **Pool schließen:** `runner.close()` beendet den Pool und wartet noch
+   auf bereits laufende Aufträge. Alternativ wird der Runner in einem
+   `with`-Block verwendet. Nach dem Schließen nimmt er keine neuen Aufträge an.
+
+Jedes `SimulationRunResult` enthält:
+
+| Feld | Bedeutung |
 | --- | --- |
-| `ParallelSimulationRunner(model_file, max_workers=...)` | Legt Modelldatei und maximale Anzahl der Worker-Prozesse fest. |
-| `SimulationRunRequest(policy_factory, seed)` | Beschreibt genau einen Simulationslauf. |
-| `runner.run_many(requests)` | Führt den Laufstapel aus. Liefert die Ergebnisse in derselben Reihenfolge wie die Aufträge zurück. |
-| `runner.run_policy_factory(policy_factory, seed)` | Führt genau einen Auftrag im Prozesspool aus und gibt dessen Produktionskennzahlen zurück. |
-| `runner.close()` | Beendet den Pool und wartet auf bereits laufende Aufträge. |
+| `metrics` | Die Produktionskennzahlen dieses Laufs als `GlobalSimulationMetrics`. |
+| `elapsed_seconds` | Die verstrichene Zeit im Worker für Policy-Erstellung, Simulation und Kennzahlensammlung. Das vorherige Modellladen und der Poolstart sind darin nicht enthalten. |
+| `worker_pid` | Die Betriebssystem-ID des ausführenden Prozesses, nicht die Nummer eines CPU-Kerns. |
 
-Ein Ergebnis von `run_many()` ist ein `SimulationRunResult` mit
-`metrics` (Produktionskennzahlen), `elapsed_seconds` (Rechenzeit des Laufs)
-und `worker_pid` (ID des ausführenden Prozesses).
-Eine Factory muss zwischen Prozessen übertragbar sein; lokale Funktionen
-und Lambdas eignen sich dafür nicht.
+Für genau einen Poolauftrag gibt es außerdem
+`runner.run_policy_factory(policy_factory, seed)`. Dieser Aufruf liefert
+direkt die Produktionskennzahlen zurück.
 
-**Nicht mit dem Worker-Thread der Oberfläche verwechseln:** Der
-[Hintergrundthread der Optimierungsanwendung](#modell-und-hintergrundlauf-vorbereiten)
-koordiniert den Optimierungsablauf. Die Worker-**Prozesse** des Pools
-führen die unabhängigen Simulationen parallel aus.
+Wird `run_many(..., on_completed=...)` eine Fortschrittsfunktion übergeben,
+bekommt sie nach jedem fertigen Lauf dessen Auftragsindex und Ergebnis.
+Sie läuft im aufrufenden Programm. So kann dieses den Fortschritt
+aktualisieren, ohne auf den gesamten Stapel zu warten.
+
+Eine `policy_factory` muss zwischen den Prozessen übertragen werden können.
+Dafür eignen sich beispielsweise die vorhandenen Factory-Klassen, aber
+keine Lambda-Funktionen oder innerhalb anderer Funktionen definierten
+Funktionen.
 
 ### Produktionskennzahlen weiterverwenden
 
-- **Heuristische Optimierung:** Die [globale Bewertung](#globale-bewertungszahl)
-  macht aus den Kennzahlen eines Laufs eine Bewertungszahl. Der Optimierer
-  vergleicht daraus die [Seed-Mittelwerte](#mittelwert-über-die-seeds) der
-  Gewichtssätze.
-- **RL-Umgebung:** [`SpineRLEnv`](#rlpolicy-erste-rl-umgebung) steuert ihren
-  Simulationslauf selbst, damit sie an Auswahlpunkten auf `step()` warten
-  kann. Sie verwendet denselben Modelllader und dieselbe
-  `collect_global_metrics()`-Methode; sie ruft für die schrittweise Episode
-  nicht `run_policy()` oder `run_many()` auf.
+Der Runner sammelt Ergebnisse; er entscheidet nicht, welches
+Produktionsergebnis besser ist. Die weiteren Aufgaben sind getrennt:
+
+- **Einen Lauf bewerten:**
+  [`GlobalSimulationEvaluation`](#globale-bewertungszahl) berechnet aus
+  den Kennzahlen eine globale Bewertungszahl.
+- **Gewichtssätze vergleichen:** Der
+  [`LocalHeuristicWeightOptimizer`](#optimierungsvorgang) lässt jeden
+  Gewichtssatz mit den vorgesehenen Seeds simulieren, bildet dessen
+  [mittlere globale Bewertungszahl](#mittelwert-über-die-seeds) und
+  steuert die nächsten Suchiterationen.
+- **RL schrittweise ausführen:** [`SpineRLEnv`](#rlpolicy-erste-rl-umgebung)
+  wartet während eines Laufs an Auswahlpunkten auf `step()`. Dafür
+  steuert die RL-Umgebung den Simulationslauf selbst. Sie verwendet
+  denselben Modelllader und dieselbe `collect_global_metrics()`-Methode,
+  ruft aber für eine schrittweise Episode nicht `run_policy()` oder
+  `run_many()` auf.
 
 ### Parallele Optimierung mit mehreren CPU-Prozessen
 
-`SimulationRunner` führt einen Lauf in einem Prozess aus.
-[ParallelSimulationRunner](sources/SpineML/SimulationExecution/ParallelSimulationRunner.py)
-verteilt viele unabhängige Läufe auf wiederverwendete Spawn-Prozesse.
-**Beschleunigt wird die Bearbeitung eines Stapels, nicht die einzelne Simulation.**
+Im Webinterface verwendet **Parallel (process pool)** den oben beschriebenen
+Prozesspool. Die Einstellung
+`MAX_WORKERS = min(os.cpu_count() or 1, 20)` in
+[heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py)
+erlaubt höchstens 20 gleichzeitig arbeitende Worker.
 
-- **Prozessgrenze der Optimierungsanwendung:** In
-  `heuristic_optimization_app.py` begrenzt
-  `MAX_WORKERS = min(os.cpu_count() or 1, 20)` die gleichzeitig arbeitenden
-  Worker. Der verwendete Intel Core i7-13700H hat
-  14 physische Kerne und 20 logische Prozessoren. Windows verteilt die Prozesse;
-  eine feste Bindung an einzelne Kerne wird nicht vorgenommen.
-- **Wiederverwendung:** Jeder Worker lädt das Modell einmal. Für jeden
-  Auftrag erstellt dessen Policy-Factory eine neue Policy; der Runner baut
-  Bridge und Salabim-Umgebung neu auf.
-- **Mehr Aufträge als Worker:** 53 Gewichtssätze mit zwei Seeds ergeben
-  106 Laufaufträge. Ein freier Worker übernimmt den nächsten. Der Pool bleibt
-  über Baseline, Suchiterationen und Testvergleich bestehen.
-- **Abhängigkeiten:** Die Baseline muss vor der Suche fertig sein, jede
-  Iteration vor der nächsten und die Suche vor dem Testvergleich.
-  Globale Kosten, Mittelwerte und Auswahl berechnet der Elternprozess.
-- **Zeitbegriffe trennen:** Simulierte Produktionszeiten stehen in Stunden;
-  die reale Rechenzeit wird in Sekunden gemessen. Die Summe paralleler
-  Einzelzeiten ist nicht die verstrichene Gesamtzeit. Unter hoher Last kann
-  ein einzelner Lauf sogar länger dauern.
+Der [Hintergrundthread der Oberfläche](#modell-und-hintergrundlauf-vorbereiten)
+und die Poolprozesse haben verschiedene Aufgaben:
+
+- **Worker-Thread:** Er koordiniert im selben Python-Programm wie die
+  Oberfläche die Baseline, die Suchiterationen und den Abschlussvergleich.
+- **Worker-Prozesse:** Sie führen die einzelnen Produktionsläufe in
+  getrennten Python-Prozessen aus.
+
+**Beispiel:** Werden in einer Iteration 53 verschiedene Gewichtssätze mit
+je zwei Seeds geprüft, entstehen `53 × 2 = 106` Laufaufträge. Bei 20 Workern
+können höchstens 20 davon gleichzeitig laufen. Ein freier Worker
+übernimmt anschließend einen weiteren Auftrag.
+
+Der Pool bleibt während der Baseline, der Gewichtssuche und des
+Steuerungsvergleichs erhalten. Die Phasen selbst bleiben geordnet:
+Erst muss die Baseline fertig sein, dann folgen die Suchiterationen und
+schließlich die Testläufe. Die nächste Iteration beginnt erst nach der
+Auswertung der aktuellen. Deshalb arbeiten nicht jederzeit 20 Prozesse:
+Mit zwei Baseline-Seeds gibt es zunächst nur zwei Laufaufträge; gegen Ende
+eines Stapels können ebenfalls weniger Läufe übrig sein.
+
+Auf dem verwendeten Intel Core i7-13700H stehen 14 physische Kerne und
+20 logische Prozessoren zur Verfügung. Windows verteilt die Prozesse auf
+diese Rechenressourcen. Ein Worker ist nicht fest einem bestimmten
+logischen Prozessor zugeordnet.
+
+**Ziel der Parallelisierung ist eine kürzere Gesamtzeit für viele Läufe.**
+Ein einzelner Lauf muss dadurch nicht schneller werden und kann unter
+hoher Last länger dauern. Die simulierte Produktionszeit wird in Stunden
+gemessen; die tatsächlich verstrichene Zeit auf dem Rechner in Sekunden.
 
 <a id="rechenzeit-eines-simulationslaufs-messen"></a>
 
 #### Laufstapel mit verschiedenen Workerzahlen messen
 
-[measure_simulation_runtime.py](sources/tools/measure_simulation_runtime.py) vergleicht
-denselben Stapel vollständiger Standardheuristik-Läufe, keine Gewichtssuche:
+[measure_simulation_runtime.py](sources/tools/measure_simulation_runtime.py)
+misst, wie lange derselbe Stapel vollständiger Example-5-Läufe mit
+unterschiedlich vielen Poolprozessen dauert. Alle Läufe verwenden den
+Standardgewichtssatz; das Werkzeug führt keine Gewichtssuche aus.
 
 ```console
 .\.venv\Scripts\python.exe sources/tools/measure_simulation_runtime.py --seeds 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 --workers 1 14 20 --output simulation_times.json
 ```
 
-- **Messumfang:** Gesamtzeit je Batch einschließlich Poolstart, Modellladen,
-  aller Läufe und Shutdown. Auch `--workers 1` verwendet einen Spawn-Pool;
-  das ist nicht der frühere direkte sequenzielle Modus.
-- **Gleiche Aufgaben:** Nur angeforderte Workerzahlen werden gemessen.
-  Standard ohne Optionen sind fünf Seeds und ein Worker. `--repeats 2`
-  wiederholt den Seed-Stapel zweimal innerhalb jedes Batches.
-- **Ergebnisse prüfen:** Jede Produktionskennzahl jedes Inputs muss exakt
-  mit der Referenz übereinstimmen: ein Worker, falls angefordert, sonst die
-  erste angeforderte Workerzahl. Erst danach wird der Zeitvergleich ausgegeben.
-- **Bericht:** `--output` speichert Kennzahlen, Einzelzeiten, PIDs, Batchzeiten,
-  Speedups und den schnellsten gemessenen Modus als JSON. `--profile` ergänzt
-  einen separaten direkten Profiling-Lauf außerhalb aller Batch-Timer.
+Dieser Befehl führt denselben Stapel von 20 Seed-Läufen zunächst mit einem,
+danach mit 14 und anschließend mit 20 Poolprozessen aus.
+
+- **Gesamtzeit je Stapel:** Die Messung umfasst Poolstart, Modellladen,
+  Simulationen und Poolende. Auch `--workers 1` verwendet einen separaten
+  Poolprozess; das ist nicht der direkte sequenzielle Runner.
+- **Wiederholungen:** `--repeats 2` fügt die Seedliste innerhalb jedes
+  Stapels ein zweites Mal hinzu. Es werden dadurch doppelt so viele Läufe
+  ausgeführt, nicht zwei unabhängige Gesamtzeitmessungen je Workerzahl.
+- **Kennzahlen prüfen:** Für jeden Auftrag müssen alle Produktionskennzahlen
+  exakt mit der Referenzausführung übereinstimmen. Referenz ist ein
+  Poolprozess, falls angefordert, andernfalls die erste angeforderte
+  Workerzahl.
+- **Bericht:** `--output` speichert die Lauf- und Gesamtzeiten,
+  Produktionskennzahlen und verwendeten Prozesse als JSON.
+  `--profile` misst zusätzlich einen einzelnen direkten Lauf und zeigt,
+  in welchen Funktionen Zeit verbraucht wurde. Dieser zusätzliche Lauf
+  gehört nicht zu den gemessenen Stapelzeiten.
 
 <a id="gemessener-vergleich-für-example-5"></a>
 
 #### Gemessener Vergleich für Example 5: 20 Läufe
 
-Für denselben Stapel mit Seeds `1` bis `20` und Standardgewichtssatz wurden
-auf diesem Rechner folgende historische Batchzeiten aufgezeichnet:
+Für den beschriebenen Stapel mit Seeds `1` bis `20` und
+Standardgewichtssatz wurden auf diesem Rechner früher diese Zeiten erfasst:
 
-| Poolprozesse | Gesamtzeit inklusive Poolstart und -ende | Verhältnis gegenüber einem Poolprozess |
+| Poolprozesse | Gesamtzeit inklusive Poolstart und -ende | Beschleunigung gegenüber einem Poolprozess |
 | --- | ---: | ---: |
 | `1` | `211.6 s` | `1.00×` |
 | `14` | `42.4 s` | `4.99×` |
 | `20` | `39.2 s` | `5.40×` |
 
-Beim damaligen Messlauf wurden die Produktionskennzahlen jedes Seed-Laufs
-exakt verglichen und waren gleich. Der lokale Rohbericht wird nicht
-mitveröffentlicht; die Tabelle dokumentiert die aufgezeichneten Messwerte.
-Neue Ergebnisse lassen sich mit dem obigen Messbefehl erzeugen und prüfen.
-In diesem historischen Stapel waren 20 Prozesse am schnellsten.
-**Die `39.2 s` sind keine Zeit für die vollständige Optimierung.**
+Beim damaligen Messlauf wurden die Produktionskennzahlen je Seed auf
+Gleichheit geprüft. Der Rohbericht gehört nicht zum veröffentlichten
+Repository. Die Tabelle dokumentiert diese früheren Messwerte; sie ist
+keine neue Messung des aktuellen Codes.
+
+**Die `39.2 s` betreffen nur diesen Stapel von 20 Läufen, nicht die
+vollständige Optimierung.**
 
 <a id="vollständige-optimierung-vorher-und-jetzt-vergleichen"></a>
 
 #### Vollständige Optimierung: vorher und jetzt vergleichen
 
-[compare_optimization_runtime.py](sources/tools/compare_optimization_runtime.py) führt
-beide vollständigen Workflows in frischen Python-Koordinatorprozessen
-nacheinander aus, standardmäßig zuerst sequenziell:
+[compare_optimization_runtime.py](sources/tools/compare_optimization_runtime.py)
+führt den gesamten Optimierungsablauf einmal sequenziell und einmal
+parallel aus. Beide Ausführungen verwenden frische Python-Programme
+und laufen nacheinander, standardmäßig zuerst sequenziell.
 
 ```console
 .\.venv\Scripts\python.exe sources/tools/compare_optimization_runtime.py
 ```
 
-- **Identische Einstellungen:** Beide Modi übernehmen das Modell und alle
-  Parameter aus `heuristic_optimization_app.py`: Baseline, gesamte Gewichtssuche und den
-  Testvergleich dreier Steuerungen. `sequential` nutzt den direkten Runner,
-  `parallel` den Prozesspool.
-- **Gesamtzeit:** Der Workflow-Timer beginnt beim Start des Hintergrundlaufs
-  und endet nach dem Shutdown. Er enthält Vorbereitung, Modellladen, Baseline,
-  alle Suchiterationen, Testvergleich und Poolbeendigung. Einzelne Laufzeiten
-  dürfen damit nicht verwechselt werden.
-- **Vergleich freigeben:** `optimization_timing_comparison.json` speichert
-  vollständige Berichte und prüft Konfiguration, Quellstand, Ergebnisse und
-  Laufzahl auf exakte Gleichheit. Nur bei Übereinstimmung wird ein Speedup
-  ausgewiesen; fertige Teilberichte bleiben bei einem späteren Fehler erhalten.
-- **Im Webinterface:** Einen Modus auswählen und **Start optimization** drücken,
-  danach den anderen Modus mit unveränderten Einstellungen ausführen.
-  Die Historientabelle zeigt Phasen- und Gesamtzeiten; der JSON-Download
-  enthält die Berichte. Die Laufzeithistorie bleibt innerhalb der Streamlit-Sitzung erhalten.
-- **Messbedingungen:** Keine weiteren Simulationen oder Optimierungen
-  gleichzeitig starten. Zwei vollständige Workflows dauern länger als einer.
-  Mit `--order parallel-first` lässt sich die CLI-Reihenfolge umkehren.
+Beide Ausführungen übernehmen Modell und Parameter aus der
+Optimierungsanwendung. Sie enthalten die Baseline, sämtliche
+Suchiterationen und den Testvergleich der drei Steuerungen.
+
+- **Sequenziell:** Der direkte Runner führt einen Lauf nach dem anderen aus.
+- **Parallel:** Der Prozesspool bearbeitet unabhängige Läufe gleichzeitig.
+- **Vergleich prüfen:** Das Werkzeug vergleicht Konfiguration, Quellstand,
+  Produktions- und Optimierungsergebnisse sowie die Anzahl der Läufe.
+  Nur bei Übereinstimmung berechnet es den Zeitvorteil.
+- **Zeitmessung:** Gemessen wird ab dem Start des Optimierungs-Hintergrundlaufs
+  bis nach dem Schließen des Pools. Python-Programmstart und Modulimporte
+  davor sowie abschließende Berichterstellung und JSON-Ausgabe gehören
+  nicht zu diesem Zeitwert.
+- **Bericht:** `optimization_timing_comparison.json` enthält beide
+  Ablaufberichte und das Vergleichsergebnis. Bereits fertige Teilberichte
+  bleiben erhalten, wenn eine spätere Ausführung fehlschlägt.
+
+Derselbe Vergleich lässt sich im Webinterface durchführen: Einen
+`Execution mode` wählen, **Start optimization** drücken und danach den
+anderen Modus mit unveränderten Einstellungen ausführen. Die Historientabelle
+zeigt Phasen- und Gesamtzeiten; der JSON-Download enthält die Berichte.
+
+Während dieser Messung keine weiteren Simulationen oder Optimierungen
+gleichzeitig starten, da sie die Zeitmessung beeinflussen. Mit
+`--order parallel-first` lässt sich die CLI-Reihenfolge umkehren.
 
 <a id="gemessene-gesamtzeit-der-vollständigen-optimierung"></a>
 
 #### Gemeldete Gesamtzeit der vollständigen Optimierung
 
-Für `example-5.py` wurden folgende Gesamtzeiten im Webinterface abgelesen
-und vom Nutzer gemeldet. Sie betreffen den vollständigen Ablauf mit Baseline,
-Gewichtssuche, Steuerungsvergleich und Shutdown, nicht den 20-Läufe-Test:
+Für `example-5.py` wurden aus dem Webinterface folgende Zeiten gemeldet.
+Sie betreffen den vollständigen Ablauf mit Baseline, Gewichtssuche,
+Steuerungsvergleich und Poolende:
 
 | Ausführungsart | Gesamtzeit | Ungefähr in Minuten |
 | --- | ---: | ---: |
 | `Sequential (previous execution)` – ohne Prozesspool | `4291.7 s` | `71.5 min` |
 | `Parallel (process pool)` – bis zu 20 Prozesse | `1399.5 s` | `23.3 min` |
 
-Das Verhältnis der abgelesenen Zeiten ist
-`4291.7 / 1399.5 ≈ 3.07`. Die Differenz beträgt `2892.2 s`, etwa
-`48.2 Minuten` beziehungsweise `67.4 %`.
+Aus diesen gemeldeten Zeiten ergibt sich
+`4291.7 / 1399.5 ≈ 3.07`: Die parallele Ausführung dauerte in diesem
+Vergleich ungefähr ein Drittel so lange.
 
-Für diese beiden gemeldeten Läufe liegt kein exportierter Rohbericht vor.
-Ihre identischen Aufgaben und Ergebnisse wurden daher nicht zusätzlich
-anhand der Rohdaten geprüft. Neue Läufe können mit dem obigen Vergleich
-reproduzierbar dokumentiert und auf Gleichheit geprüft werden.
+Für diese beiden Läufe wurde kein Rohbericht exportiert. Ihre identischen
+Aufgaben und Ergebnisse konnten daher nicht nachträglich anhand solcher
+Berichte überprüft werden. Neue Läufe lassen sich mit dem obigen
+Vergleichsbefehl dokumentieren und prüfen.
 
-**Aussagegrenze beider Tabellen:** Die Werte sind keine allgemeine
-Beschleunigungsgarantie oder statistische Untersuchung mit ausgewiesener
-Messstreuung. Hardwarelast, Modell, Steuerung und Arbeitsumfang beeinflussen
-die Rechenzeit. Der Zeitvorteil des 20-Läufe-Stapels darf nicht auf eine
-vollständige Optimierung hochgerechnet werden.
+**Die Tabellen zeigen frühere Einzelmessungen, keine garantierte
+Beschleunigung.** Modell, Arbeitsumfang und Rechnerauslastung beeinflussen
+die Laufzeit. Der Zeitvorteil des 20-Läufe-Stapels darf nicht auf die
+vollständige Optimierung übertragen werden.
 
 <a id="rlcontrol-erste-rl-umgebung"></a>
 <a id="rlpolicy-erste-rl-umgebung"></a>
 
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
-Die RL-Anbindung verwendet denselben [ActionGenerator](#actiongenerator)
-und dieselbe [SimulationBridge](#simulationbridge) wie die anderen Policies.
-**Ausgewählt wird eine konkrete Aktion, kein heuristischer Gewichtssatz.**
+Die RL-Policy soll durch wiederholte Simulationsläufe lernen, welche der
+angebotenen Aktionen zu einem guten Produktionsergebnis führt. RL steht für
+Reinforcement Learning: Das Netz erhält am Ende eines Laufs eine Belohnung
+und wird anhand der gesammelten Entscheidungen angepasst.
 
-Dafür stellt [`SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)
-eine Gymnasium-Umgebung bereit: `reset(seed=...)` startet einen
-Simulationslauf, `step(index)` übergibt die nächste Aktionsauswahl.
-Ein solcher Lauf heißt **Episode**. Die Umgebung liefert Zustandsmerkmale,
-die angebotenen Aktionen und den Reward (Belohnungswert) zurück.
+Der Unterschied zur [heuristischen Optimierung](#optimierungsvorgang) ist:
+Die Optimierung sucht einen lokalen Gewichtssatz für die vorhandenen
+Heuristikregeln. Die RL-Policy wählt dagegen unmittelbar eine konkrete Aktion
+aus den Kandidaten des [ActionGenerator](#actiongenerator). Sie verwendet
+weder den heuristischen Evaluator noch dessen Aktionsscores. Die Heuristik
+und `RandomPolicy` bleiben unveränderte, eigenständig ausführbare Policies.
 
-Die optionale Trainingsanbindung verwendet **MaskablePPO** aus `sb3-contrib`
-mit einer eigenen neuronalen Actor-Critic-Policy. Der Actor lernt aus den
-Episodenrewards, welche angebotene Kandidatenzeile er auswählen soll; der
-Critic schätzt den erwarteten Reward. Gespeicherte Modelle lassen sich
-anschließend prüfen oder als normale Bridge-Policy einsetzen. Ein kurzer
-technischer Probelauf belegt noch keine gute Produktionsstrategie oder
-Verbesserung gegenüber den Vergleichspolicies.
+Ein Simulationslauf heißt hier **Episode**. Beim Training läuft er so ab:
 
-| Baustein | Aufgabe |
-| --- | --- |
-| [SpineRLEnv](sources/SpineML/Control/RLPolicy/SpineRLEnv.py) | Episoden starten, zwischen Kandidatenentscheidungen anhalten und `reset()`/`step()` anbieten. |
-| [RLCandidatePolicy](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) | Vollständige Kandidaten vom gemeinsamen Generator anfordern und eine externe Auswahl in eine `PolicyDecision` übersetzen. |
-| [RLObservationEncoder](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py) | ID-basierte Beobachtungen in feste, gepaddete numerische Arrays und Masken umwandeln. |
-| [RLReward](sources/SpineML/Control/RLPolicy/RLReward.py) | Die gemeinsamen globalen Produktionskosten am Episodenende in einen Reward umrechnen. |
-| [CandidateActorCriticPolicy](sources/SpineML/Control/RLPolicy/CandidateActorCriticPolicy.py) | Gemeinsame Zeilenencoder, maskierte Zustandspools und geteilte Kandidatenscores für MaskablePPO berechnen. |
-| [TrainingSupport](sources/SpineML/Control/RLPolicy/TrainingSupport.py) | Referenzen kalibrieren, Modell-/Featureschema prüfen sowie Trainings-Seeds und Prozessumgebungen verwalten. |
-| [TrainedCandidatePolicy / TrainedPolicyFactory](sources/SpineML/Control/RLPolicy/TrainedPolicy.py) | Ein gespeichertes Netz als reguläre Policy laden; die Factory erzeugt eine frische Instanz je Lauf. |
+1. [`SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py) startet mit
+   `reset(seed=...)` eine frische Simulation und hält sie an der ersten
+   Auswahl zwischen mehreren Kandidaten an.
+2. Das Netz erhält Zahlen zum aktuellen Zustand und zu den angebotenen
+   Aktionen. Es wählt einen Kandidatenindex; `step(index)` übergibt die Wahl.
+3. Die Policy sammelt die Aktionen für den aktuellen Bridge-Aufruf. Danach
+   stellt die [SimulationBridge](#simulationbridge) sie den Jobs, Robotern
+   und Maschinen zu. Diese führen die Aktionen aus; die Simulation läuft
+   bis zur nächsten Auswahl weiter.
+4. Die Umgebung liefert den neuen Zustand zurück. Auswahl und Simulation
+   wiederholen sich bis zum Abschluss oder bis zu einem Limit. Dann werden
+   die Produktionskennzahlen ausgewertet und in eine Belohnung umgerechnet.
 
-Die neuronale Aktionsauswahl verwendet weder den heuristischen Evaluator
-noch dessen Aktionsscores. Vollständige Standardheuristik-Läufe liefern nur
-die festen Referenzen der globalen Bewertung. Die bestehende Heuristik und
-`RandomPolicy` bleiben eigenständige, direkt ausführbare Policies.
+Gymnasium stellt dafür die Schnittstelle `reset()`/`step()` bereit. Der
+mitgelieferte Trainer nutzt sie mit dem Lernverfahren **MaskablePPO** aus
+`sb3-contrib`. Ein gespeichertes Netz lässt sich später auch direkt im
+normalen Runner einsetzen. Ein kurzer technischer Probelauf belegt noch
+keine gelernte Produktionsstrategie oder Verbesserung.
 
 ### Was wählt die RL-Policy aus?
 
@@ -3483,41 +3591,235 @@ eine Alternativroute wurde nicht gefunden. Dann enthält seine Kandidatenliste:
 | `2` | `wait_job`: Zunächst warten. |
 
 `step(0)` wählt in diesem Beispiel die Nacharbeit aus.
-Die Nummer bezeichnet nur den Eintrag der **aktuellen** Kandidatenliste;
+Die Nummer bezeichnet nur den Eintrag der aktuellen Kandidatenliste;
 bei einer anderen Entscheidung kann Index `0` für eine andere Aktion stehen.
 Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske) kennzeichnet die
-gerade gültigen Indizes.
+gerade gültigen Indizes. Wie daraus Aktionen für die Bridge werden, zeigt
+der [folgende Ablauf](#vom-bridge-aufruf-zur-kandidatenentscheidung).
 
-Die Auswahl wird zunächst in der `PolicyDecision` gesammelt. Die Bridge
-stellt die Aktionen erst zu, wenn die Auswahl für alle wartenden Objekte
-dieses Aufrufs abgeschlossen ist. Der [folgende Ablauf](#vom-bridge-aufruf-zur-kandidatenentscheidung)
-beschreibt diese Übergabe.
+### Vom Bridge-Aufruf zur Kandidatenentscheidung
+
+[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py)
+verbindet den gemeinsamen ActionGenerator mit der Auswahl des Netzes. Ihre
+Methode `make_decision()` wird wie bei den anderen Policies von der Bridge
+aufgerufen:
+
+1. Die Policy erhält einen Snapshot, also eine Kopie der gemeldeten
+   Simulationsdaten. Sie betrachtet alle wartenden Objekte in dessen
+   Einfügereihenfolge.
+2. Der `SpineActionGenerator` erzeugt für jedes Objekt die möglichen Aktionen
+   mit vollständigen Ausführungsdaten. Bei Picks ist die EDD-basierte
+   `queue_priority` bereits enthalten. Ein Job, der in diesem Bridge-Aufruf
+   schon für einen Pick ausgewählt wurde, wird nicht nochmals angeboten.
+3. Gibt es genau einen Kandidaten, übernimmt die Policy ihn direkt. Erst
+   bei mindestens zwei Kandidaten ruft sie ihre Auswahlfunktion auf. Diese
+   erhält einen `DecisionRequest`: Zustand, Kandidaten und die bereits für
+   andere Objekte vorgemerkten Aktionen. Die Daten sind kopiert; Änderungen
+   daran ändern nicht die später ausgeführte Aktion.
+4. `SpineRLEnv` liefert diesen Auswahlpunkt an das Netz weiter und wartet auf
+   dessen Kandidatenindex. Die Policy merkt die gewählte Aktion vor und
+   betrachtet anschließend die übrigen wartenden Objekte.
+5. Erst die vollständige `PolicyDecision` geht an die Bridge zurück. Dann
+   stellt die Bridge die gesammelten Aktionen zu.
+
+Zwischen den Auswahlen desselben Bridge-Aufrufs verstreicht keine
+Simulationszeit. Ein `step()` kann deshalb bereits die nächste Auswahl
+liefern, obwohl die gerade gewählte Aktion noch nicht ausgeführt wurde.
+Mehrere Schritte können dieselbe Zeit haben. Die vorgemerkten Aktionen und
+Pick-Reservierungen sind in der Beobachtung enthalten; außerdem stehen die
+Aktionen in `info["pending_actions"]`.
+
+Nur bei direkter Verwendung der `RLCandidatePolicy` kann
+`expose_forced_actions=True` auch Einzelkandidaten an die Auswahlfunktion
+weitergeben. `SpineRLEnv` überspringt diese zusätzlichen Schritte.
+
+### Numerische Beobachtung und Aktionsmaske
+
+Der Snapshot enthält ID- und Zustandsdaten in Python-Dictionaries.
+Damit das Netz sie verarbeiten kann, übersetzt
+[`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py)
+diese Daten in Zahlenfelder mit fester Größe. Je eine Zeile
+beschreibt ein Objekt oder einen Kandidaten. Nicht benötigte Zeilen werden
+mit Nullen aufgefüllt; dieses Auffüllen heißt **Padding**. Die zugehörigen
+Masken markieren, welche Zeilen echte Daten enthalten.
+
+Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
+
+| Feld | Form | Bedeutung |
+| --- | --- | --- |
+| `context` | `(24,)` | Zeit, aktuell entscheidendes Objekt und zusammengefasste Job-/Entscheidungsdaten. |
+| `entities` | `(E, 49)` | Merkmale der Jobs, Roboter und Maschinen, einschließlich vorgemerkter Aktionen und Pick-Reservierungen. |
+| `entity_mask` | `(E,)` | `1` für eine echte Objektzeile, `0` für Padding. |
+| `candidates` | `(A, 58)` | Aktionsart, beteiligte IDs sowie Job-, Routen-, Maschinen-, Werkzeug- und Puffermerkmale je Kandidat. |
+| `action_mask` | `(A,)` | `1` für einen aktuell angebotenen Kandidaten, `0` für Padding. |
+
+Standard sind `A = E = 256`. Die Merkmalsfelder enthalten `float32`-Werte in
+`[-1, 1]`, die Masken `int8`-Werte mit `0` oder `1`. `action_masks()` liefert
+eine boolesche Kopie der Aktionsmaske. Nur ein mit `True` markierter Index
+darf gewählt werden. Die Maske kennzeichnet die erzeugten Kandidaten; sie
+führt keine zusätzliche unabhängige Routenprüfung durch.
+
+Die genaue Merkmalsreihenfolge steht im Encoder in `CONTEXT_FEATURE_NAMES`,
+`ENTITY_FEATURE_NAMES` und `CANDIDATE_FEATURE_NAMES`. Enthalten sind etwa
+Termindruck, Produktdaten, Basisdauer einer Operation, Maschinenbelegung,
+aufgelöste Defektwahrscheinlichkeit und Werkzeugzustand. Objektzeilen sind
+nach ID sortiert, Kandidaten behalten ihre angebotene Reihenfolge.
+
+Für IDs legt der Encoder beim ersten vollständigen Snapshot sortierte
+Kataloge an. Ihre Zuordnung zu Zahlen bleibt bei Resets desselben Schemas
+erhalten; fehlende Werte sind von echten IDs getrennt. IDs werden nicht
+gehasht. Zu viele Zeilen oder ein geändertes ID-Schema führen zu einem
+Fehler, nicht zum Abschneiden von Kandidaten. Ein anderes Modell- oder
+Objektschema benötigt eine neue Umgebung beziehungsweise einen neuen Encoder.
+
+Die Beobachtung enthält nicht alle internen Simulations- und
+Qualitätszustände. Sie ist eine Teilbeobachtung: Es ist nicht nachgewiesen,
+dass alle für die weitere Entwicklung relevanten Zustandsinformationen
+enthalten sind. Das Netz hebt diese Grenze nicht auf.
+Die Dictionaries in `info`, etwa `candidates` und `policy_observation`, sind
+Diagnoseinformationen und keine zusätzlichen Netzeingaben.
+
+### Gymnasium-API und Reward
+
+`SpineRLEnv(model_file, global_evaluation, ...)` benötigt eine
+`GlobalSimulationEvaluation` mit festen positiven Referenzwerten für
+Makespan, Verspätungs-, Transport- und Werkzeugwechselzeit. Sie werden vorab
+aus [vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration)
+berechnet. [`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py)
+übernimmt eigene Kopien dieser Referenzen und der nichtnegativen globalen
+Zielgewichte. Sie bleiben während der Episode unverändert.
+
+- `reset(seed=...)` beendet gegebenenfalls die bisherige Episode, startet
+  eine frische Simulation und liefert `(observation, info)` am ersten
+  Auswahlpunkt.
+- `step(index)` akzeptiert einen gültigen ganzzahligen Kandidatenindex und
+  liefert `(observation, reward, terminated, truncated, info)` am nächsten
+  Auswahlpunkt oder am Episodenende. `terminated` kennzeichnet den regulären
+  Abschluss, `truncated` einen Abbruch an einer konfigurierten Grenze.
+- Während einer Auswahl enthält `info` unter anderem `candidates`,
+  `current_object_id`, `simulation_time`, `policy_observation` und
+  `pending_actions`. Am Ende kommen `metrics`, `global_cost` und
+  `reward_reason` hinzu.
+
+#### Reward und Episodenende
+
+Reward bezeichnet den Belohnungswert für das Lernen. Zwischenschritte
+erhalten `0`; erst das Episodenende wird bewertet. Bei regulärem Abschluss
+gilt `reward = 1 / (1 + global_cost)`. Die globalen Kosten werden aus denselben
+Produktionskennzahlen, Referenzen und Zielgewichten wie bei der
+heuristischen Optimierung berechnet. Kleinere Kosten ergeben eine höhere
+positive Belohnung; ihre Rangfolge bleibt erhalten. Ein Limitabbruch
+erhält immer `-1`.
+
+| Ende | Rückgabe und Beobachtung |
+| --- | --- |
+| Alle Jobprozesse beendet | `terminated=True`, `truncated=False`; alle Beobachtungsfelder und Masken sind null. |
+| Nach `max_decisions` beantworteten Entscheidungen tritt ein weiterer Auswahlpunkt auf | `truncated=True`; die Beobachtung dieses unbeantworteten Auswahlpunkts bleibt erhalten. Alle noch nicht zugestellten Aktionen des Bridge-Aufrufs werden verworfen (`pending_batch_discarded=True`). |
+| `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; die globalen Zustandsmerkmale bleiben erhalten, aber ohne aktuell entscheidendes Objekt oder angebotene Aktionen. Kandidatenfeld und Aktionsmaske sind null. |
+
+Das gilt für die direkte `SpineRLEnv`-Schnittstelle, die auch die Evaluation
+verwendet. Nach einem Abbruch ist kein weiterer `step()` erlaubt, selbst wenn
+die erhaltene Beobachtung noch Kandidaten enthält. Andere Lernverfahren
+könnten diese Beobachtung nutzen, um einen erwarteten Folgewert zu schätzen
+(Value-Bootstrapping); sie dient nicht zur Fortsetzung der Episode.
+
+Im mitgelieferten Training behandelt der `EpisodeSeedWrapper` aus
+[`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
+beide Limits ausdrücklich als endgültigen Fehlschlag: Für das
+Trainingspaket Stable-Baselines3 (SB3) setzt er
+`terminated=True` und `truncated=False`. In `info` ergänzt er
+`training_limit_terminated=True`; der Abbruchgrund bleibt dort erhalten.
+Dadurch addiert SB3 keinen geschätzten
+Folgewert zum Fehlerreward `-1`. Die direkte Umgebung behält dagegen die
+oben beschriebene Rückgabe. Timeouts und Simulationsfehler werden als
+Exceptions gemeldet, nicht als gewöhnliche Limitabbrüche.
 
 ### Neuronales Netz und MaskablePPO
 
 [CandidateActorCriticPolicy](sources/SpineML/Control/RLPolicy/CandidateActorCriticPolicy.py)
-erbt von `MaskableMultiInputActorCriticPolicy`. MaskablePPO übernimmt
-Rollouts, PPO-Updates und die maskierte kategorische Aktionsverteilung;
-die eigene Policy legt die Netzeingaben und Kandidatenscores fest:
+enthält zwei Aufgaben: Der **Actor** berechnet für jeden angebotenen
+Kandidaten einen Score und daraus seine Auswahlwahrscheinlichkeit. Der
+**Critic** schätzt, welche Belohnung vom aktuellen Zustand aus noch zu
+erwarten ist. Seine Schätzung hilft beim Training; sie ist nicht der Score
+eines einzelnen Kandidaten.
 
-1. Separate Encoder bilden Kontext, jede Entitätszeile und jede
-   Kandidatenzeile auf Merkmalsvektoren ab. Innerhalb einer Zeilenart werden
-   dieselben Gewichte für alle Zeilen verwendet.
-2. Maskierte Mittelwerte und Maxima der Entitäten und Kandidaten bilden
-   zusammen mit dem Kontext eine Zustandszusammenfassung. Padding geht
-   weder in diese Pools noch in die Aktionsauswahl ein.
-3. Der Actor bewertet jeden Kandidaten mit demselben kleinen Netz aus
-   dessen Merkmalen und der Zustandszusammenfassung. Seine Ausgabe ist
-   genau ein Score pro angebotener Zeile, kein globaler Aktions-ID-Kopf.
-4. Der Critic erhält die Zustandszusammenfassung und liefert einen
-   Zustandswert. Er funktioniert auch ohne gültige Kandidatenzeile.
+Das Netz verarbeitet die oben beschriebenen Zahlenfelder so:
 
-Standard sind `embedding_dim=32`, `hidden_dim=64` und insgesamt **30.242
-trainierbare Parameter**. Die Parameterzahl hängt nicht von der maximalen
-Zeilenzahl ab. Eine Umordnung der Kandidaten ordnet nur deren Scores um;
-die Bedeutung eines Index bleibt an die aktuelle Kandidatenliste gebunden.
-Die Policy schneidet zusätzlich übergebene Aktionsmasken mit der
-Beobachtungsmaske. Ohne gültigen Kandidaten wird keine Aktion gezogen.
+1. Drei kleine Teilnetze, die Encoder, wandeln Kontext, Objektzeilen und
+   Kandidatenzeilen in jeweils 32 gelernte Merkmalswerte um. Für alle
+   Objektzeilen wird dasselbe Teilnetz benutzt; ebenso für alle Kandidaten.
+2. Für jeden dieser Merkmalswerte werden der Mittelwert und der größte
+   Wert über die echten Objektzeilen berechnet; dasselbe geschieht für die
+   Kandidatenzeilen. Padding-Zeilen werden dabei ausgelassen. Zusammen mit
+   dem verarbeiteten Kontext ergibt das eine Zusammenfassung des Zustands.
+3. Der Actor erhält für jeden Kandidaten dessen eigene Merkmale und diese
+   Zustandszusammenfassung. Dasselbe kleine Netz berechnet für jede Zeile
+   einen Score. Es gibt also keine dauerhaft einem Index zugeordnete
+   Aktionsbedeutung. Padding kann nicht gewählt werden.
+4. Der Critic erhält nur die Zustandszusammenfassung und liefert einen
+   geschätzten Zustandswert, auch bei einer Endbeobachtung ohne Kandidaten.
+
+Standard sind `embedding_dim=32`, `hidden_dim=64` und 30.242 trainierbare
+Parameter. `embedding_dim` ist die Zahl der gelernten Merkmalswerte je
+Encoder; `hidden_dim` die Größe der versteckten Schichten von Actor und Critic.
+Die Parameterzahl hängt nicht von der maximalen Zeilenzahl ab. Wird die
+Kandidatenliste umgeordnet, werden nur die zugehörigen Scores umgeordnet.
+Zusätzlich übergebene Aktionsmasken können die Beobachtungsmaske nur weiter
+einschränken. Ohne gültigen Kandidaten wird keine Aktion ausgewählt.
+
+Die Klasse erbt von `MaskableMultiInputActorCriticPolicy`. MaskablePPO
+sammelt die Entscheidungen und Ergebnisse mehrerer Schritte und passt das
+Netz anschließend mit PPO an. Es übernimmt auch die Auswahl aus den
+Kandidatenwahrscheinlichkeiten und berücksichtigt dabei die Aktionsmaske.
+
+### Kalibrierung, Seeds und gespeicherte Konfiguration
+
+Vor dem ersten Lernschritt führt
+[`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
+vollständige Standardheuristik-Läufe aus. Aus deren mittleren Kennzahlen
+entstehen die festen Referenzen für Makespan, Verspätungs-, Transport- und
+Werkzeugwechselzeit. Diese Vorbereitung heißt Kalibrierung; die verwendeten
+Vergleichsläufe heißen Baseline. Dabei wird noch kein Netz trainiert, und
+die benötigte Zeit wird separat ausgewiesen. Alle vier Referenzen müssen
+positiv sein. Eine Referenz von null führt zu einem Fehler und wird nicht
+durch einen Ersatzwert ausgetauscht.
+
+Globale Zielgewichte sowie die Standard-Baseline- und Test-Seeds stammen
+aus der Optimierungsanwendung. Die Seed-Listen erfüllen verschiedene Aufgaben:
+
+- Baseline: standardmäßig `SEEDS = [1, 2]`; änderbar über
+  `--baseline-seeds`.
+- Training: standardmäßig Seeds `1` bis `10`; änderbar über
+  `--train-seeds`. Jeder Simulationsprozess durchläuft sie wiederholt mit
+  versetztem Startpunkt. `--seed` (Standard `0`) steuert unabhängig davon
+  die anfänglichen Netzparameter und den Zufall des Lernverfahrens.
+- Reservierter Test: standardmäßig `TEST_SEEDS = [101, 102, 103, 104, 105]`;
+  änderbar über `--evaluation-seeds`. Diese Seeds dürfen weder in der
+  Trainings- noch in der Baseline-Liste stehen. Doppelte Einträge innerhalb
+  jeder Liste werden ebenfalls abgewiesen. Baseline und Training dürfen
+  dagegen dieselben Seeds verwenden.
+
+Das Training speichert im Ausgabeordner:
+
+| Datei | Inhalt |
+| --- | --- |
+| `manifest.json` | Lernverfahren, Netzaufbau, Trainingseinstellungen, Paketversionen, Seeds, Baseline-Kennzahlen und -zeit sowie alle Modell- und Bewertungsvorgaben. |
+| `model.zip` | Netz-/PPO-Modellstand nach dem Training oder nach einem Abbruch mit `Strg+C`. |
+| `checkpoint_*.zip` | Regelmäßige Zwischenstände; `--checkpoint-every` ist standardmäßig `10000` Entscheidungen. |
+| `episodes.jsonl` | Je beendeter Episode Seed, Reward, Kosten, Kennzahlen, Entscheidungszahl und Abschluss-/Limitstatus; entsteht erst beim ersten Episodenende. |
+| `progress.csv` | Protokollierte PPO-Trainingswerte. |
+| `training_report.json` | Trainingsstatus, tatsächliche Entscheidungszahl, Episodenanzahl sowie Baseline-, Trainings- und Gesamtzeit. |
+
+Das Manifest enthält den aufgelösten Modelldateipfad und SHA-256 als
+Prüfsumme ihres Inhalts, die Merkmalsnamen samt Reihenfolge, Objekt- und
+Aktionsarten, globale Zielgewichte, feste Referenzen und alle
+Umgebungsgrenzen. Beim Laden werden diese Vorgaben und die Größen der
+Beobachtungs- und Aktionsfelder geprüft. Aktuelle App-Einstellungen ersetzen
+die gespeicherte Bewertung nicht. Mit `--model` darf eine Dateikopie an
+einem anderen Ort angegeben werden; sie muss dieselbe Prüfsumme haben.
+Das Netz ist damit nicht automatisch auf andere Fabrikmodelle übertragbar.
+Gespeicherte Zwischenstände heißen Checkpoints. Nur eigene oder
+vertrauenswürdige SB3-Checkpoints laden, da sie Python-Objekte enthalten.
 
 ### Training starten
 
@@ -3530,86 +3832,49 @@ installiert zusätzlich Gymnasium, PyTorch, Stable-Baselines3 und
 .\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/ppo --steps 100000 --workers 4
 ```
 
-[train_rl_policy.py](sources/tools/train_rl_policy.py) verwendet ohne
+[`train_rl_policy.py`](sources/tools/train_rl_policy.py) verwendet ohne
 `--model` das `EXAMPLE_FILE` der Optimierungsanwendung, derzeit
-[example-5.py](sources/examples/normal/example-5.py). Der Ausgabeordner muss neu oder leer sein; vorhandene
-Trainingsläufe werden nicht überschrieben. `--help` zeigt alle Optionen
-ohne Simulation oder Training.
+[example-5.py](sources/examples/normal/example-5.py). Der Ausgabeordner muss
+neu oder leer sein; vorhandene Trainingsläufe werden nicht überschrieben.
+`--help` zeigt alle Optionen, ohne Simulation oder Training zu starten.
+
+Die Simulationsprozesse heißen Worker. Jeder sammelt zunächst eine feste
+Zahl von Entscheidungen mit den zugehörigen Zuständen und Belohnungen.
+Diese gesammelten Daten heißen Rollout. Anschließend passt PPO das Netz
+anhand dieser Daten an; das ist ein PPO-Update. Dazu werden die Daten in
+kleinere Gruppen (Minibatches) zerlegt und mehrfach durchlaufen.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--steps` | `100000` | Mindestzahl externer Kandidatenentscheidungen insgesamt, nicht Episoden oder Simulationsstunden. PPO beendet den aktuellen Rollout; die tatsächliche Zahl kann größer sein. |
-| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Getrennte Simulationsprozesse; auch ein einzelner Worker wird mit `spawn` gestartet. |
-| `--rollout-steps` | `256` | Entscheidungen je Worker vor einem PPO-Update. |
-| `--batch-size` / `--epochs` | `64` / `10` | Minibatchgröße und Durchläufe über den gesammelten Rollout je Update. |
-| `--learning-rate` | `0.0003` | Lernrate des Optimizers. |
-| `gamma` / `gae_lambda` | `1.0` / `1.0` | Keine Abwertung allein durch die Zahl der Entscheidungszeitpunkte; im Trainer festgelegt. |
-| `ent_coef` | `0.01` | Entropieterm zur Förderung der Exploration; im Trainer festgelegt. |
+| `--steps` | `100000` | Mindestzahl externer Kandidatenentscheidungen insgesamt, nicht Episoden oder Simulationsstunden. Der aktuelle Rollout wird noch beendet; die tatsächliche Zahl kann größer sein. |
+| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
+| `--rollout-steps` | `256` | Entscheidungen je Worker vor einem PPO-Update; mindestens `2`. |
+| `--batch-size` / `--epochs` | `64` / `10` | Entscheidungen je Minibatch und Durchläufe über den Rollout je Update. |
+| `--learning-rate` | `0.0003` | Schrittweite bei der Anpassung der Netzparameter. |
+| `gamma` / `gae_lambda` | `1.0` / `1.0` | Die spätere Belohnung wird nicht allein wegen zusätzlicher Entscheidungsschritte abgeschwächt; im Trainer festgelegt. |
+| `ent_coef` | `0.01` | Fördert das Ausprobieren verschiedener Kandidaten statt einer zu frühen Festlegung; im Trainer festgelegt. |
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Grenzen je Trainingsepisode: externe Entscheidungen beziehungsweise simulierte Stunden. |
-| `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Entitäten. |
-| `--device` | `cpu` | Gerät für das neuronale Netz, nicht für die Simulation. |
+| `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
+| `--device` | `cpu` | Rechengerät für das Netz, nicht für die Simulation. |
 
-Vier Worker sammeln mit diesen Vorgaben `4 × 256 = 1024` Entscheidungen
-pro PPO-Update. `--batch-size` muss mindestens `2` sein und
-`workers × rollout-steps` ohne Rest teilen. Mehr Worker vergrößern bei
-gleicher Rolloutlänge auch den Datenumfang je Update und verändern damit
-die Trainingskonfiguration, nicht nur die Laufzeit.
+Vier Worker sammeln so `4 × 256 = 1024` Entscheidungen pro Update.
+`--batch-size` muss mindestens `2` sein und `workers × rollout-steps` ohne
+Rest teilen. Mehr Worker vergrößern bei gleicher Rolloutlänge auch den
+Datenumfang je Update. Sie ändern damit die Trainingskonfiguration, nicht
+nur die Laufzeit.
 
-Bei ausreichendem Arbeitsspeicher lässt sich beispielsweise mit
-`--workers 20 --output rl_runs/ppo_20` ein separater Lauf starten; das sind
-`5120` Entscheidungen pro Update. Jeder Prozess benötigt ein eigenes
-Modell und eine eigene Simulation. Zusätzlich wächst der Rolloutpuffer
-mit Workerzahl, Rolloutlänge und den gepaddeten Beobachtungsgrößen.
-Eine kleinere Minibatchgröße verkleinert nicht diesen gesamten Puffer.
-20 Worker sind daher keine allgemeine Empfehlung oder Speedup-Garantie.
+Bei ausreichendem Arbeitsspeicher ist beispielsweise mit
+`--workers 20 --output rl_runs/ppo_20` ein separater Lauf möglich; er sammelt
+`5120` Entscheidungen pro Update. Jeder Prozess braucht ein eigenes Modell
+und eine eigene Simulation. Der Speicher für die Rolloutdaten wächst mit
+Workerzahl, Rolloutlänge und den aufgefüllten Beobachtungsfeldern. Kleinere
+Minibatches verkleinern diesen gesamten Speicher nicht. 20 Worker sind
+daher keine allgemeine Empfehlung oder Zusage einer kürzeren Laufzeit.
 
 Salabim läuft immer auf der CPU. `--device cuda` beziehungsweise `auto`
 kann nur Netzberechnung und PPO-Updates auf eine passende GPU verlagern;
-`cuda` wird ohne verfügbare CUDA-GPU abgewiesen. Für dieses kleine Netz
-ist `cpu` der Standard. Die getrennten Simulationsprozesse ersetzen keine
-GPU-Simulation.
-
-### Kalibrierung, Seeds und gespeicherte Konfiguration
-
-[TrainingSupport.calibrate_references()](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
-führt vor dem Training vollständige Standardheuristik-Läufe aus. Aus
-deren Kennzahlen entstehen feste positive Referenzen für Makespan,
-Verspätungs-, Transport- und Werkzeugwechselzeit. Globale Zielgewichte
-und die Standard-Seeds stammen aus der Optimierungsanwendung; eine
-Referenz von null wird als Fehler gemeldet, nicht durch eine andere
-Referenz ersetzt. Diese Baseline ist kein NN-Training und wird zeitlich
-separat ausgewiesen.
-
-- **Baseline:** standardmäßig `SEEDS = [1, 2]`; änderbar über
-  `--baseline-seeds`.
-- **Training:** standardmäßig Seeds `1` bis `10`; änderbar über
-  `--train-seeds`. Jeder Worker durchläuft sie zyklisch mit versetztem
-  Startpunkt. `--seed` steuert separat Netzinitialisierung und PPO-Zufall.
-- **Reservierter Test:** standardmäßig `TEST_SEEDS = [101, 102, 103, 104, 105]`;
-  änderbar über `--evaluation-seeds`. Überschneidungen mit Trainings- oder
-  Baseline-Seeds und doppelte Einträge innerhalb einer Liste werden
-  abgewiesen. Baseline und Training dürfen dagegen Seeds gemeinsam nutzen.
-
-Das Training speichert im Ausgabeordner:
-
-| Datei | Inhalt |
-| --- | --- |
-| `manifest.json` | Algorithmus, Architektur, Hyperparameter, Paketversionen, Seeds, Baseline-Kennzahlen und -zeit sowie der vollständige Modell-/Bewertungskontext. |
-| `model.zip` | Abschließender beziehungsweise nach `Strg+C` gesicherter NN-/PPO-Modellstand. |
-| `checkpoint_*.zip` | Regelmäßige Zwischenstände; `--checkpoint-every` ist standardmäßig `10000` Entscheidungen. |
-| `episodes.jsonl` | Je beendeter Episode Seed, Reward, Kosten, Kennzahlen, Entscheidungszahl und Abschluss-/Limitstatus; entsteht erst beim ersten Episodenende. |
-| `progress.csv` | Protokollierte PPO-Trainingswerte. |
-| `training_report.json` | Trainingsstatus, tatsächlicher Umfang, Episodenanzahl sowie Baseline-, Trainings- und Gesamtzeit. |
-
-Der Kontext enthält den aufgelösten Modelldateipfad, ihren SHA-256,
-Feature-Namen samt Reihenfolge, Objekt-/Aktionsarten, globale Zielgewichte,
-feste Referenzen und alle Environment-Grenzen. Beim Laden werden Modell,
-Schemas und Beobachtungs-/Aktionsräume geprüft; aktuelle App-Einstellungen
-ersetzen die gespeicherte Bewertung nicht. Eine mit `--model` angegebene
-Dateikopie darf an einem anderen Ort liegen, muss aber denselben Hash haben.
-Das ist keine Zusage, dass ein Netz auf andere Fabrikmodelle übertragbar ist.
-Nur eigene oder vertrauenswürdige SB3-Checkpoints laden, da sie
-Python-Objekte enthalten.
+`cuda` wird ohne verfügbare CUDA-GPU abgewiesen. Für dieses kleine Netz ist
+`cpu` der Standard. Auch mit GPU laufen die getrennten Simulationen auf der CPU.
 
 ### Auf getrennten Test-Seeds vergleichen
 
@@ -3617,22 +3882,26 @@ Python-Objekte enthalten.
 .\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/ppo
 ```
 
-[evaluate_rl_policy.py](sources/tools/evaluate_rl_policy.py) lädt
+[`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt
 `manifest.json` und `model.zip`, verwendet die gespeicherte Bewertung und
 führt standardmäßig drei Steuerungen mit denselben reservierten Test-Seeds
 aus: das trainierte RL-Netz, `RandomPolicy` und die Standardheuristik.
-Das Netz wählt dabei deterministisch den wahrscheinlichsten gültigen
-Kandidaten. `--stochastic` zieht stattdessen aus seiner Verteilung;
+Das Netz wählt dabei immer den wahrscheinlichsten gültigen Kandidaten
+(deterministische Auswahl). `--stochastic` zieht stattdessen zufällig nach
+den gelernten Auswahlwahrscheinlichkeiten;
 `--skip-comparisons` führt nur RL aus. `--seeds` darf ausschließlich Seeds
-außerhalb von Training und Baseline enthalten.
+außerhalb von Training und Baseline enthalten. Die Vergleichspolicies
+verwenden dasselbe gespeicherte Simulationszeitlimit.
 
 Der Bericht `evaluation.json` enthält jeden Lauf, Abschluss-/Limitstatus,
-globale Kosten, Produktionskennzahlen und reale Laufzeit. Mittelwerte
-werden je Policy nur ausgewiesen, wenn **sämtliche** angeforderten
-Seed-Läufe abgeschlossen wurden. Ein Abbruch ist kein günstiges
-Produktionsergebnis; Teilreihen sind nicht als vollständiger
-Steuerungsvergleich zu interpretieren. Ein kurzer Trainingslauf oder
-vorhandener Checkpoint allein belegt keine Verbesserung.
+globale Kosten, Produktionskennzahlen und reale Laufzeit. Mittelwerte der
+Kosten und Kennzahlen werden je Policy nur ausgewiesen, wenn sämtliche
+angeforderten Seed-Läufe abgeschlossen sind. Sobald ein Lauf am Limit
+abbricht, stehen diese Mittelwerte für die Policy auf `null`. So können
+unfertige Produktionen den Vergleich nicht durch scheinbar geringe Kosten
+verbessern. Bei einem späteren Fehler bleiben bereits erfasste Läufe als
+Teilbericht erhalten. Weder ein Teilbericht noch ein kurzer Trainingslauf
+oder ein vorhandener Checkpoint allein belegt eine Verbesserung.
 
 Mit `--checkpoint checkpoint_10000.zip` lässt sich ein gespeicherter
 Zwischenstand prüfen; `--output` ändert den Berichtspfad. Optional ergänzt
@@ -3640,15 +3909,17 @@ Zwischenstand prüfen; `--output` ändert den Berichtspfad. Optional ergänzt
 optimierten lokalen Heuristikgewichten. Unterstützt sind ein direktes
 `HeuristicWeights`-Dictionary, `best_weights` oder
 `optimization_result.best_weights`. Ein vollständiger Zeitvergleichsbericht
-mit verschachtelten `measurements` ist nicht automatisch dieses Format;
+mit verschachtelten `measurements` hat nicht automatisch dieses Format;
 die passenden Gewichte müssen daraus separat exportiert werden.
 
 ### Trainiertes Netz im normalen Runner einsetzen
 
 [TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
 implementiert dieselbe `make_decision()`-Schnittstelle wie die anderen
-Policies. Außerhalb des Trainings ist daher keine Gymnasium-Schrittschleife
-nötig:
+Policies. Der Runner startet die Simulation mit dieser Policy und einem
+Seed; die Policy lässt das geladene Netz wählen, die Simulationsobjekte
+führen die Aktionen aus und der Runner liefert die Kennzahlen zurück.
+Eine eigene Schleife mit `reset()` und `step()` ist dafür nicht nötig:
 
 ```python
 from SpineML.Control.RLPolicy.TrainedPolicy import TrainedCandidatePolicy
@@ -3664,190 +3935,83 @@ runner = SimulationRunner(
 metrics = runner.run_policy(policy, seed=101)
 ```
 
-Der Runner muss dieselbe geprüfte Modelldatei wie `policy.model_path`
-verwenden. `model_file=...` erlaubt beim Laden eine hashidentische Kopie.
-Standard ist deterministische Auswahl auf der CPU; mit
-`deterministic=False, seed=101` hat die stochastische Policy einen eigenen
-Torch-Zufallszustand, ohne die Python-/NumPy-Zufallsfolgen der Simulation
-neu zu setzen. Einzelkandidaten werden weiterhin direkt übernommen.
+Der Runner muss die geprüfte Modelldatei `policy.model_path` verwenden.
+`model_file=...` erlaubt beim Laden eine Kopie mit derselben Prüfsumme.
+Standard ist die deterministische Auswahl auf der CPU. Mit
+`deterministic=False, seed=101` wird zufällig nach den gelernten
+Wahrscheinlichkeiten gewählt. Dafür hat die Policy einen eigenen
+Torch-Zufallszustand; die Python-/NumPy-Zufallsfolgen der Simulation werden
+nicht neu gesetzt. Einzelkandidaten werden weiterhin direkt übernommen.
 
-`TrainedPolicyFactory("rl_runs/ppo")` erzeugt mit `factory(seed)` eine
-frische Policy und kann als `policy_factory` eines `SimulationRunRequest`
-im Prozesspool verwendet werden. Auch dort muss der Runner das passende
-Modell verwenden. Die geladene Policy überwacht auch ihre gespeicherten
-Entscheidungs- und Zeitlimits; ein Erreichen wird als Fehler gemeldet,
-damit ein schwaches Netz nicht unbegrenzt weiter wartet. Der normale Runner
-liefert bei unfertigen Jobs kein gültiges Optimierungsergebnis.
+Für mehrere Läufe stellt
+[`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
+frische Policies her: `factory = TrainedPolicyFactory("rl_runs/ppo")`, dann
+`factory(seed)` je Lauf. Sie kann als `policy_factory` eines
+`SimulationRunRequest` im Prozesspool verwendet werden. Auch dort muss der
+Runner das passende Modell verwenden.
+
+Die geladene Policy überwacht ihre gespeicherten Entscheidungs- und
+Zeitlimits auch außerhalb des Trainings. Erreicht sie ein Limit, meldet sie
+einen Fehler, statt unbegrenzt weiterzuwarten. Unfertige Jobs führen beim
+normalen Runner ebenfalls zu einem Fehler und nicht zu einem gültigen
+Optimierungsergebnis.
 
 <a id="optionale-installation-und-cli-test"></a>
 
 ### Umgebung ohne Training prüfen
 
-Für den reinen Schnittstellentest genügt das kleinere Extra `rl`, ohne
-PyTorch oder PPO. Dieser Debug-Befehl ist vom Training und vom Test eines
-gespeicherten Netzes getrennt:
+Für einen Test der schrittweisen Schnittstelle genügt das kleinere Extra
+`rl`, ohne PyTorch oder PPO. Der folgende Debug-Befehl trainiert und lädt
+kein Netz:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl]"
 .\.venv\Scripts\python.exe sources/tools/run_rl_episode.py --seed 1 --output rl_environment_result.json
 ```
 
-- **Kalibrierung vor der Episode:** [run_rl_episode.py](sources/tools/run_rl_episode.py) übernimmt globale Zielgewichte und
-  `SEEDS` aus `heuristic_optimization_app.py`. Es führt zuerst je Seed einen vollständigen
-  Standardheuristik-Lauf aus und berechnet feste positive Zeitreferenzen für
-  den Reward. Diese Baseline ist kein Training; ihre Rechenzeit wird separat
-  ausgewiesen.
-- **Auswahl zum Testen:** `--policy random` wählt zufällig eine gültige
-  Nicht-Warteaktion, mit Warten als Fallback. `--policy heuristic` verwendet
-  den vorhandenen `LocalHeuristicActionEvaluator` und `HeuristicActionSelector`
-  zur Auswahl aus den RL-Kandidaten. Beide Optionen testen die Schnittstelle,
-  nicht ein neuronales Netz.
-- **Modell und Grenzen:** `--model` wählt die Konfiguration; ohne Angabe gilt
+- Vor der Episode übernimmt
+  [`run_rl_episode.py`](sources/tools/run_rl_episode.py) globale Zielgewichte
+  und `SEEDS` aus `heuristic_optimization_app.py`. Je Seed führt es zuerst
+  einen vollständigen Standardheuristik-Lauf aus und berechnet die festen
+  positiven Zeitreferenzen für den Reward. Die Zeit dieser Baseline wird
+  separat ausgewiesen.
+- `--policy random` wählt zufällig eine gültige Nicht-Warteaktion; nur wenn
+  keine vorhanden ist, wird Warten gewählt. `--policy heuristic` verwendet
+  den vorhandenen `LocalHeuristicActionEvaluator` und
+  `HeuristicActionSelector` zur Auswahl aus den RL-Kandidaten. Beide Optionen
+  testen die Schnittstelle, nicht ein neuronales Netz.
+- `--model` wählt die Konfiguration; ohne Angabe gilt
   `EXAMPLE_FILE` aus `heuristic_optimization_app.py`. `--seed` ist nichtnegativ.
-  `--max-decisions` begrenzt externe Auswahlentscheidungen, nicht alle intern
-  ausgeführten Einzelaktionen. `--max-simulation-time` begrenzt die simulierte
-  Zeit. Ungültige CLI-Werte werden vor der Baseline abgewiesen.
-- **Bericht:** Ausgabe und optionaler JSON-Bericht enthalten Status, Reward,
+  `--max-decisions` begrenzt externe Auswahlentscheidungen, nicht die direkt
+  übernommenen Einzelkandidaten. Der Standard ist hier `100000`, wie bei
+  direkter Verwendung von `SpineRLEnv`; beim Trainingsbefehl sind es `10000`.
+  `--max-simulation-time` begrenzt die simulierte Zeit auf standardmäßig
+  `10000.0` Stunden. Ungültige CLI-Werte werden vor der Baseline abgewiesen.
+- Ausgabe und optionaler JSON-Bericht enthalten Status, Reward,
   globale Kosten, Produktionskennzahlen sowie getrennte Baseline- und
   Episodenzeiten. Das Modell wird durch Dateiname und SHA-256 identifiziert.
   `--help` startet keinen Lauf und benötigt Gymnasium nicht.
 
 Die CLI-Auswahl `random` ist nicht das Einsetzen der Klasse `RandomPolicy`:
-Sie arbeitet innerhalb des RL-Adapters mit den erzeugten Kandidaten
-und übersprungenen Einzelaktionen. Insbesondere bleibt dort die vom Generator
-eingetragene EDD-Priorität erhalten. Deshalb ist der CLI-Test kein zugesicherter
-identischer Ersatz für einen direkten Lauf der jeweiligen Vergleichspolicy.
+Sie arbeitet mit den RL-Kandidaten und den direkt übernommenen
+Einzelkandidaten. Insbesondere bleibt die vom Generator eingetragene
+EDD-Priorität erhalten. Deshalb liefert der CLI-Test nicht zugesichert
+denselben Ablauf wie ein direkter Lauf der jeweiligen Vergleichspolicy.
 
-### Vom Bridge-Aufruf zur Kandidatenentscheidung
+### Ressourcen und Parallelität
 
-1. Die Bridge ruft `RLCandidatePolicy.make_decision()` mit einem Snapshot auf.
-   Die Policy betrachtet wartende Objekte in der Einfügereihenfolge des
-   Snapshots.
-2. Für jedes Objekt erzeugt `SpineActionGenerator` die Kandidaten. Picks für
-   einen in diesem Bridge-Aufruf bereits ausgewählten Job werden vor der
-   nächsten Auswahl ausgeschlossen.
-3. Die erzeugten Pick-Payloads enthalten bereits die EDD-basierte
-   `queue_priority`. Die RL-Policy verwendet diese Kandidaten direkt;
-   eine zusätzliche heuristische Vorbereitung oder gewichtete
-   Heuristik-Score-Berechnung entfällt. Die NN-Scores entstehen im Actor.
-4. Ein einzelner verbleibender Kandidat wird ohne externen Schritt ausgewählt.
-   Bei mindestens zwei Kandidaten erhält der Callback einen `DecisionRequest`
-   mit Beobachtung, Kandidaten und bereits vorgemerkten Aktionen. Die Daten
-   werden kopiert; der Callback verändert nicht die private auszuführende Aktion.
-5. `SpineRLEnv` gibt die numerische Beobachtung an den Aufrufer zurück und
-   wartet auf dessen Kandidatenindex. Dieser Index bezeichnet ausschließlich
-   eine Zeile der gerade angebotenen Kandidatenliste.
-6. Nach der Wahl werden gegebenenfalls die weiteren wartenden Objekte
-   desselben Snapshots betrachtet. Erst wenn die gesamte `PolicyDecision`
-   zurückgegeben wurde, beginnt die Bridge mit der Zustellung der Aktionen.
+Bei eigener Verwendung gehört `close()` in einen `finally`-Block, damit es
+auch bei Fehlern ausgeführt wird. Es bricht eine aktive Episode ab und wartet
+auf den Simulationsthread. Ungültige Indizes, überschrittene Zeilenlimits,
+geänderte Schemas, Timeouts und Simulationsfehler werden als Fehler gemeldet.
+Endet eine Episode schon vor der ersten Auswahl, meldet auch `reset()` einen
+Fehler, statt einen gewöhnlichen Auswahlzustand vorzutäuschen.
 
-Innerhalb dieser Auswahlgruppe verstreicht keine Simulationszeit. Ein
-`step()` bedeutet daher nicht zwingend, dass die zuletzt gewählte Aktion
-bereits ausgeführt wurde. Mehrere Schritte können dieselbe Zeit besitzen;
-die vorgemerkten Aktionen und Pick-Reservierungen sind in der Beobachtung
-beziehungsweise in `info["pending_actions"]` erkennbar.
-
-Nur bei direkter Verwendung der `RLCandidatePolicy` kann
-`expose_forced_actions=True` auch die erzwungenen Einzelentscheidungen im
-Callback sichtbar machen. `SpineRLEnv` verwendet den schnellen Standard ohne
-diese zusätzlichen Schritte.
-
-### Numerische Beobachtung und Aktionsmaske
-
-Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
-
-| Feld | Form | Bedeutung |
-| --- | --- | --- |
-| `context` | `(24,)` | Zeit, aktuelles Objekt und zusammengefasste Job-/Entscheidungsdaten. |
-| `entities` | `(E, 49)` | Merkmale der Jobs, Roboter und Maschinen, einschließlich bereits vorgemerkter Aktionen und Pick-Reservierungen. |
-| `entity_mask` | `(E,)` | `1` für eine reale Objektzeile, `0` für Padding. |
-| `candidates` | `(A, 58)` | Aktionsart, beteiligte IDs sowie Job-, Routen-, Maschinen-, Werkzeug- und Puffermerkmale je angebotenem Kandidaten. |
-| `action_mask` | `(A,)` | `1` für einen aktuell angebotenen Kandidaten, `0` für Padding. |
-
-Standardmäßig sind `A = E = 256`. Die Merkmalsarrays sind `float32` mit Werten
-in `[-1, 1]`; die Masken sind `int8` mit `0` oder `1`.
-`action_masks()` liefert eine boolesche Kopie der Aktionsmaske.
-Ein Agent darf nur einen gültigen Kandidatenindex auswählen; die Maske ist
-keine zusätzliche unabhängige Routenprüfung.
-
-Die Merkmalsnamen sind im Encoder als `CONTEXT_FEATURE_NAMES`,
-`ENTITY_FEATURE_NAMES` und `CANDIDATE_FEATURE_NAMES` festgelegt. Dazu gehören
-beispielsweise Termindruck, Produktdaten, Basisdauer einer Operation,
-Maschinenbelegung, aufgelöste Defektwahrscheinlichkeit und Werkzeugzustand.
-Objektzeilen werden nach ID sortiert, Kandidaten behalten ihre angebotene
-Reihenfolge. ID-Kataloge werden aus dem ersten vollständigen Snapshot
-deterministisch gebildet und bei Resets desselben Schemas beibehalten.
-Fehlende Werte sind von realen IDs getrennt; es werden keine IDs gehasht.
-
-Überschreitet eine Beobachtung die konfigurierten Zeilenlimits oder ändert
-sich das ID-Schema, wird ein Fehler ausgelöst statt Kandidaten abzuschneiden
-oder ihre Bedeutung still zu ändern. Ein anderes Modell-/Objektschema
-benötigt eine neue Umgebung beziehungsweise einen neuen Encoder.
-
-Diese kompakte Merkmalsauswahl enthält nicht sämtliche internen Simulations-
-und Qualitätszustände. Sie ist eine **Teilbeobachtung**, kein nachgewiesener
-vollständiger Markov-Zustand. Auch die eigene NN-Architektur hebt diese
-Beobachtungsgrenze nicht auf.
-Die Python-Dictionaries in `info`, etwa `candidates` und
-`policy_observation`, dienen zur Diagnose; sie sind nicht die numerische
-Netzeingabe.
-
-### Gymnasium-API und Reward
-
-`SpineRLEnv(model_file, global_evaluation, ...)` benötigt eine
-`GlobalSimulationEvaluation` mit bereits festgelegten positiven Referenzen
-für Makespan, Verspätungs-, Transport- und Werkzeugwechselzeit. Der Reward
-übernimmt eigene Kopien dieser Referenzen und der nichtnegativen globalen
-Zielgewichte; sie ändern sich nicht während einer Episode.
-
-- `reset(seed=...)` startet eine frische Simulationsumgebung und liefert
-  `(observation, info)` am ersten Auswahlpunkt.
-- `step(index)` akzeptiert einen gültigen ganzzahligen Kandidatenindex und
-  liefert `(observation, reward, terminated, truncated, info)` am nächsten
-  Auswahlpunkt oder am Episodenende.
-- Während einer Auswahl enthält `info` unter anderem `candidates`,
-  `current_object_id`, `simulation_time`, `policy_observation` und
-  `pending_actions`. Am Episodenende kommen `metrics`, `global_cost` und
-  `reward_reason` hinzu.
-
-#### Reward und Episodenende
-
-Der Reward ist derzeit sparse: Zwischenschritte erhalten `0`. Bei regulärem
-Abschluss gilt `reward = 1 / (1 + global_cost)`. Kleinere globale Kosten ergeben
-damit eine höhere positive Belohnung, ohne die Rangfolge der globalen
-Produktionsbewertung zu ändern. Ein Limitabbruch erhält `-1`.
-
-| Ende | Rückgabe und Beobachtung |
-| --- | --- |
-| Alle Jobprozesse beendet | `terminated=True`, `truncated=False`; sämtliche Beobachtungsarrays und Masken sind null. |
-| Ein weiterer Auswahlpunkt nach `max_decisions` beantworteten Entscheidungen | `truncated=True`; die Beobachtung dieses noch nicht beantworteten Auswahlpunkts bleibt erhalten. Der offene Bridge-Batch wird verworfen (`pending_batch_discarded=True`). |
-| `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; die realen globalen Zustandsmerkmale bleiben erhalten, aber ohne aktuellen Akteur oder angebotene Aktionen. Kandidatenarray und Aktionsmaske sind null. |
-
-Diese Tabelle beschreibt das unverpackte `SpineRLEnv`, das auch die
-Evaluation verwendet. Die erhaltene Trunkierungsbeobachtung kann von
-anderen Lernverfahren für Value-Bootstrapping ausgewertet werden; sie ist
-nicht zur Fortsetzung der Episode bestimmt. Auch wenn sie an der
-Entscheidungsgrenze noch gültige Kandidaten enthält, ist dort kein weiterer
-`step()` erlaubt.
-
-Im mitgelieferten **Training** sind Entscheidungs- und Zeitlimits dagegen
-terminale Fehlschläge mit Reward `-1`. Der `EpisodeSeedWrapper` aus
-`TrainingSupport.py` setzt dafür gegenüber SB3 `terminated=True` und
-`truncated=False`; der ursprüngliche Grund bleibt in `info`, ergänzt um
-`training_limit_terminated=True`. SB3 addiert somit keinen geschätzten
-Wert der Limitbeobachtung zum Fehlerreward. Das verändert nicht die
-Trunkierungssemantik des unverpackten Environments. Ein Timeout oder ein
-Simulationsfehler wird weiterhin als Exception gemeldet, nicht als
-regulärer Limitabbruch verschleiert.
-
-#### Ressourcen und Parallelität
-
-`close()` muss auch bei Fehlern aufgerufen werden; es bricht eine noch aktive
-Episode ab und wartet auf ihren Workerthread. Pro Prozess darf nur eine
-RL-Umgebung gleichzeitig aktiv sein. Wegen Salabim- und Python-Random-Zuständen
-darf daneben auch kein anderer direkter Simulationslauf im selben Prozess
-ausgeführt werden. Mehrere parallele Umgebungen benötigen getrennte Prozesse;
-der Trainer verwendet dafür `SubprocVecEnv` mit `spawn` und schließt die
-Prozessumgebungen auch bei Fehlern. Große Diagnose-Dictionaries werden im
-Trainingswrapper aus `info` entfernt, während Abschlusskennzahlen und
-Abbruchgründe für die Protokollierung erhalten bleiben.
+Pro Prozess darf nur eine RL-Umgebung gleichzeitig aktiv sein. Auch ein
+anderer direkter Simulationslauf darf dort nicht parallel laufen: Salabim
+und Python-Zufall verwenden prozessweite Zustände. Mehrere Umgebungen
+benötigen daher getrennte Prozesse. Der Trainer nutzt `SubprocVecEnv` mit
+`spawn`, auch bei nur einem Worker, und räumt seine Prozessumgebungen auch
+bei Fehlern auf. Aus `info` entfernt der Trainingswrapper die großen
+Diagnose-Dictionaries; Abschlusskennzahlen und Abbruchgründe bleiben für
+die Protokolle erhalten.

@@ -23,12 +23,6 @@ class SimulationRunRequest:
     policy_factory: Callable[[int], Policy]
     seed: int
 
-    def __post_init__(self) -> None:
-        if not callable(self.policy_factory):
-            raise TypeError("policy_factory muss aus einem Seed eine neue Policy erstellen.")
-        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
-            raise TypeError("seed muss eine ganze Zahl sein.")
-
 
 @dataclass(frozen=True)
 class SimulationRunResult:
@@ -56,10 +50,7 @@ def _execute_simulation_request(request: SimulationRunRequest) -> SimulationRunR
         raise RuntimeError("Der Simulationsworker wurde noch nicht initialisiert.")
 
     started_at = time.perf_counter()
-    # Die Factory muss zwischen Prozessen übertragbar sein und eine neue Policy erstellen.
     policy = request.policy_factory(request.seed)
-    if not callable(getattr(policy, "make_decision", None)):
-        raise TypeError("policy_factory muss eine Policy mit make_decision() liefern.")
     metrics = _worker_runner.run_policy(policy, request.seed)
 
     return SimulationRunResult(
@@ -82,13 +73,6 @@ class ParallelSimulationRunner:
             max_workers = os.cpu_count() or 1
             if os.name == "nt":
                 max_workers = min(max_workers, 61)
-        if not isinstance(max_workers, int) or isinstance(max_workers, bool):
-            raise TypeError("max_workers muss eine ganze Zahl oder None sein.")
-        if max_workers < 1:
-            raise ValueError("max_workers muss mindestens 1 sein.")
-        if os.name == "nt" and max_workers > 61:
-            raise ValueError("Unter Windows sind höchstens 61 Worker erlaubt.")
-
         self.max_workers = max_workers
         self._executor: ProcessPoolExecutor | None = None
         self._closed = False
@@ -102,10 +86,6 @@ class ParallelSimulationRunner:
         if self._closed:
             raise RuntimeError("Der ParallelSimulationRunner wurde bereits geschlossen.")
         batch = tuple(requests)
-        if any(not isinstance(request, SimulationRunRequest) for request in batch):
-            raise TypeError("requests darf nur SimulationRunRequest-Objekte enthalten.")
-        if on_completed is not None and not callable(on_completed):
-            raise TypeError("on_completed muss aufrufbar oder None sein.")
         if not batch:
             return ()
 
@@ -119,7 +99,7 @@ class ParallelSimulationRunner:
             )
 
         futures = {}
-        results: dict[int, SimulationRunResult] = {}
+        results = {}
         try:
             for index, request in enumerate(batch):
                 future = self._executor.submit(_execute_simulation_request, request)
@@ -141,26 +121,14 @@ class ParallelSimulationRunner:
         # Die Rückgabe folgt der Auftragsreihenfolge, nicht der Fertigstellung.
         return tuple(results[index] for index in range(len(batch)))
 
-    def run_policy_factory(
-        self, policy_factory: Callable[[int], Policy], seed: int
-    ) -> GlobalSimulationMetrics:
-        """Führt eine Policy aus; ihre Factory wird im Poolprozess aufgerufen."""
-        request = SimulationRunRequest(policy_factory=policy_factory, seed=seed)
-        return self.run_many((request,))[0].metrics
-
     def close(self) -> None:
-        """Schließt den Pool einmalig und wartet auf bereits laufende Aufträge."""
-        if self._closed:
-            return
+        """Beendet den Pool und wartet auf bereits laufende Simulationen."""
         self._closed = True
-        executor = self._executor
-        self._executor = None
-        if executor is not None:
-            executor.shutdown(wait=True, cancel_futures=True)
+        if self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            self._executor = None
 
     def __enter__(self) -> ParallelSimulationRunner:
-        if self._closed:
-            raise RuntimeError("Der ParallelSimulationRunner wurde bereits geschlossen.")
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:

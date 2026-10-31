@@ -3370,10 +3370,6 @@ Jedes `SimulationRunResult` enthält:
 | `elapsed_seconds` | Die verstrichene Zeit im Worker für Policy-Erstellung, Simulation und Kennzahlensammlung. Das vorherige Modellladen und der Poolstart sind darin nicht enthalten. |
 | `worker_pid` | Die Betriebssystem-ID des ausführenden Prozesses, nicht die Nummer eines CPU-Kerns. |
 
-Für genau einen Poolauftrag gibt es außerdem
-`runner.run_policy_factory(policy_factory, seed)`. Dieser Aufruf liefert
-direkt die Produktionskennzahlen zurück.
-
 Wird `run_many(..., on_completed=...)` eine Fortschrittsfunktion übergeben,
 bekommt sie nach jedem fertigen Lauf dessen Auftragsindex und Ergebnis.
 Sie läuft im aufrufenden Programm. So kann dieses den Fortschritt

@@ -2651,7 +2651,7 @@ Aktuelle Einstellungen in [heuristic_optimization_app.py](sources/apps/heuristic
 | `EXPLORATION_CANDIDATES` | `3` | Zusätzliche zufällige Gewichtssätze pro Iteration. |
 | `RESTART_AFTER_NO_IMPROVEMENT` | `2` | Nach zwei erfolglosen Iterationen die Schrittweite zurücksetzen. |
 | `STOP_AFTER_NO_IMPROVEMENT` | `4` | Nach vier aufeinanderfolgenden erfolglosen Iterationen stoppen. |
-| `MAX_WORKERS` | `min(os.cpu_count() or 1, 20)` | Obergrenze gleichzeitiger Prozesse im parallelen Modus. |
+| `MAX_WORKERS` | Verfügbare logische Prozessoren, höchstens `20` | Obergrenze gleichzeitiger Prozesse im parallelen Modus. |
 
 <a id="1-produktion-mit-standardgewichten-simulieren"></a>
 
@@ -3403,10 +3403,10 @@ Produktionsergebnis besser ist. Die weiteren Aufgaben sind getrennt:
 ### Parallele Optimierung mit mehreren CPU-Prozessen
 
 Im Webinterface verwendet **Parallel (process pool)** den oben beschriebenen
-Prozesspool. Die Einstellung
-`MAX_WORKERS = min(os.cpu_count() or 1, 20)` in
+Prozesspool. Die Einstellung `MAX_WORKERS` in
 [heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py)
-erlaubt höchstens 20 gleichzeitig arbeitende Worker.
+verwendet die Anzahl verfügbarer logischer Prozessoren, begrenzt auf 20.
+Damit können höchstens 20 Worker gleichzeitig arbeiten.
 
 Der [Hintergrundthread der Oberfläche](#modell-und-hintergrundlauf-vorbereiten)
 und die Poolprozesse haben verschiedene Aufgaben:

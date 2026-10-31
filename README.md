@@ -3299,7 +3299,35 @@ Dazu verwendet er zusätzliche Python-Prozesse. Ein solcher
 **Worker-Prozess** übernimmt jeweils einen vollständigen Simulationslauf.
 Die Gruppe dieser Worker-Prozesse heißt **Prozesspool**.
 
-Der Ablauf ist:
+Das Diagramm zeigt beispielhaft einen Worker-Prozess. Mehrere Worker können
+gleichzeitig arbeiten. Jeder Worker erstellt seinen `SimulationRunner` einmal
+und verwendet ihn für weitere Aufträge erneut.
+
+```mermaid
+sequenceDiagram
+    participant A as Optimierung
+    participant P as Prozesspool
+    participant W as Worker-Prozess
+
+    A->>A: ParallelSimulationRunner(...) erstellen
+    A->>P: run_many(): Pool vorbereiten
+    A->>P: Aufträge mit submit() übergeben
+    P->>W: Worker-Prozess starten
+    W->>W: _initialize_simulation_worker()<br/>einmal pro Prozess
+
+    loop Für jeden übernommenen Auftrag
+        W->>W: _execute_simulation_request(request)
+        W->>W: Policy erstellen
+        W->>W: run_policy(policy, seed)
+        W-->>P: SimulationRunResult
+        P-->>A: Fertiges Ergebnis einsammeln
+    end
+
+    A->>A: Alle Ergebnisse geordnet zurückgeben
+    A->>P: close(): Pool schließen
+```
+
+Die einzelnen Schritte sind:
 
 1. **Parallelen Runner erstellen:**
    `runner = ParallelSimulationRunner(model_file, max_workers=20)`

@@ -46,7 +46,11 @@ def main() -> None:
     parser.add_argument("--model", type=Path, help="Modelldatei; Standard: Beispiel der Optimierungsanwendung.")
     parser.add_argument("--output", type=Path, default=Path("rl_runs/ppo"), help="Neuer oder leerer Ausgabeordner.")
     parser.add_argument("--steps", type=positive_int, default=100_000, help="Mindestens so viele externe Entscheidungen insgesamt trainieren.")
-    parser.add_argument("--workers", type=positive_int, default=min(os.cpu_count() or 1, 4), help="Getrennte Simulationsprozesse; Standard: höchstens 4.")
+    available_workers = os.cpu_count()
+    if not available_workers:
+        available_workers = 1
+    default_workers = min(available_workers, 4)
+    parser.add_argument("--workers", type=positive_int, default=default_workers, help="Getrennte Simulationsprozesse; Standard: höchstens 4.")
     parser.add_argument("--rollout-steps", type=positive_int, default=256, help="Entscheidungen je Prozess und PPO-Update.")
     parser.add_argument("--batch-size", type=positive_int, default=64)
     parser.add_argument("--epochs", type=positive_int, default=10)
@@ -92,18 +96,28 @@ def main() -> None:
         parser.error("--device cuda wurde gewählt, aber diese PyTorch-Installation erkennt keine CUDA-GPU.")
     torch.set_num_threads(1)
     configuration = load_app_configuration()
-    baseline_seeds = args.baseline_seeds or configuration["baseline_seeds"]
-    evaluation_seeds = args.evaluation_seeds or configuration["test_seeds"]
+    baseline_seeds = args.baseline_seeds
+    if not baseline_seeds:
+        baseline_seeds = configuration["baseline_seeds"]
+    evaluation_seeds = args.evaluation_seeds
+    if not evaluation_seeds:
+        evaluation_seeds = configuration["test_seeds"]
     if set(evaluation_seeds) & (set(args.train_seeds) | set(baseline_seeds)):
         parser.error("Die Test-Seeds müssen von Trainings- und Baseline-Seeds getrennt sein.")
     if len(set(evaluation_seeds)) != len(evaluation_seeds) or len(set(baseline_seeds)) != len(baseline_seeds):
         parser.error("Baseline- und Test-Seed-Listen dürfen jeweils keine Duplikate enthalten.")
     started_at = perf_counter()
-    model_file = args.model or configuration["model_file"]
+    model_file = args.model
+    if not model_file:
+        model_file = configuration["model_file"]
     print("Referenzen aus vollständigen Standardheuristik-Läufen berechnen ...", flush=True)
+
+    def print_baseline_progress(seed: int) -> None:
+        print(f"  Baseline-Seed {seed}", flush=True)
+
     evaluation, baseline_report = calibrate_references(
         model_file, baseline_seeds,
-        progress=lambda seed: print(f"  Baseline-Seed {seed}", flush=True),
+        progress=print_baseline_progress,
     )
     env_config = {
         "max_actions": args.max_actions, "max_entities": args.max_entities,
@@ -117,6 +131,9 @@ def main() -> None:
         "learning_rate": args.learning_rate, "gamma": 1.0, "gae_lambda": 1.0,
         "ent_coef": 0.01, "seed": args.seed,
     }
+    versions = {}
+    for name in ("torch", "stable-baselines3", "sb3-contrib", "gymnasium", "SpineML"):
+        versions[name] = importlib.metadata.version(name)
     manifest = {
         "algorithm": "MaskablePPO", "policy_class": "CandidateActorCriticPolicy",
         "artifact_context": context, "baseline": baseline_report,
@@ -125,7 +142,7 @@ def main() -> None:
         "policy_kwargs": {"embedding_dim": 32, "hidden_dim": 64},
         "hyperparameters": hyperparameters,
         "training_limit_semantics": "terminal failure (-1); no timeout value bootstrap",
-        "versions": {name: importlib.metadata.version(name) for name in ("torch", "stable-baselines3", "sb3-contrib", "gymnasium", "SpineML")},
+        "versions": versions,
     }
     write_json(output / "manifest.json", manifest)
     episodes: list[dict] = []
@@ -161,7 +178,10 @@ def main() -> None:
     interrupted = False
     training_started_at = perf_counter()
     try:
-        factories = [EnvironmentFactory(context["model_file"], context, env_config, tuple(args.train_seeds), rank) for rank in range(args.workers)]
+        factories = []
+        for rank in range(args.workers):
+            factory = EnvironmentFactory(context["model_file"], context, env_config, tuple(args.train_seeds), rank)
+            factories.append(factory)
         # Auch bei einem Worker: Salabim bleibt vom Lernprozess getrennt.
         vector_env = SubprocVecEnv(factories, start_method="spawn")
         model = MaskablePPO(
@@ -177,19 +197,34 @@ def main() -> None:
             interrupted = True
             print("Training unterbrochen; aktuellen Modellstand speichern ...", flush=True)
         model.save(output / "model.zip")
-        completed = [episode for episode in episodes if episode["completed"]]
+        completed = []
+        for episode in episodes:
+            if episode["completed"]:
+                completed.append(episode)
+        mean_completed_global_cost = None
+        if completed:
+            costs = []
+            for item in completed:
+                costs.append(item["global_cost"])
+            mean_completed_global_cost = sum(costs) / len(completed)
+        status = "finished"
+        if interrupted:
+            status = "interrupted"
         report = {
-            "status": "interrupted" if interrupted else "finished",
+            "status": status,
             "requested_timesteps": args.steps, "actual_timesteps": int(model.num_timesteps),
             "episodes": len(episodes), "completed_episodes": len(completed),
             "limit_episodes": len(episodes) - len(completed),
-            "mean_completed_global_cost": sum(item["global_cost"] for item in completed) / len(completed) if completed else None,
+            "mean_completed_global_cost": mean_completed_global_cost,
             "baseline_elapsed_seconds": baseline_report["elapsed_seconds"],
         }
     except BaseException as error:
+        actual_timesteps = 0
+        if model is not None:
+            actual_timesteps = int(model.num_timesteps)
         report = {"status": "failed", "error": f"{type(error).__name__}: {error}",
                   "requested_timesteps": args.steps,
-                  "actual_timesteps": int(model.num_timesteps) if model is not None else 0,
+                  "actual_timesteps": actual_timesteps,
                   "episodes": len(episodes), "baseline_elapsed_seconds": baseline_report["elapsed_seconds"]}
         raise
     finally:

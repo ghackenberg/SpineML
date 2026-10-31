@@ -56,9 +56,13 @@ def _validated_seeds(seeds: Iterable[int]) -> tuple[int, ...]:
     values = tuple(seeds)
     if not values:
         raise ValueError("Mindestens ein Simulations-Seed ist erforderlich.")
-    if any(isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0 for seed in values):
-        raise ValueError("Simulations-Seeds müssen nichtnegative ganze Zahlen sein.")
-    return tuple(int(seed) for seed in values)
+    for seed in values:
+        if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
+            raise ValueError("Simulations-Seeds müssen nichtnegative ganze Zahlen sein.")
+    validated = []
+    for seed in values:
+        validated.append(int(seed))
+    return tuple(validated)
 
 
 def calibrate_references(
@@ -90,15 +94,15 @@ def calibrate_references(
         metrics_by_seed.append(runner.run_policy(policy_factory(seed), seed))
     references = evaluation.calculate_baseline_reference_values(metrics_by_seed)
     RLReward(evaluation)  # Dieselben positiven Referenzen wie im Environment prüfen.
+    metric_reports = []
+    for seed, metrics in zip(seeds, metrics_by_seed):
+        metric_reports.append({"seed": seed, "metrics": asdict(metrics)})
     return evaluation, {
         "seeds": list(seeds),
         "reference_values": references,
         "global_weights": asdict(evaluation.weights),
         "heuristic_weights": asdict(policy_factory.weights),
-        "metrics_by_seed": [
-            {"seed": seed, "metrics": asdict(metrics)}
-            for seed, metrics in zip(seeds, metrics_by_seed)
-        ],
+        "metrics_by_seed": metric_reports,
         "elapsed_seconds": perf_counter() - started_at,
     }
 
@@ -137,13 +141,16 @@ def observation_schema() -> dict[str, list[str]]:
 def evaluation_from_context(context: Mapping) -> GlobalSimulationEvaluation:
     """Erzeugt eine unabhängige, geprüfte Bewertung aus dem gespeicherten Kontext."""
     try:
+        weights = {}
+        for name, value in context["global_weights"].items():
+            weights[name] = float(value)
+        weights = GlobalSimulationWeights(**weights)
+        references = {}
+        for name, value in context["baseline_reference_values"].items():
+            references[name] = float(value)
         evaluation = GlobalSimulationEvaluation(
-            GlobalSimulationWeights(**{
-                name: float(value) for name, value in context["global_weights"].items()
-            }),
-            baseline_reference_values={
-                name: float(value) for name, value in context["baseline_reference_values"].items()
-            },
+            weights,
+            baseline_reference_values=references,
         )
     except (AttributeError, KeyError, TypeError, ValueError) as error:
         raise ValueError("Der Checkpoint-Kontext enthält keine gültige globale Bewertung.") from error
@@ -159,14 +166,18 @@ def build_artifact_context(
     """Erzeugt den JSON-fähigen Modell-, Bewertungs- und Beobachtungskontext."""
     model_path = _resolve_model_path(model_file)
     RLReward(evaluation)
+    weights = {}
+    for name, value in asdict(evaluation.weights).items():
+        weights[name] = float(value)
+    references = {}
+    for name, value in evaluation.baseline_reference_values.items():
+        references[name] = float(value)
     return {
         "schema_version": 1,
         "model_file": str(model_path),
         "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
-        "global_weights": {name: float(value) for name, value in asdict(evaluation.weights).items()},
-        "baseline_reference_values": {
-            name: float(value) for name, value in evaluation.baseline_reference_values.items()
-        },
+        "global_weights": weights,
+        "baseline_reference_values": references,
         "environment": _environment_config(env_config),
         "observation_schema": observation_schema(),
     }
@@ -191,7 +202,9 @@ def validate_artifact_context(
         saved_model = context["model_file"]
         if not isinstance(saved_model, str) or not Path(saved_model).is_absolute():
             raise ValueError("Der Checkpoint-Kontext muss den aufgelösten absoluten Modellpfad enthalten.")
-        selected_model = model_file if model_file is not None else saved_model
+        selected_model = saved_model
+        if model_file is not None:
+            selected_model = model_file
         model_path = _resolve_model_path(selected_model)
     except (KeyError, TypeError) as error:
         raise ValueError("Die Modell-/Environment-Konfiguration des Checkpoints ist unvollständig.") from error
@@ -218,7 +231,11 @@ class EpisodeSeedWrapper(gym.Wrapper):
     def _info(self, info):
         if not self.compact_info:
             return info
-        return {key: value for key, value in info.items() if key not in _DEBUG_INFO_KEYS}
+        compact_info = {}
+        for key, value in info.items():
+            if key not in _DEBUG_INFO_KEYS:
+                compact_info[key] = value
+        return compact_info
 
     def reset(self, *, seed=None, options=None):
         # Auch bei übergebenem seed den nächsten konfigurierten Trainings-Seed verwenden.
@@ -231,8 +248,10 @@ class EpisodeSeedWrapper(gym.Wrapper):
         observation, reward, terminated, truncated, info = self.env.step(action)
         if truncated:
             # SB3 darf bei diesem Fehlschlag keinen geschätzten Folgewert hinzurechnen.
-            info = {**info, "training_limit_terminated": True}
-            terminated, truncated = True, False
+            info = dict(info)
+            info["training_limit_terminated"] = True
+            terminated = True
+            truncated = False
         return observation, reward, terminated, truncated, self._info(info)
 
     def action_masks(self):

@@ -33,7 +33,9 @@ class SimOrder(sim.Component):
                 if value not in categories:
                     categories.append(value)
         
-        values = [0 for c in categories]
+        values = []
+        for category in categories:
+            values.append(0)
         for job in self.sim_jobs:
             for value in job.processing_state.value.values():
                 duration = job.processing_state.value.value_duration(value)

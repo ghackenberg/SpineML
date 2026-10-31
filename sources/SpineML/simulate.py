@@ -62,7 +62,8 @@ def simulate(
             show_fps=True,
             show_time=True,
         )
-    bridge = bridge if bridge is not None else SimulationBridge(policy, env=env)
+    if bridge is None:
+        bridge = SimulationBridge(policy, env=env)
     sim_layout = SimLayout(layout, scenario, bridge, env=env)
     sim_scenario = SimScenario(layout, scenario, sim_layout.store_start, bridge, env=env)
     completed_by_watcher = False

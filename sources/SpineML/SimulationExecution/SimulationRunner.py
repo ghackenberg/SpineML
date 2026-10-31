@@ -63,7 +63,10 @@ class SimulationRunner:
         simulation_end_time: float,
     ) -> GlobalSimulationMetrics:
         """Liest Produktionskennzahlen aus Jobs, Robotern und Maschinen."""
-        jobs = [job for order in sim_scenario.sim_orders for job in order.sim_jobs]
+        jobs = []
+        for order in sim_scenario.sim_orders:
+            for job in order.sim_jobs:
+                jobs.append(job)
 
         completed_times = []
         total_tardiness = 0.0
@@ -105,14 +108,18 @@ class SimulationRunner:
             if job.rework_count > 0:
                 rework_job_count += 1
 
-        production_start_time = min(
-            (float(job.order.earliest_start_time) for job in jobs),
-            default=0.0,
-        )
+        start_times = []
+        for job in jobs:
+            start_times.append(float(job.order.earliest_start_time))
+        if start_times:
+            production_start_time = min(start_times)
+        else:
+            production_start_time = 0.0
         # Ohne abgeschlossenen Job dient das Simulationsende als Endpunkt.
-        production_end_time = (
-            max(completed_times) if completed_times else float(simulation_end_time)
-        )
+        if completed_times:
+            production_end_time = max(completed_times)
+        else:
+            production_end_time = float(simulation_end_time)
         makespan = max(0.0, production_end_time - production_start_time)
 
         robots = [sim_layout.sim_main_robot]

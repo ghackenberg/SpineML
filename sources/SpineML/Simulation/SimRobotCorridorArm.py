@@ -8,7 +8,6 @@ from ..SimulationInterface import SimulationBridge
 from .SimRobot import SimRobot
 from .SimMachine import SimMachine
 from .SimOrderJob import SimOrderJob
-from .SimRobot import SimRobot
 
 
 class SimRobotCorridorArm(SimRobot):

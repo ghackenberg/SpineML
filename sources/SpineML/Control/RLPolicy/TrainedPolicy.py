@@ -116,10 +116,9 @@ class TrainedCandidatePolicy(Policy):
             raise ValueError("Beobachtungs-/Aktionsraum des Checkpoints passt nicht zum Manifest.")
         self.model.policy.set_training_mode(False)
         self._cpu_rng_state = th.Generator(device="cpu").manual_seed(seed).get_state()
-        self._cuda_rng_state = (
-            th.Generator(device=selected_device).manual_seed(seed).get_state()
-            if self._rng_devices else None
-        )
+        self._cuda_rng_state = None
+        if self._rng_devices:
+            self._cuda_rng_state = th.Generator(device=selected_device).manual_seed(seed).get_state()
         self._candidate_policy = RLCandidatePolicy(self._select_candidate)
 
     def _select_candidate(self, request: DecisionRequest) -> int:
@@ -134,8 +133,11 @@ class TrainedCandidatePolicy(Policy):
             th.set_rng_state(self._cpu_rng_state)
             if self._rng_devices:
                 th.cuda.set_rng_state(self._cuda_rng_state, self._rng_devices[0])
+            observation_copy = {}
+            for name, value in observation.items():
+                observation_copy[name] = value.copy()
             action, _ = self.model.predict(
-                {name: value.copy() for name, value in observation.items()},
+                observation_copy,
                 action_masks=masks,
                 deterministic=self.deterministic,
             )

@@ -46,8 +46,9 @@ class CandidateFeaturesExtractor(BaseFeaturesExtractor):
             subspace = observation_space.spaces.get(name)
             if subspace is None or subspace.shape is None or len(subspace.shape) != rank:
                 raise ValueError(f"Ungültige Form des Beobachtungsfelds {name!r}.")
-            if any(size < 1 for size in subspace.shape):
-                raise ValueError(f"Leeres Beobachtungsfeld {name!r}.")
+            for size in subspace.shape:
+                if size < 1:
+                    raise ValueError(f"Leeres Beobachtungsfeld {name!r}.")
         max_actions, candidate_size = observation_space["candidates"].shape
         max_entities, entity_size = observation_space["entities"].shape
         if observation_space["action_mask"].shape != (max_actions,):
@@ -88,7 +89,10 @@ class CandidateFeaturesExtractor(BaseFeaturesExtractor):
     def forward(self, observations: dict[str, th.Tensor]) -> th.Tensor:
         # Auch eine einzelne Beobachtung als Batch mit einem Eintrag verarbeiten.
         if observations["context"].ndim == 1:
-            observations = {name: value.unsqueeze(0) for name, value in observations.items()}
+            batched_observations = {}
+            for name, value in observations.items():
+                batched_observations[name] = value.unsqueeze(0)
+            observations = batched_observations
         action_mask = observations["action_mask"].to(dtype=th.bool)
         entity_mask = observations["entity_mask"].to(dtype=th.bool)
         context = self.context_encoder(observations["context"])

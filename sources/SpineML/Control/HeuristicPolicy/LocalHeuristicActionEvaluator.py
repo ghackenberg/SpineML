@@ -9,19 +9,16 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
     DEFAULT_WAIT_SCORE = 0.01
 
-    # Store the configurable weight set used by all evaluation methods.
-    # Example: HeuristicWeights(queue_priority_weight=0.4) is stored in self.weights.
+    # Speichert Gewichte und Generator für die Bewertung.
     def __init__(
         self,
         weights: HeuristicWeights,
         action_generator: SpineActionGenerator | None = None,
     ):
         self.weights = weights
-        self.action_generator = (
-            action_generator
-            if action_generator is not None
-            else SpineActionGenerator()
-        )
+        if action_generator is None:
+            action_generator = SpineActionGenerator()
+        self.action_generator = action_generator
 
     @staticmethod
     def inverse_scale(value: float) -> float:
@@ -255,7 +252,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             latest_end_time,
             current_time,
         )
-        # Estimate the expected total processing time of the possible routes.
+        # Schätzt die gesamte Bearbeitungszeit der möglichen Routen.
         estimated_processing_time = self.estimate_release_processing_time(
             current_state,
             observation,
@@ -306,8 +303,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         if not route_processing_times:
             return 0.0
 
-        # The SPT rule uses the average total processing time
-        # as the expected processing time.
+        # Die mittlere Routendauer dient als erwartete Bearbeitungszeit.
         return sum(route_processing_times) / len(route_processing_times)
 
     # Berechnet die verbleibende Zeit bis zur Deadline des Jobs.
@@ -323,8 +319,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     ) -> bool:
         return self.estimate_remaining_time(current_state) <= 0
 
-    # Evaluates scrap, waiting, downgrade, or one of the rework options.
-    # Example: action_type="downgrade_product" returns the downgrade score.
+    # Bewertet Ausschuss, Warten, Herabstufung oder Nacharbeit.
     def evaluate_defect_action(
         self,
         action_type: str,
@@ -340,15 +335,14 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         current_time = float(
             observation.simulation_configuration_snapshot["time"]
         )
-        # Calculates the EDD priority of the defective job for action scoring.
+        # Berechnet die EDD-Priorität des defekten Jobs.
         defect_edd_priority = self.calculate_edd_priority(
             float(current_state["latest_end_time"]),
             current_time,
         )
 
         if action_type == "wait_job":
-            # A defective job may wait; the more urgent its deadline,
-            # the lower the score of this wait action.
+            # Je dringender die Deadline, desto schlechter ist Warten.
             score = self.calculate_action_score([
                 (1.0 - defect_edd_priority, self.weights.wait_defect_job_weight),
             ])
@@ -359,7 +353,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             return score
 
         if action_type == "downgrade_product":
-            # A higher severity makes downgrading more attractive than rework.
+            # Ein stärkerer Defekt macht die Herabstufung attraktiver.
             defect_severity = float(current_state.get("defect_severity", 0.0))
             parts = [
                 (
@@ -372,7 +366,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             # Der Bonus hebt Herabstufung damit ab der Deadline in [0.5, 1].
             if deadline_reached:
                 parts.append((1.0, self.weights.deadline_reached_downgrade_bonus_weight))
-            # Returns the final score of the downgrade action.
+            # Gibt den fertigen Score der Herabstufung zurück.
             return self.calculate_action_score(parts)
 
         if action_type in {
@@ -435,9 +429,13 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         # Jede Operation legt einen benötigten Werkzeugtyp fest.
         required_tool_id = operation["tool_type_id"]
         mounted_tool_id = machine_state.get("mounted_tool_type_id")
+        if mounted_tool_id == required_tool_id:
+            tool_match_value = 1.0
+        else:
+            tool_match_value = 0.0
         parts.append(
             (
-                1.0 if mounted_tool_id == required_tool_id else 0.0,
+                tool_match_value,
                 self.weights.defect_recovery_tool_match_weight,
             )
         )
@@ -498,10 +496,11 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
 
         # Die Simulation bewegt den Roboter achsenweise; daher entspricht die
         # relevante Wegstrecke der Manhattan- beziehungsweise L1-Distanz.
-        axis_aligned_distance = sum(
-            abs(float(target_position[axis]) - float(source_position[axis]))
-            for axis in ("x", "y", "z")
-        )
+        axis_distances = []
+        for axis in ("x", "y", "z"):
+            distance = abs(float(target_position[axis]) - float(source_position[axis]))
+            axis_distances.append(distance)
+        axis_aligned_distance = sum(axis_distances)
         movement_speed = self.recovery_transport_speed(
             snapshot,
             target_machine_state,
@@ -520,22 +519,23 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
     ) -> float:
         corridor_id = target_machine_state.get("corridor_id")
         states = snapshot.get("simulation_object_states_by_id", {})
-        corridor_arm_speeds = [
-            float(state["movement_speed"])
-            for state in states.values()
-            if state.get("object_type") == "corridor_arm_robot"
-            and state.get("corridor_id") == corridor_id
-            and float(state.get("movement_speed", 0.0)) > 0.0
-        ]
+        corridor_arm_speeds = []
+        for state in states.values():
+            if state.get("object_type") != "corridor_arm_robot":
+                continue
+            if state.get("corridor_id") != corridor_id:
+                continue
+            if float(state.get("movement_speed", 0.0)) > 0.0:
+                corridor_arm_speeds.append(float(state["movement_speed"]))
         if corridor_arm_speeds:
             return corridor_arm_speeds[0]
 
-        main_robot_speeds = [
-            float(state["movement_speed"])
-            for state in states.values()
-            if state.get("object_type") == "main_robot"
-            and float(state.get("movement_speed", 0.0)) > 0.0
-        ]
+        main_robot_speeds = []
+        for state in states.values():
+            if state.get("object_type") != "main_robot":
+                continue
+            if float(state.get("movement_speed", 0.0)) > 0.0:
+                main_robot_speeds.append(float(state["movement_speed"]))
         if main_robot_speeds:
             return main_robot_speeds[0]
         return 0.0
@@ -558,8 +558,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
             return self.evaluate_robot_pick_action(action, observation)
 
 
-    # Calculate the weighted average of EDD-,
-    # Entnahmezeit- und Transportzeit-Teilwerten.
+    # Verbindet EDD, Entnahmezeit und Transportzeit zu einem Score.
     def evaluate_robot_pick_action(
         self,
         action: dict[str, Any],
@@ -620,7 +619,10 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         machine_state = self.current_state(observation)
         mounted_tool_id = machine_state.get("mounted_tool_type_id")
         # Die Werkzeugpassung geht immer ein, auch wenn kein Werkzeug montiert ist.
-        tool_match_value = 1.0 if mounted_tool_id == required_tool_id else 0.0
+        if mounted_tool_id == required_tool_id:
+            tool_match_value = 1.0
+        else:
+            tool_match_value = 0.0
         parts.append(
             (tool_match_value, self.weights.machine_pick_tool_match_weight)
         )
@@ -662,8 +664,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         return self.inverse_scale(storage_out_time)
 
 
-    # Calculate the weighted average of capacity-,
-    # Einlagerungs-, Transport-, Queue- und Operations-Teilwerten.
+    # Verbindet Kapazität, Zeiten und Warteschlange zu einem Score.
     def evaluate_place_action(
         self,
         action: dict[str, Any],
@@ -855,7 +856,7 @@ class LocalHeuristicActionEvaluator(ActionEvaluator):
         return self.calculate_action_score([(0.0, 1.0)])
 
 
-    # Multiply the queue priority by its configured heuristic weight.
+    # Multipliziert die Queue-Priorität mit ihrem Gewicht.
     # Beispiel: queue_priority=0.4 und queue_priority_weight=0.5 ergeben den Score 0.2.
     def evaluate_queue_priority(
         self,

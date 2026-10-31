@@ -12,7 +12,7 @@ from ...SimulationInterface.InterfaceTypes import (
 
 
 class HeuristicPolicy(Policy):
-    """Connect an action generator to a replaceable action selector."""
+    # Verbindet Aktionserzeugung, Bewertung und Auswahl.
 
     # Initialisiert das Objekt mit seinen Eingabewerten.
     def __init__(
@@ -21,13 +21,15 @@ class HeuristicPolicy(Policy):
         action_generator: ActionGenerator | None = None,
         action_evaluator: ActionEvaluator | None = None,
     ):
-        self.action_selector = action_selector if action_selector is not None else HeuristicActionSelector()
-        self.action_generator = action_generator if action_generator is not None else SpineActionGenerator()
-        self.action_evaluator = (
-            action_evaluator
-            if action_evaluator is not None
-            else self._create_default_action_evaluator()
-        )
+        if action_selector is None:
+            action_selector = HeuristicActionSelector()
+        self.action_selector = action_selector
+        if action_generator is None:
+            action_generator = SpineActionGenerator()
+        self.action_generator = action_generator
+        if action_evaluator is None:
+            action_evaluator = self._create_default_action_evaluator()
+        self.action_evaluator = action_evaluator
 
     def _create_default_action_evaluator(self) -> ActionEvaluator:
         # Der Import erfolgt erst bei der Policy-Erzeugung, damit die

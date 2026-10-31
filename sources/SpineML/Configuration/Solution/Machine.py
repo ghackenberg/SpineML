@@ -25,9 +25,10 @@ class Machine:
         defect_probability: float | None = None,
     ) -> None:
 
-        self.defect_probability = (
-            None if defect_probability is None else float(defect_probability)
-        )
+        if defect_probability is None:
+            self.defect_probability = None
+        else:
+            self.defect_probability = float(defect_probability)
         if (
             self.defect_probability is not None
             and not 0.0 <= self.defect_probability <= 1.0
@@ -45,11 +46,10 @@ class Machine:
         self.processing_speed_factor = 1.0
         self.dummy_tool_mount_time = 1.0
         self.dummy_tool_unmount_time = 1.0
-        self.tool_types = (
-            list(tool_types)
-            if tool_types is not None
-            else machine_type.computeToolTypes()
-        )
+        if tool_types is None:
+            self.tool_types = machine_type.computeToolTypes()
+        else:
+            self.tool_types = list(tool_types)
 
         machine_type.machines.append(self)  
         if left:
@@ -71,9 +71,9 @@ class Machine:
         ).encode("utf-8")
         # Leitet aus dem Schlüssel einen festen Startwert für einen eigenen Generator ab.
         # Gleicher Schlüssel bedeutet dadurch dieselbe Zufallszahlenfolge.
-        probability_rng = random.Random(
-            int.from_bytes(hashlib.sha256(probability_key).digest()[:8], "big")
-        )
+        probability_hash = hashlib.sha256(probability_key).digest()
+        probability_seed = int.from_bytes(probability_hash[:8], "big")
+        probability_rng = random.Random(probability_seed)
         return probability_rng.random()
 
     # Führt die Funktion mit den übergebenen Werten aus.

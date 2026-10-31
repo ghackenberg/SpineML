@@ -25,9 +25,9 @@ class RandomPolicy(Policy):
         action_generator: ActionGenerator | None = None,
     ):
         self.random = random.Random(seed)
-        self.action_generator = (
-            action_generator if action_generator is not None else SpineActionGenerator()
-        )
+        if action_generator is None:
+            action_generator = SpineActionGenerator()
+        self.action_generator = action_generator
 
     def make_decision(self, observation: PolicyObservation) -> PolicyDecision:
         snapshot = observation.simulation_configuration_snapshot
@@ -42,20 +42,19 @@ class RandomPolicy(Policy):
             actions = self.action_generator.generate_actions(object_observation)
 
 
-            available_actions = [
-                action for action in actions
-                # Jobs in selected_job_ids sind bereits zugeteilt; kein zweiter Roboter darf sie aufnehmen.
-                if not (
-                    action["action_type"].startswith("pick_")
-                    and action["payload"]["selected_job_id"] in selected_job_ids
-                )
-            ]
+            available_actions = []
+            for action in actions:
+                # Ein bereits zugeteilter Job darf nicht nochmals aufgenommen werden.
+                if action["action_type"].startswith("pick_"):
+                    if action["payload"]["selected_job_id"] in selected_job_ids:
+                        continue
+                available_actions.append(action)
 
 
-            productive_actions = [
-                action for action in available_actions
-                if not is_wait_action(action["action_type"])
-            ]
+            productive_actions = []
+            for action in available_actions:
+                if not is_wait_action(action["action_type"]):
+                    productive_actions.append(action)
 
 
             if productive_actions:

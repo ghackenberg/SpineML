@@ -27,7 +27,10 @@ if __name__ != "__mp_main__":
 
 
 EXAMPLE_FILE = "example-5.py"
-MAX_WORKERS = min(os.cpu_count() or 1, 20)
+MAX_WORKERS = os.cpu_count()
+if not MAX_WORKERS:
+    MAX_WORKERS = 1
+MAX_WORKERS = min(MAX_WORKERS, 20)
 SEEDS = [1, 2]
 # Nur für den abschließenden Vergleich, nicht für die Gewichtssuche.
 TEST_SEEDS = [101, 102, 103, 104, 105]
@@ -96,14 +99,13 @@ def create_optimizer(model_file: str, execution_mode: str = "parallel"):
 
 def _optimization_configuration(model_file, timing_context="streamlit"):
     """Kennzeichnet dieselbe Arbeitslast unabhängig von ihrer Ausführungsart."""
-    source_directory = SOURCES_DIRECTORY
     model_path = _resolve_model_path(model_file)
     source_hash = hashlib.sha256()
-    source_files = [Path(__file__).resolve(), *sorted(
-        (source_directory / "SpineML").rglob("*.py")
-    )]
+    source_files = [Path(__file__).resolve()]
+    for source_file in sorted((SOURCES_DIRECTORY / "SpineML").rglob("*.py")):
+        source_files.append(source_file)
     for source_file in source_files:
-        source_hash.update(str(source_file.relative_to(source_directory)).encode("utf-8"))
+        source_hash.update(str(source_file.relative_to(SOURCES_DIRECTORY)).encode("utf-8"))
         source_hash.update(b"\0")
         source_hash.update(source_file.read_bytes())
         source_hash.update(b"\0")
@@ -188,7 +190,10 @@ def global_costs_per_candidate(costs, container=None):
         )
         .interactive()
     )
-    target = st if container is None else container
+    if container is None:
+        target = st
+    else:
+        target = container
     target.altair_chart(chart, use_container_width=True)
 
 
@@ -221,13 +226,19 @@ def mean_metrics_per_candidate(metrics, container=None):
         .resolve_scale(y="independent")
         .interactive()
     )
-    target = st if container is None else container
+    if container is None:
+        target = st
+    else:
+        target = container
     target.altair_chart(chart, use_container_width=True)
 
 
 def _candidate_metric_changes(metrics):
     """Trennt relative Zeitänderungen von Quotendifferenzen in Prozentpunkten."""
-    frame = pd.DataFrame(metrics)[["Candidate", *SCORED_METRICS]].copy()
+    metric_columns = ["Candidate"]
+    for metric_name in SCORED_METRICS:
+        metric_columns.append(metric_name)
+    frame = pd.DataFrame(metrics)[metric_columns].copy()
     frame = frame.sort_values("Candidate")
     reference = frame.iloc[0]
     changes = frame.melt(
@@ -309,7 +320,10 @@ def metric_deviation_from_candidate_1(metrics, container=None):
         .interactive(name="job_rate_zoom")
     )
     chart = alt.vconcat(time_chart, rate_chart, spacing=30).resolve_scale(color="independent")
-    target = st if container is None else container
+    if container is None:
+        target = st
+    else:
+        target = container
     target.altair_chart(chart, use_container_width=True)
 
 
@@ -326,10 +340,8 @@ def compare_baseline_optimized(benchmark):
             rows.append(item)
 
     frame = pd.DataFrame(rows)
-    metric_names = [
-        *SCORED_METRICS,
-        "Weighted sum of metrics relative to baseline",
-    ]
+    metric_names = list(SCORED_METRICS)
+    metric_names.append("Weighted sum of metrics relative to baseline")
     mean_frame = frame.groupby(
         "Control",
         as_index=False,
@@ -400,20 +412,29 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
     phase_name=None,
     policy_factory=None,
 ):
-    seed_values = tuple(SEEDS if seeds is None else seeds)
+    if seeds is None:
+        seed_values = tuple(SEEDS)
+    else:
+        seed_values = tuple(seeds)
     if not seed_values:
         raise ValueError("Mindestens ein Seed ist erforderlich.")
     if phase_name is None:
-        phase_name = "Baseline" if calculate_reference_values else "Optimized weights"
+        if calculate_reference_values:
+            phase_name = "Baseline"
+        else:
+            phase_name = "Optimized weights"
     state["phase"] = f"{phase_name}: 0/{len(seed_values)} seeds completed"
     run_many = getattr(optimizer.simulation_runner, "run_many", None)
-    factory = policy_factory if policy_factory is not None else HeuristicPolicyFactory(weights)
+    if policy_factory is None:
+        factory = HeuristicPolicyFactory(weights)
+    else:
+        factory = policy_factory
 
     if callable(run_many):
-        requests = tuple(
-            SimulationRunRequest(factory, seed)
-            for seed in seed_values
-        )
+        requests = []
+        for seed in seed_values:
+            requests.append(SimulationRunRequest(factory, seed))
+        requests = tuple(requests)
         completed_indices = set()
 
         def on_completed(index, result):
@@ -426,9 +447,9 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
         results = tuple(run_many(requests, on_completed=on_completed))
         if len(results) != len(seed_values):
             raise ValueError("Der Runner muss genau ein Ergebnis je Seed liefern.")
-        metrics_by_seed = [
-            (seed, result.metrics) for seed, result in zip(seed_values, results)
-        ]
+        metrics_by_seed = []
+        for seed, result in zip(seed_values, results):
+            metrics_by_seed.append((seed, result.metrics))
         state["phase"] = f"{phase_name}: {len(seed_values)}/{len(seed_values)} seeds completed"
     else:
         # Einfache Runner bleiben für bestehende direkte Aufrufe verwendbar.
@@ -441,20 +462,28 @@ def _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
             )
 
     if calculate_reference_values:
-        state["baseline_metrics"] = [asdict(metrics) for seed, metrics in metrics_by_seed]
+        baseline_metrics = []
+        baseline_rows = []
+        for seed, metrics in metrics_by_seed:
+            baseline_metrics.append(metrics)
+            baseline_rows.append(asdict(metrics))
+        state["baseline_metrics"] = baseline_rows
         state["baseline_reference_values"] = (
             optimizer.global_evaluation.calculate_baseline_reference_values(
-                [metrics for seed, metrics in metrics_by_seed]
+                baseline_metrics
             )
         )
     else:
-        state.setdefault("benchmark_metrics", {})[phase_name] = [
-            asdict(metrics) for seed, metrics in metrics_by_seed
-        ]
-    return [
-        _global_metric_row(seed, metrics, optimizer.global_evaluation)
-        for seed, metrics in metrics_by_seed
-    ]
+        benchmark_rows = []
+        for seed, metrics in metrics_by_seed:
+            benchmark_rows.append(asdict(metrics))
+        if "benchmark_metrics" not in state:
+            state["benchmark_metrics"] = {}
+        state["benchmark_metrics"][phase_name] = benchmark_rows
+    metric_rows = []
+    for seed, metrics in metrics_by_seed:
+        metric_rows.append(_global_metric_row(seed, metrics, optimizer.global_evaluation))
+    return metric_rows
 
 
 def _benchmark_policies(state, optimizer, optimized_weights):
@@ -469,8 +498,9 @@ def _benchmark_policies(state, optimizer, optimized_weights):
         raise ValueError("Mindestens ein Test-Seed ist erforderlich.")
     run_many = getattr(optimizer.simulation_runner, "run_many", None)
     if not callable(run_many):
-        return {
-            label: _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
+        benchmark = {}
+        for label, weights, policy_factory in policy_specs:
+            benchmark[label] = _simulate_and_collect_global_metrics_for_one_local_weight_across_all_seeds(
                 state,
                 optimizer,
                 weights,
@@ -478,18 +508,18 @@ def _benchmark_policies(state, optimizer, optimized_weights):
                 phase_name=label,
                 policy_factory=policy_factory,
             )
-            for label, weights, policy_factory in policy_specs
-        }
+        return benchmark
 
     # Alle Steuerungs-Seed-Paare gemeinsam einreichen, damit der Pool ausgelastet wird.
-    requests = tuple(
-        SimulationRunRequest(
-            policy_factory if policy_factory is not None else HeuristicPolicyFactory(weights),
-            seed,
-        )
-        for label, weights, policy_factory in policy_specs
-        for seed in seed_values
-    )
+    requests = []
+    for label, weights, policy_factory in policy_specs:
+        for seed in seed_values:
+            if policy_factory is None:
+                factory = HeuristicPolicyFactory(weights)
+            else:
+                factory = policy_factory
+            requests.append(SimulationRunRequest(factory, seed))
+    requests = tuple(requests)
     completed_indices = set()
     state["phase"] = f"Benchmark: 0/{len(requests)} simulation runs completed"
 
@@ -507,18 +537,19 @@ def _benchmark_policies(state, optimizer, optimized_weights):
     state["benchmark_metrics"] = {}
     for policy_index, (label, weights, policy_factory) in enumerate(policy_specs):
         offset = policy_index * len(seed_values)
-        state["benchmark_metrics"][label] = [
-            asdict(results[offset + seed_index].metrics)
-            for seed_index in range(len(seed_values))
-        ]
-        benchmark[label] = [
-            _global_metric_row(
+        metric_rows = []
+        for seed_index in range(len(seed_values)):
+            metrics = results[offset + seed_index].metrics
+            metric_rows.append(asdict(metrics))
+        state["benchmark_metrics"][label] = metric_rows
+        benchmark[label] = []
+        for seed_index, seed in enumerate(seed_values):
+            row = _global_metric_row(
                 seed,
                 results[offset + seed_index].metrics,
                 optimizer.global_evaluation,
             )
-            for seed_index, seed in enumerate(seed_values)
-        ]
+            benchmark[label].append(row)
     state["phase"] = f"Benchmark: {len(requests)}/{len(requests)} simulation runs completed"
     return benchmark
 
@@ -529,7 +560,8 @@ def _start_optimization(state, model_file, execution_mode="parallel", timing_con
         raise ValueError("execution_mode muss 'sequential' oder 'parallel' sein.")
     if state.get("running"):
         raise RuntimeError("Es läuft bereits eine Optimierung.")
-    state.setdefault("timing_history", [])
+    if "timing_history" not in state:
+        state["timing_history"] = []
     state.update(
         running=True,
         iteration=0,
@@ -656,9 +688,10 @@ def _start_optimization(state, model_file, execution_mode="parallel", timing_con
                         close_runner()
             except Exception as error:
                 close_error = f"Simulation workers could not be closed: {error}"
-                state["error"] = (
-                    f"{state['error']}\n{close_error}" if state["error"] else close_error
-                )
+                if state["error"]:
+                    state["error"] = f"{state['error']}\n{close_error}"
+                else:
+                    state["error"] = close_error
             finally:
                 # Die Gesamtzeit enthält auch das Warten auf die Poolbeendigung.
                 state["phase_seconds"]["shutdown"] = time.perf_counter() - shutdown_started_at
@@ -667,23 +700,25 @@ def _start_optimization(state, model_file, execution_mode="parallel", timing_con
                     if state["error"] is None:
                         if state["configuration"] != _optimization_configuration(model_file, timing_context):
                             raise RuntimeError("Modell, Quellcode oder Einstellungen wurden während des Laufs geändert.")
-                        candidate_evaluations = [
-                            {
+                        candidate_evaluations = []
+                        for item in state["candidate_evaluations"]:
+                            candidate_evaluations.append({
                                 "iteration": item["iteration"],
                                 "candidate": item["candidate"],
                                 "evaluation": asdict(item["evaluation"]),
-                            }
-                            for item in state["candidate_evaluations"]
-                        ]
-                        simulation_count = (
-                            len(state["baseline_metrics"])
-                            + sum(len(item["evaluation"]["metrics_by_seed"])
-                                  for item in candidate_evaluations)
-                            + sum(len(items) for items in state["benchmark_metrics"].values())
-                        )
+                            })
+                        simulation_count = len(state["baseline_metrics"])
+                        for item in candidate_evaluations:
+                            simulation_count += len(item["evaluation"]["metrics_by_seed"])
+                        for items in state["benchmark_metrics"].values():
+                            simulation_count += len(items)
+                        if execution_mode == "parallel":
+                            max_workers = MAX_WORKERS
+                        else:
+                            max_workers = 1
                         state["run_report"] = {
                             "execution_mode": execution_mode,
-                            "max_workers": MAX_WORKERS if execution_mode == "parallel" else 1,
+                            "max_workers": max_workers,
                             "started_at_utc": state["started_at_utc"],
                             "elapsed_seconds": state["elapsed_seconds"],
                             "phase_seconds": dict(state["phase_seconds"]),
@@ -753,9 +788,9 @@ from SpineML.SimulationExecution.ParallelSimulationRunner import (
 # Kompatible Namen ohne Kopien der ausgelagerten Modell-Ladefunktionen.
 from SpineML.SimulationExecution.ModelLoader import (
     load_layout_and_scenario,
-    _find_layout_and_scenario as _find_layout_and_scenario,
-    _load_model as _load_model,
-    _resolve_model_path as _resolve_model_path,
+    _find_layout_and_scenario,
+    _load_model,
+    _resolve_model_path,
 )
 
 # Wird nach main() im Streamlit-Webserver aufgerufen und baut die Oberfläche
@@ -797,12 +832,11 @@ def _streamlit_app():
         format_func=execution_labels.get,
         disabled=state["running"],
     )
-    st.caption(
-        f"Example: {selected_model_path.name} · "
-        + ("one simulation after another, without a process pool"
-           if execution_mode == "sequential"
-           else f"up to {MAX_WORKERS} simulations in parallel")
-    )
+    if execution_mode == "sequential":
+        execution_description = "one simulation after another, without a process pool"
+    else:
+        execution_description = f"up to {MAX_WORKERS} simulations in parallel"
+    st.caption(f"Example: {selected_model_path.name} · {execution_description}")
     elapsed_display = st.empty()
     # Beide Modi verwenden denselben Ablauf; nur der Runner wird ausgetauscht.
     st.button(
@@ -827,14 +861,17 @@ def _streamlit_app():
                 elapsed_display.caption(
                     f"Elapsed time: {time.perf_counter() - state['started_at']:.1f} seconds"
                 )
-            status.info(
-                state["phase"]
-                or "Optimization running - simulating candidates ..."
-            )
+            status_message = state["phase"]
+            if not status_message:
+                status_message = "Optimization running - simulating candidates ..."
+            status.info(status_message)
             iteration.write(f"Current iteration: {state['iteration']}")
+            candidate_number = state["candidate"]
+            total_candidates = state["total_candidates"]
+            if not total_candidates:
+                total_candidates = "?"
             candidate.write(
-                f"Completed candidates: {state['candidate']} / "
-                f"{state['total_candidates'] or '?'}"
+                f"Completed candidates: {candidate_number} / {total_candidates}"
             )
             if state["total_candidates"]:
                 progress_bar.progress(
@@ -901,17 +938,21 @@ def _show_timing_comparison(history):
         "For an isolated comparison in fresh Python processes, use "
         "sources/tools/compare_optimization_runtime.py. Do not run other optimizations concurrently."
     )
-    st.dataframe([
-        {
+    rows = []
+    for report in history:
+        row = {
             "Execution": report["execution_mode"],
             "Max. simultaneous simulations": report["max_workers"],
             "Completed simulations": report["simulation_count"],
             "Total elapsed (s)": report["elapsed_seconds"],
-            **{f"{phase} (s)": seconds for phase, seconds in report["phase_seconds"].items()},
         }
-        for report in history
-    ], use_container_width=True, hide_index=True)
-    latest = {report["execution_mode"]: report for report in history}
+        for phase, seconds in report["phase_seconds"].items():
+            row[f"{phase} (s)"] = seconds
+        rows.append(row)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    latest = {}
+    for report in history:
+        latest[report["execution_mode"]] = report
     comparison = None
     if "sequential" in latest and "parallel" in latest:
         comparison = compare_optimization_reports(latest["sequential"], latest["parallel"])

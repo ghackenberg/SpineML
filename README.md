@@ -40,9 +40,8 @@ Maschinen. Diese README beschreibt den Zweig `Foroogh`.
 
 ## Projektstruktur und Zuständigkeiten
 
-Die Ordner trennen den Produktionsablauf, die Übergabe an eine Policy und
-deren Auswahlverfahren. Allgemeine Ausführung und globale Bewertung gehören
-nicht zu einer bestimmten Policy:
+Die Simulation führt Aktionen aus, die Policy wählt sie aus. Ausführung,
+Bewertung und Gewichtssuche liegen in getrennten Ordnern:
 
 ```text
 sources/
@@ -88,43 +87,35 @@ sources/
 
 | Bereich | Verantwortung |
 | --- | --- |
-| [apps/heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py) | Streamlit-Oberfläche, Suchparameter, globale Zielgewichte und Koordination der heuristischen Optimierung. |
-| [tools](sources/tools) | Headless-Werkzeuge für Laufzeitvergleiche sowie zur RL-Episodenprüfung, zum NN-Training und zum Vergleich auf Test-Seeds. |
+| [apps/heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py) | Webinterface und Einstellungen der heuristischen Optimierung. |
+| [tools](sources/tools) | Befehle für Laufzeitmessung, RL-Prüfung, Training und Steuerungsvergleich. |
 | [Configuration](sources/SpineML/Configuration) | Fabrik, Produkte, Operationen, Werkzeuge und Aufträge beschreiben. |
 | [Simulation](sources/SpineML/Simulation) | Jobs, Roboter und Maschinen als Salabim-Prozesse ausführen und Laufzeitdaten ändern. |
-| [SimulationInterface](sources/SpineML/SimulationInterface) | Beobachtungen und Entscheidungen definieren; die Bridge verbindet die Simulationskomponenten mit einer Policy. |
-| [GlobalEvaluation](sources/SpineML/GlobalEvaluation) | Produktionskennzahlen, globale Zielgewichte und die Kostenbewertung von Laufergebnissen bereitstellen. |
-| [Control/ActionGeneration](sources/SpineML/Control/ActionGeneration) | Vollständige gemeinsame Aktionskandidaten einschließlich EDD-basierter Pick-Priorität erzeugen; keine gewichtete Aktionsauswahl. |
+| [SimulationInterface](sources/SpineML/SimulationInterface) | Zustandsdaten und Entscheidungen zwischen Simulation und Policy austauschen. |
+| [GlobalEvaluation](sources/SpineML/GlobalEvaluation) | Produktionskennzahlen zu einer globalen Bewertungszahl zusammenfassen. |
+| [Control/ActionGeneration](sources/SpineML/Control/ActionGeneration) | Technisch mögliche Aktionen einschließlich Pick-Priorität erzeugen. |
 | [Control/RandomPolicy](sources/SpineML/Control/RandomPolicy) | Ohne Aktionsscores zufällig unter den angebotenen Nicht-Warteaktionen wählen. |
 | [Control/HeuristicPolicy](sources/SpineML/Control/HeuristicPolicy) | Einzelne Kandidaten mit lokalen Gewichten bewerten und daraus heuristisch auswählen. |
-| [Control/HeuristicPolicy/WeightOptimization](sources/SpineML/Control/HeuristicPolicy/WeightOptimization) | Lokale Heuristikgewichte durch wiederholte Simulationsläufe und deren globale Kosten vergleichen. |
-| [SimulationExecution](sources/SpineML/SimulationExecution) | Modelle laden sowie vollständige Läufe mit übergebenen Policies direkt oder im Prozesspool ausführen. |
-| [Control/RLPolicy](sources/SpineML/Control/RLPolicy) | Gymnasium-Umgebung, maskierte neuronale Kandidatenauswahl, Trainingskonfiguration und Einsatz gespeicherter NN-Policies bereitstellen. |
+| [Control/HeuristicPolicy/WeightOptimization](sources/SpineML/Control/HeuristicPolicy/WeightOptimization) | Lokale Gewichtssätze durch Simulationsläufe vergleichen und verbessern. |
+| [SimulationExecution](sources/SpineML/SimulationExecution) | Modelle laden und Simulationen einzeln oder parallel ausführen. |
+| [Control/RLPolicy](sources/SpineML/Control/RLPolicy) | Neuronale Aktionsauswahl, RL-Umgebung und gespeicherte Modelle bereitstellen. |
 
-[SimulationRunner.run_policy(policy, seed)](sources/SpineML/SimulationExecution/SimulationRunner.py)
-erhält eine fertige Policy.
-[ParallelSimulationRunner.run_many(...)](sources/SpineML/SimulationExecution/ParallelSimulationRunner.py)
-erhält `SimulationRunRequest`-Aufträge mit einer Policy-Factory und einem Seed;
-die Factory erzeugt pro Lauf eine frische Policy. Beide Ausführungswege kennen
-keine bestimmten Heuristikgewichte oder RL-Lernverfahren.
+- **Ein Lauf:** `SimulationRunner.run_policy(policy, seed)` startet eine
+  Simulation mit einer fertigen Policy.
+- **Mehrere Läufe:** `ParallelSimulationRunner.run_many(...)` erhält Aufträge
+  mit einer Policy-Factory und einem Seed. Die Factory erstellt pro Lauf eine
+  neue Policy; für die Heuristik ist das `HeuristicPolicyFactory(weights)`.
+- **Zwei Arten von Gewichten:** `HeuristicWeights` bestimmen lokale
+  Aktionsscores. `GlobalSimulationWeights` bestimmen die Bewertung eines
+  ganzen Produktionslaufs. Diese globale Bewertung wird auch für RL verwendet.
 
-Für die Heuristik erstellt
-[HeuristicPolicyFactory(weights)(seed)](sources/SpineML/Control/HeuristicPolicy/HeuristicPolicyFactory.py)
-eine solche Policy. Die lokalen `HeuristicWeights` steuern deren
-Aktionsscores. Davon getrennt legen `GlobalSimulationWeights` fest, wie
-Zeit- und Qualitätskennzahlen des gesamten Laufs in die globale Kostenbewertung
-eingehen. Diese globale Bewertung wird auch vom RL-Reward verwendet.
-
-Policy-Klassen werden aus ihrem zuständigen Unterpaket importiert, nicht aus
-dem Sammelpaket `Control`.
+Policy-Klassen werden aus ihrem jeweiligen Unterpaket importiert.
 
 ## Installation und Start
 
 ### Installation
 
-- **Voraussetzung:** Python ab Version `3.10`.
-- **Installation:** Die folgenden Befehle legen eine virtuelle Umgebung an
-  und installieren das Projekt. Beispiel für PowerShell:
+Python ab Version `3.10` installieren. Danach im Terminal, hier PowerShell:
 
 ```powershell
 git clone --branch Foroogh --single-branch https://github.com/ghackenberg/SpineML.git
@@ -134,14 +125,11 @@ python -m venv .venv
 python -m pip install -e .
 ```
 
-- **Projekt und Abhängigkeiten installieren:** `pip install -e .` verwendet
-  die [pyproject.toml](pyproject.toml). Der Punkt bezeichnet den aktuellen
-  Projektordner. Eine zusätzliche Installation von
-  [sources/requirements.txt](sources/requirements.txt) ist nicht erforderlich.
-- **Interpreter auswählen:** In VS Code wird die Python-Umgebung `.venv`
-  verwendet.
-- **Ausführungsordner:** Die folgenden Startbefehle werden aus dem
-  Projektordner ausgeführt, in dem `pyproject.toml` liegt.
+`pip install -e .` installiert das Projekt samt Abhängigkeiten aus
+[pyproject.toml](pyproject.toml). `requirements.txt` muss nicht zusätzlich
+installiert werden. In VS Code die Umgebung `.venv` auswählen.
+
+Alle folgenden Befehle im Projektordner ausführen.
 
 ### Normale Simulation
 
@@ -149,10 +137,9 @@ python -m pip install -e .
 python sources/examples/normal/example-5.py
 ```
 
-- **Konfiguration laden:** Die Beispieldatei definiert Fabrik und Aufträge.
-- **Simulation ausführen:** Sie startet `simulate(layout, scenario, ...)`.
-  Bei aktivierter Animation wird der Ablauf mit Salabim dargestellt;
-  danach werden Statistiken ausgegeben.
+Die Beispieldatei definiert Fabrik und Aufträge und startet
+`simulate(layout, scenario, ...)`. Bei aktivierter Animation wird die
+Produktion dargestellt; anschließend werden Statistiken ausgegeben.
 
 ### Optimierung mit Webinterface
 
@@ -160,17 +147,14 @@ python sources/examples/normal/example-5.py
 python -m streamlit run sources/apps/heuristic_optimization_app.py
 ```
 
-- **Optimierung ausführen:** Im Browser unter **Execution mode** die Option
-  **Parallel (process pool)** auswählen und auf **Start optimization** klicken.
-  Dadurch startet der Vergleich verschiedener Gewichtssätze.
-- **Produktionsbeispiel:** Verwendet wird `example-5.py`.
-- **Weitere Einstellungen und Ergebnisse:** Modellwahl und Diagramme sind
-  unter [Optimierung starten](#optimierung-starten) erklärt.
+Im Browser **Parallel (process pool)** wählen und auf **Start optimization**
+klicken. Die Anwendung vergleicht Gewichtssätze für `example-5.py`.
+Modellwahl und Ergebnisse stehen unter
+[Optimierung starten](#optimierung-starten).
 
 ### Rechenzeit und Parallelisierung vergleichen
 
-Die Messbefehle, gemessenen Beschleunigungen und der Vergleich zwischen
-sequenzieller und paralleler Ausführung stehen gesammelt unter
+Messbefehle und Ergebnisse stehen unter
 [Parallele Optimierung mit mehreren CPU-Prozessen](#parallele-optimierung-mit-mehreren-cpu-prozessen).
 
 ## Fabrikkonfiguration
@@ -190,10 +174,9 @@ Professorenstand `origin/main`. Die Konfigurationsklassen liegen unter
 
 ### `Machine.py`
 
-**Aufgabe:** Eine konkrete Maschine mit Puffern, Werkzeugausstattung,
-Geschwindigkeit und Qualitätsrisiko konfigurieren. Name, `MachineType`,
-Korridor und Korridorseite waren bereits vorhanden; der Maschinentyp legt
-die grundsätzlich möglichen Operationen fest.
+**Aufgabe:** Puffer, Werkzeuge, Geschwindigkeit und Qualitätsrisiko einer
+Maschine konfigurieren. Name, `MachineType`, Korridor und Korridorseite
+waren bereits vorhanden.
 
 #### Defektwahrscheinlichkeit
 
@@ -201,14 +184,14 @@ Die Defektwahrscheinlichkeit gehört jetzt zur konkreten Maschine.
 In `origin/main` wurde sie nur an `OperationType` gespeichert; der
 Simulationskern führte damit noch keine Qualitätsprüfung aus.
 
-- **Direkt angeben:** Bei `defect_probability=0.05` wird nach jeder
-  Bearbeitung mit fünf Prozent Wahrscheinlichkeit ein Defektschweregrad
-  gezogen. Der Wert muss zwischen `0` und `1` liegen und bleibt unabhängig
-  vom Seed gleich. Ob dieser Defekt als relevant gilt, beschreibt die
+- **Direkt angeben:** `defect_probability=0.05` bedeutet: Nach jeder
+  Bearbeitung wird mit fünf Prozent Wahrscheinlichkeit ein Schweregrad
+  gezogen. Der vorgegebene Wert liegt zwischen `0` und `1` und ist unabhängig
+  vom Seed. Welche Defekte gespeichert werden, erklärt die
   [Defektprüfung](#defektprüfung-und-recovery).
-- **Weglassen oder `None` angeben:** `Machine.resolve_defect_probability(seed)`
-  erzeugt beim Aufbau der `SimMachine` einen gleichverteilten Zufallswert in
-  `[0, 1)`. Derselbe Seed liefert für dieselbe Maschine denselben Wert.
+- **Automatisch erzeugen:** Ohne Angabe oder bei `None` erzeugt
+  `Machine.resolve_defect_probability(seed)` einen Zufallswert in `[0, 1)`.
+  Derselbe Seed liefert für dieselbe Maschine denselben Wert.
 
 Ohne direkte Angabe genügt beispielsweise:
 
@@ -216,18 +199,11 @@ Ohne direkte Angabe genügt beispielsweise:
 Machine("CNC automatisch", cnc_type, corridor, True, 10, 10)
 ```
 
-- **Im Lauf verwenden:** `SimMachine` übernimmt den Wert als
-  `self.defect_probability`. Er bleibt während des gesamten Laufs gleich
-  und gilt für alle Bearbeitungen dieser Maschine.
-- **Maschinen unterscheiden:** Auch Maschinen desselben `MachineType`
-  können unterschiedliche Defektwahrscheinlichkeiten haben.
-- **Seed berücksichtigen:** Ein anderer Seed kann einen anderen automatisch
-  erzeugten Wert liefern. Ein ausdrücklich angegebener Wert bleibt gleich.
-- **Konfiguration und Beobachtung unterscheiden:** `None` kennzeichnet in
-  der Konfiguration die automatische Auswahl. Die Laufzeitbeobachtung
-  enthält unter `defect_probability` den tatsächlich verwendeten Zahlenwert.
-- **Operation konfigurieren:** Das frühere Argument `defect_probability`
-  entfällt im Konstruktor von `OperationType`:
+`SimMachine` verwendet diesen Wert für alle Bearbeitungen des Laufs. Auch
+Maschinen desselben Typs können unterschiedliche Werte haben. Die Policy
+sieht im Lauf den verwendeten Zahlenwert, nicht die Vorgabe `None`.
+
+Bei `OperationType` entfällt das frühere Argument `defect_probability`:
 
 ```python
 OperationType("Fräsen", 4, 3, cnc_type, milling_tool, blank, finished)
@@ -235,12 +211,10 @@ OperationType("Fräsen", 4, 3, cnc_type, milling_tool, blank, finished)
 
 #### Getrennte Maschinenpuffer
 
-- **Eingangspuffer begrenzen:** `input_storage_capacity` legt seine
-  maximale Anzahl aufnehmbarer Jobs fest.
-- **Ausgangspuffer begrenzen:** `output_storage_capacity` legt dessen
-  maximale Anzahl aufnehmbarer Jobs fest.
-- **Unterschiedliche Werte erlauben:** Beide Kapazitäten werden getrennt
-  angegeben und müssen nicht gleich sein.
+- `input_storage_capacity`: maximale Jobzahl im Eingangspuffer.
+- `output_storage_capacity`: maximale Jobzahl im Ausgangspuffer.
+
+Beide Kapazitäten werden unabhängig voneinander angegeben.
 
 #### Erlaubte Werkzeugtypen
 
@@ -278,127 +252,95 @@ OperationType("Fräsen", 4, 3, cnc_type, milling_tool, blank, finished)
 
 ## Diskrete Simulation
 
-**Aufgabe:** Produktionsentscheidungen zeitlich ausführen und ihre Folgen
-an Werkstücken, Maschinen und Robotern abbilden. Der Kern liegt unter
+**Aufgabe:** Gewählte Aktionen ausführen und ihre Folgen an Jobs, Maschinen
+und Robotern abbilden. Der Kern liegt unter
 [sources/SpineML/Simulation](sources/SpineML/Simulation).
 
-- **Vorhandene Grundlage:** Salabim bildet die zeitlichen Abläufe ab.
-  Jobs, Maschinen und Roboter besitzen jeweils einen eigenen Simulationsprozess.
-- **Erweiterter Austausch:** Die Komponenten melden Zustände an die
-  `SimulationBridge` aus
-  [SimulationInterface](sources/SpineML/SimulationInterface), empfangen die
-  von der Policy ausgewählten Aktionen und führen sie aus. Die folgenden
-  Erweiterungen beziehen sich ebenfalls auf `origin/main`.
+- **Grundlage:** Jobs, Maschinen und Roboter haben eigene Salabim-Prozesse.
+- **Erweiterung gegenüber `origin/main`:** Sie melden Zustände an die
+  [SimulationBridge](#simulationbridge), empfangen die gewählten Aktionen
+  und führen sie aus.
 
 ### `SimLayout.py`
 
 **Aufgabe:** Startlager, Endlager, Korridore und Main-Roboter aufbauen.
-Dieser Aufbau war bereits vorhanden. Ein Store ist ein Salabim-Puffer
-für Jobs.
+Ein Store ist ein Salabim-Puffer für Jobs.
 
 **Erweiterungen:**
 
-- **Start- und Endlager begrenzen:** Beide Stores verwenden jetzt
-  `layout.storage_capacity` als maximale Anzahl aufnehmbarer Jobs.
-- **Bezugsgrößen für die Bearbeitungsdauer bestimmen:** Ausgehend von den
-  Zielprodukttypen der Aufträge werden über die erzeugenden Operationen
-  auch alle vorgeschalteten Roh- und Zwischenprodukttypen gesammelt. Aus
-  diesen Produkttypen werden das maximale Gewicht (`max_product_weight`)
-  und Volumen (`max_product_volume`) ermittelt. Die Werte werden über die
-  Korridore und Korridorarme an die Maschinen weitergegeben und dienen der
+- **Lager begrenzen:** Start- und Endlager verwenden jeweils
+  `layout.storage_capacity`.
+- **Produktgrößen ermitteln:** Für die Auftragsziele und alle vorgeschalteten
+  Roh- und Zwischenprodukte werden das größte Gewicht (`max_product_weight`)
+  und Volumen (`max_product_volume`) bestimmt. Die Maschinen erhalten diese
+  Werte für die
   [Berechnung der größenabhängigen Bearbeitungsdauer](#verarbeitungsdauer).
-- **Nur relevante Produkttypen erfassen:** Nicht verbundene Produkttypen
-  beeinflussen die Maxima nicht. Bereits erfasste Typen werden übersprungen,
-  damit zyklische Produktbeziehungen die Sammlung nicht endlos wiederholen.
-- **Bridge weitergeben:** Beim Erzeugen der `SimCorridor`-Komponenten und
-  des `SimRobotMain` wird dieselbe `SimulationBridge` übergeben, damit diese
-  Komponenten mit der Steuerung verbunden sind.
+- **Doppelte Produkttypen überspringen:** Das verhindert Endlosschleifen
+  bei zyklischen Herstellungswegen. Nicht verbundene Produkttypen zählen nicht.
+- **Bridge weitergeben:** Korridore und Main-Roboter erhalten dieselbe Bridge.
 
 ### `SimCorridor.py`
 
-**Aufgabe:** Die drei Korridor-Stores sowie den linken und rechten
-Korridorarm erzeugen. Dieser Aufbau war bereits vorhanden.
+**Aufgabe:** Drei Korridor-Stores und beide Korridorarme erzeugen.
 
 **Erweiterungen:**
 
-- **Korridorlager begrenzen:** Die drei Stores verwenden jetzt jeweils
-  das bereits vorhandene `corridor.storage_capacity` als maximale Anzahl
-  aufnehmbarer Jobs.
-- **Korridor und Stores registrieren:** `bridge.register_corridor()` meldet
-  den Korridor zusammen mit seinen drei Stores bei der `SimulationBridge` an.
-- **Bridge und Produktgrößen weitergeben:** Beide `SimCorridorArm`-Komponenten
-  erhalten dieselbe Bridge sowie `max_product_weight` und
-  `max_product_volume`. `SimCorridor` berechnet diese Größen nicht selbst.
+- **Kapazitäten setzen:** Jeder der drei Stores verwendet
+  `corridor.storage_capacity`.
+- **Registrieren:** `bridge.register_corridor()` meldet Korridor und Stores an.
+- **Daten weitergeben:** Beide Arme erhalten Bridge, `max_product_weight`
+  und `max_product_volume`. Der Korridor berechnet diese Größen nicht selbst.
 
 ### `SimCorridorArm.py`
 
-**Aufgabe:** Die Maschinen und den Korridorroboter einer Korridorseite
-erzeugen. Dieser Aufbau war bereits vorhanden; ein Roboter wird nur für
-eine Seite mit mindestens einer Maschine erzeugt.
+**Aufgabe:** Maschinen und Roboter einer Korridorseite erzeugen.
+Ohne Maschine wird auf dieser Seite kein Roboter erzeugt.
 
 **Erweiterungen:**
 
-- **Bridge weitergeben:** Die erzeugten `SimMachine`-Komponenten und der
-  `SimRobotCorridorArm` erhalten die `SimulationBridge` für den Austausch mit
-  der Steuerung.
-- **Produktgrößen an die Maschinen weitergeben:** Jede `SimMachine` erhält
-  `max_product_weight` und `max_product_volume` für die
+- **Bridge weitergeben:** Maschinen und Roboter erhalten dieselbe Bridge.
+- **Produktgrößen weitergeben:** Jede Maschine erhält `max_product_weight`
+  und `max_product_volume` für die
   [Berechnung ihrer Bearbeitungsdauer](#verarbeitungsdauer).
 
 ### `SimOrder.py`
 
-**Aufgabe:** Für jedes bestellte Produktstück eine eigene `SimOrderJob`-
-Komponente erzeugen. Die Anzahl ergibt sich aus `order.quantity`; diese
-Job-Erzeugung war bereits vorhanden.
+**Aufgabe:** `order.quantity` einzelne `SimOrderJob`-Komponenten erzeugen.
 
 **Erweiterung:**
 
-- **Bridge an die Jobs weitergeben:** Jeder erzeugte Job erhält die
-  `SimulationBridge`, damit er Aktionen von der Steuerung anfordern kann.
+- **Bridge weitergeben:** Jeder Job erhält die Verbindung zur Steuerung.
 
 ### `SimOrderJob.py`
 
-**Aufgabe:** Den Zustand und die empfangenen Aktionen eines einzelnen
-Werkstücks verwalten. In `origin/main` wurden seine
-vollständige Operationsfolge und Maschinenroute bei der Erzeugung zufällig
-ausgewählt. Der Job wurde anschließend direkt im Startlager abgelegt.
+**Aufgabe:** Die Daten eines Werkstücks speichern und seine Aktionen ausführen.
+In `origin/main` wurden Route und Operationen bei der Erzeugung zufällig
+festgelegt und der Job direkt ins Startlager gelegt. Jetzt entscheidet die Policy.
 
 **Erweiterungen:**
 
-- **Job bei der Bridge registrieren:** Jeder Job meldet sich selbst unter
-  einer ID aus Auftragsname und Jobnummer an.
-- **Aktionen von der Steuerung empfangen:** Der Job fordert über
-  `bridge.request_action(self)` eine Aktion an und empfängt sie über
-  `bridge.action(self)`. Er legt seine Route nicht mehr selbst zufällig fest.
-- **Freigabe ausführen:** `release_job` übergibt den Startprodukttyp und die
-  Freigabedaten. Der Job wartet gegebenenfalls bis zum übergebenen
-  Freigabezeitpunkt und legt sich im angegebenen Startlager ab.
-- **Nächste Verarbeitung speichern:** `selected_operation` und
-  `selected_machine` enthalten die von der Steuerung ausgewählte nächste
-  Operation und Maschine.
-- **Zustände getrennt verwalten:** Produktzustand, Qualität und Terminstatus
-  werden getrennt gespeichert. Zusätzlich werden Freigabe, Standort,
-  Priorität und Abschlusszeit festgehalten.
-- **Defektbehandlung ausführen:** Der Job übernimmt die gewählte Nacharbeit
-  auf derselben oder einer alternativen Maschine, Herabstufung oder
-  Ausschussentscheidung. Er speichert Defektdaten, Strategie und Zähler;
-  die Strategieauswahl erfolgt in der Steuerung.
-- **Warten und Abschluss ausführen:** `wait_job` lässt den Job eine
-  Simulationszeiteinheit warten. Eine Abschlussaktion mit
-  `finish_process=True` beendet seinen Prozess.
+- **Registrieren:** Die ID besteht aus Auftragsname und Jobnummer.
+- **Aktionen empfangen:** `bridge.request_action(self)` fordert eine Aktion
+  an; `bridge.action(self)` empfängt sie.
+- **Freigeben:** `release_job` liefert Startprodukttyp, Startlager und
+  Freigabezeit. Der Job wartet bis zu dieser Zeit und legt sich dort ab.
+- **Auswahl speichern:** `selected_operation` und `selected_machine`
+  enthalten die nächste von der Steuerung gewählte Bearbeitung.
+- **Zustände speichern:** Produktzustand, Qualität, Terminstatus, Freigabe,
+  Standort, Priorität und Abschlusszeit werden getrennt verwaltet.
+- **Defektstrategie ausführen:** Nacharbeit, Herabstufung oder Ausschuss
+  übernehmen und Defektdaten sowie Zähler speichern.
+- **Warten oder abschließen:** `wait_job` wartet eine Simulationszeiteinheit;
+  `finish_process=True` beendet den Jobprozess.
 
 <a id="herkunft-und-aktualisierung-der-jobattribute"></a>
 
 #### Wie Steuerung und Simulation die Jobdaten ändern
 
-- **Die Steuerung entscheidet:** Welche Operation soll auf welcher Maschine
-  ausgeführt werden? Soll ein defekter Job nachgearbeitet oder herabgestuft
-  werden?
-- **Die Simulation führt aus:** Roboter transportieren den Job, Maschinen
-  bearbeiten ihn. Dabei werden seine gespeicherten Daten aktualisiert.
-- **Der Job setzt eigene Aktionen um:** Er führt Freigabe, Warten,
-  Defektstrategie und Abschluss aus. Die Auswahl dieser Aktionen trifft
-  die Policy, nicht der Job.
+- **Steuerung:** Wählt Operation, Maschine und Defektstrategie.
+- **Simulation:** Führt Transport und Bearbeitung aus und aktualisiert Jobdaten.
+- **Jobprozess:** Führt Freigabe, Warten, Defektstrategie und Abschluss aus.
+  Er trifft keine eigenen Steuerungsentscheidungen.
 
 **Beispiel aus `example-5.py`:** Die Steuerung wählt die Operation
 `Rough blank A` (Schruppen) auf der Maschine `Near basic`. Aus dem Rohteil
@@ -432,28 +374,16 @@ flowchart TD
     class D,E maschine
 ```
 
-- **Warum wird die Auswahl gelöscht?** Diese Bearbeitung ist erledigt.
-  `None` bedeutet, dass noch keine nächste Operation und Maschine gewählt
-  sind. Die Steuerung kann nun die nächste Verarbeitung auswählen.
-- **Was wird als Auswahl gespeichert?** `selected_operation` und
-  `selected_machine` verweisen auf die gewählten Objekte. Im Diagramm
-  stehen zur besseren Lesbarkeit ihre Namen.
-- **Warum ändern beide Seiten Jobdaten?** Die Steuerung liefert zum Beispiel
-  die Maschinenauswahl; die Simulation speichert diese Auswahl und setzt sie
-  nach der Bearbeitung zurück. Das sind unterschiedliche Aufgaben.
+- **Auswahl zurücksetzen:** Nach der Bearbeitung bedeuten die beiden
+  `None`-Werte: Die nächste Operation und Maschine sind noch nicht gewählt.
+- **Objekte speichern:** `selected_operation` und `selected_machine`
+  enthalten Objekte. Das Diagramm zeigt deren Namen.
 
 #### Laufzeitstatus eines `SimOrderJob`
 
-Die folgenden Tabellen enthalten alle 29 eigenen Attribute aus dem
-Konstruktor. Sie erklären Bedeutung, Anfangswerte und Änderungen im
-Produktionsablauf mit den vorhandenen Steuerungen.
-
-- **Gespeicherte Werte:** `processing_state`, `general_state` und
-  `due_state` sind Salabim-`State`-Objekte. In den Tabellen stehen die
-  darin gespeicherten Werte, die über `.get()` gelesen werden.
-- **Entscheidung und Eintragen unterscheiden:** Die Steuerung liefert ihre
-  Auswahl über Aktionen. Die ausführende Simulationskomponente trägt diese
-  Werte am Job ein. Ergebnisse wie Defekte entstehen in der Simulation.
+Die Tabellen zeigen alle 29 eigenen Konstruktorattribute mit Startwerten
+und Änderungen. Bei `processing_state`, `general_state` und `due_state`
+ist der Inhalt des Salabim-`State`-Objekts angegeben; `.get()` liest ihn.
 
 ##### Beim Erzeugen des Jobs
 
@@ -472,40 +402,33 @@ Produktionsablauf mit den vorhandenen Steuerungen.
 
 | Attribut | Startwert | Bedeutung | Wer ändert den Wert und wann? |
 | --- | --- | --- | --- |
-| `released` | `False` | Eine Freigabeaktion wurde übernommen. | Der Job übernimmt `True` aus `release_job`, bevor er gegebenenfalls bis zur Freigabezeit wartet und sich im Startlager ablegt. `True` bedeutet daher nicht, dass die Ablage bereits erfolgt ist. |
-| `queue_priority` | `0.0` | Termindruck-Teilwert für die heuristische Pick-Bewertung; zusätzlich Sortierwert des Jobs im Store. | Der gemeinsame [ActionGenerator](sources/SpineML/Control/ActionGeneration/ActionGenerator.py) trägt ihn aus Deadline und aktueller Zeit direkt in jeden Pick-Payload ein. Beim ausgewählten Pick speichern Roboter oder Maschine den Wert am Job. Die `RandomPolicy` ersetzt den Wert in ihrer ausgewählten Aktion durch `0.0`. |
-| `location` | `"start_storage"` | Zuletzt am Job gespeicherte Ortskennung, keine laufend berechnete Roboterposition. | Der Job schreibt den Store-Namen nach seiner Ablage; Roboter und Maschine schreiben bei ihren vorgesehenen Pick- und Place-Schritten Lade- oder Store-Kennungen. Die aktuelle Einschränkung steht direkt unter der Tabelle. |
-| `completed_time` | `None` | Gespeicherter Abschlusszeitpunkt für Terminbewertung und Makespan. | `SimRobotMain` ruft `job.mark_finished()` nach dem Absenken zum Endlager auf: vor der letzten Einlagerungszeit und vor `to_store()`. Der Wert ist deshalb nicht der Zeitpunkt der tatsächlichen Endlagerablage. |
-| `due_state` | `None` | Abschließende Terminbewertung, keine laufende Anzeige des Termindrucks. | Sobald `completed_time` vorliegt, erzeugt die Steuerung `complete_job`: `"late"` bei `completed_time > latest_end_time`, sonst `"on-time"`. Der Job übernimmt diesen Wert; genau bei der Deadline gilt der Job als pünktlich. |
-| `process_finished` | `False` | Der eigene Simulationsprozess dieses Jobs ist beendet. | Bei der Abschlussaktion mit `finish_process=True` setzt der Job das Flag auf `True` und verlässt seine Prozessschleife. Der `SimCompletionWatcher` prüft dieses Flag für alle Jobs. |
+| `released` | `False` | Freigabeaktion übernommen. | `release_job` setzt `True`, bevor der Job bis zur Freigabezeit wartet und ins Startlager gelangt. |
+| `queue_priority` | `0.0` | Pick-Teilwert und Sortierwert im Store. | Der [Generator](#berechnung-der-pick-priorität) berechnet den Wert für jeden Pick. Roboter oder Maschine speichern ihn bei der Ausführung. Die Zufallspolicy setzt ihn auf `0.0`. |
+| `location` | `"start_storage"` | Zuletzt gespeicherte Ortskennung. | Job, Roboter und Maschine aktualisieren sie bei vorgesehenen Ablage- und Aufnahmeschritten; Einschränkungen siehe unten. |
+| `completed_time` | `None` | Abschlusszeit für Terminbewertung und Makespan. | `SimRobotMain` ruft `mark_finished()` nach dem Absenken zum Endlager auf, noch vor der letzten Einlagerungszeit und `to_store()`. |
+| `due_state` | `None` | Abschließender Terminstatus. | `complete_job` liefert `"late"` bei `completed_time > latest_end_time`, sonst `"on-time"`. Genau an der Deadline gilt der Job als pünktlich. |
+| `process_finished` | `False` | Jobprozess beendet. | Eine Abschlussaktion mit `finish_process=True` setzt das Flag. Der `SimCompletionWatcher` prüft es. |
 
-- **Pick-Auswahl:** Die Heuristik vergleicht vollständige Aktionsscores;
-  `queue_priority` ist dabei nur ein Teilwert. RL- und Zufallspolicy wählen
-  nach ihren eigenen Regeln. Die Simulation entnimmt immer genau den
-  ausgewählten Job, nicht automatisch den ersten Job im Store.
-- **Store-Sortierung:** Beim späteren Ablegen wird der gespeicherte Wert
-  an `to_store(..., priority=job.queue_priority)` übergeben. Er beeinflusst
-  die Position des Jobs im Store, nicht die zeitliche Reihenfolge der
-  Ablageaktionen. Kleinere Prioritätswerte stehen im Store weiter vorn;
-  zwischen Picks wird der Wert nicht automatisch neu berechnet.
-- **Grenze von `location`:** Der Anfangswert `"start_storage"` wird schon
-  vor der tatsächlichen Freigabe gesetzt. Außerdem aktualisiert
-  `SimRobotCorridorArm` den Wert beim Pick aus einem Maschinenausgangspuffer
-  derzeit nicht. Bis zur nächsten Ablage kann deshalb noch die vorherige
-  Store-Kennung stehen. Das Attribut ist somit keine lückenlose Ortserfassung.
+- **Pick-Auswahl:** Entnommen wird genau der von der Policy ausgewählte Job.
+  Die Heuristik verwendet `queue_priority` als einen ihrer Teilwerte.
+- **Store-Sortierung:** `to_store(..., priority=job.queue_priority)` ordnet
+  kleinere Werte weiter vorn ein. Das bestimmt nicht die Reihenfolge der
+  Ablageaktionen. Zwischen Picks wird der gespeicherte Wert nicht neu berechnet.
+- **Grenze von `location`:** Der Anfangswert gilt schon vor der Freigabe.
+  Beim Pick aus dem Maschinenausgang aktualisiert `SimRobotCorridorArm`
+  ihn nicht; bis zur nächsten Ablage kann die vorige Store-Kennung stehen.
 
 ##### Produktzustand und nächste Verarbeitung
 
 | Attribut | Startwert | Bedeutung | Wer ändert den Wert und wann? |
 | --- | --- | --- | --- |
-| `processing_state` | `"unconfigured"` | Name des aktuellen Produkttyps, etwa `"Blank A"` oder `"Base body"`. | Der Job übernimmt den Startprodukttyp aus `release_job`. Nach erfolgreicher Bearbeitung setzt `SimMachine` den Ausgangsprodukttyp der Operation. Bei einem Defekt bleibt der bisherige Produkttyp zunächst erhalten. |
-| `selected_operation` | `None` | Das ausgewählte `OperationType`-Objekt für die nächste Bearbeitung, nicht nur dessen Name. | Die Steuerung wählt eine Aktion mit dieser Operation. Je nach Aktion übernehmen Job oder Roboter die Auswahl aus dem Payload. |
-| `selected_machine` | `None` | Das ausgewählte konfigurierte `Machine`-Objekt als Bearbeitungs- und Transportziel. | Die Steuerung wählt eine Aktion mit dieser Maschine. Je nach Aktion übernehmen Job oder Roboter die Auswahl aus dem Payload. |
+| `processing_state` | `"unconfigured"` | Aktueller Produkttyp, etwa `"Blank A"`. | `release_job` setzt den Startprodukttyp. Nach Erfolg setzt die Maschine den Ausgangsprodukttyp der Operation; bei Defekt bleibt der bisherige Typ erhalten. |
+| `selected_operation` | `None` | Gewähltes `OperationType`-Objekt. | Job oder Roboter übernehmen die Auswahl aus der Aktion der Steuerung. |
+| `selected_machine` | `None` | Gewähltes `Machine`-Objekt als Bearbeitungsziel. | Job oder Roboter übernehmen die Auswahl aus der Aktion der Steuerung. |
 
-- **Auswahl zurücksetzen:** `SimMachine` setzt beide Auswahlfelder nach
-  jeder Bearbeitung auf `None`, auch bei einem Defekt. Zusätzlich löschen
-  Herabstufungs- und Ausschussaktionen die Auswahl; der Main-Roboter löscht
-  sie ebenfalls beim Transport zum Endlager.
+- **Auswahl zurücksetzen:** Nach jeder Bearbeitung setzt die Maschine beide
+  Auswahlfelder auf `None`. Herabstufung, Ausschuss und der Transport zum
+  Endlager löschen die Auswahl ebenfalls.
 - **Produktzustand bei Defektaktionen:** Nacharbeit setzt
   `processing_state` auf `defect_product_state_before`. Herabstufung setzt
   ihn auf `defect_product_state_target`. Eine Ausschussaktion ändert den
@@ -515,9 +438,9 @@ Produktionsablauf mit den vorhandenen Steuerungen.
 
 | Attribut | Startwert | Bedeutung | Wer ändert den Wert und wann? |
 | --- | --- | --- | --- |
-| `general_state` | `"intact"` | Qualitätsstatus: `"intact"`, `"defect"` oder `"scrap"`. | Die Maschine setzt nach erfolgreicher Bearbeitung `"intact"`; `job.mark_defective()` setzt `"defect"`. Der Job übernimmt aus einer Herabstufungsaktion `"intact"` und aus einer Ausschussaktion `"scrap"`. |
-| `downgraded` | `False` | Der Job wurde als qualitativ herabgestuft akzeptiert. Er erhält keine weitere normale Bearbeitung und wird zum Endlager gebracht. | Der Job übernimmt `True` aus der von der Steuerung gewählten Aktion `downgrade_product`. |
-| `downgrade_product_type` | `None` | Das bei der Herabstufung übernommene `ProductType`-Objekt; es kann ein Zwischenprodukt sein. | Die Steuerung übergibt die Typ-ID des vorgesehenen Ergebnisses der fehlerhaften Operation. Die Bridge löst sie zum Objekt auf; der Job speichert es beim Ausführen von `downgrade_product`. |
+| `general_state` | `"intact"` | Qualität: `"intact"`, `"defect"` oder `"scrap"`. | Erfolg oder Herabstufung setzen `"intact"`, `mark_defective()` setzt `"defect"`, Ausschuss setzt `"scrap"`. |
+| `downgraded` | `False` | Herabgestuft statt normal weiterbearbeitet. | `downgrade_product` setzt `True`. Danach wird der Job zum Endlager transportiert. |
+| `downgrade_product_type` | `None` | Übernommenes `ProductType`-Objekt, gegebenenfalls ein Zwischenprodukt. | Die Aktion liefert die Typ-ID des vorgesehenen Operationsergebnisses. Die Bridge löst sie auf; der Job speichert das Objekt. |
 
 - **Nacharbeit ist noch kein intaktes Ergebnis:** Bei ihrer Auswahl bleibt
   `general_state="defect"`. Erst eine erfolgreiche Nachbearbeitung setzt
@@ -529,38 +452,31 @@ Produktionsablauf mit den vorhandenen Steuerungen.
 
 ##### Defektdaten und Nacharbeit
 
-- **Defekt erkennen:** Nach der Bearbeitung prüft `SimMachine`, ob ein
-  relevanter Defekt vorliegt. Ab Schweregrad `0.001` ruft sie
-  `job.mark_defective()` auf und übergibt die Defektdaten.
-- **Reaktion auswählen:** Der [ActionGenerator](#actiongenerator) erzeugt
-  die möglichen Defektaktionen. Die Steuerung wählt eine davon; der Job
-  führt sie aus.
-- **Letzten Defekt speichern:** Die sechs `defect_...`-Angaben zu Zeitpunkt,
-  Operation, Maschine, Produktzuständen und Schweregrad beschreiben den
-  letzten erkannten Defekt. Ein neuer Defekt überschreibt sie. Eine
-  erfolgreiche Nacharbeit, Herabstufung oder Ausschussaktion löscht sie nicht.
+- **Defekt erkennen:** Ab Schweregrad `0.001` speichert
+  `job.mark_defective()` die von der Maschine übergebenen Defektdaten.
+- **Reaktion auswählen:** Der [Generator](#actiongenerator) erzeugt die
+  Kandidaten, die Policy wählt und der Job führt die gewählte Strategie aus.
+- **Letzten Defekt behalten:** Neue Defekte überschreiben die sechs Angaben
+  zu Zeitpunkt, Operation, Maschine, Produktzuständen und Schweregrad.
+  Nacharbeit, Herabstufung und Ausschuss löschen sie nicht.
 
 | Attribut | Startwert | Bedeutung | Wer ändert den Wert und wann? |
 | --- | --- | --- | --- |
-| `defect_detected_time` | `None` | Simulationszeit des letzten erkannten Defekts. | `job.mark_defective()` speichert beim Aufruf durch die Maschine `env.now()`. |
-| `defect_operation` | `None` | Das `OperationType`-Objekt der fehlerhaften Operation. | Die Maschine übergibt es an `job.mark_defective()`. |
-| `defect_machine` | `None` | Das konfigurierte `Machine`-Objekt, auf dem der Defekt entstand. | Die Maschine übergibt ihre Konfiguration an `job.mark_defective()`. |
-| `defect_product_state_before` | `None` | Name des Eingangsprodukttyps der fehlerhaften Operation. | Die Maschine übergibt `operation.consumes_product_type.name`. Die Nacharbeitsaktion verwendet diesen Namen als Produktzustand. |
-| `defect_product_state_target` | `None` | Name des vorgesehenen Ausgangsprodukttyps dieser Operation; nicht automatisch das Auftragsziel. | Die Maschine übergibt `operation.produces_product_type.name`. Die Herabstufungsaktion verwendet diesen Namen als Produktzustand. |
-| `defect_severity` | `None` | Schweregrad des letzten erkannten Defekts. | Die Maschine erzeugt den Schweregrad bei ihrer Qualitätsprüfung und übergibt ihn ab `0.001` an `job.mark_defective()`. |
-| `defect_recovery_strategy` | `None` | Gewählte Reaktion: Nacharbeit auf derselben oder einer anderen Maschine, Herabstufung oder Ausschuss. | Job oder Main-Roboter übernehmen die von der Steuerung gewählte Strategie. Ein neuer Defekt setzt sie auf `None`; eine erfolgreiche Bearbeitung entfernt eine gespeicherte Nacharbeitsstrategie. |
-| `recovery_in_progress` | `False` | Eine gewählte Nacharbeit steht noch aus oder läuft. | Job oder Main-Roboter setzen `True`, wenn sie die Nacharbeit übernehmen. Nach der Maschinenoperation wird es wieder `False`, auch bei einem erneuten Defekt. |
-| `defect_count` | `0` | Gesamtzahl der bei diesem Job erkannten Defekte. | Jeder Aufruf von `job.mark_defective()` erhöht den Zähler um `1`. Derselbe Job kann mehrere Defekte haben. |
-| `rework_count` | `0` | Anzahl ausgewählter Nacharbeiten; keine Anzahl erfolgreich abgeschlossener Nachbearbeitungen. | Der Job zählt jede empfangene Nacharbeitsaktion. Der Main-Roboter zählt eine übernommene Nacharbeit nur, wenn zuvor noch keine Nacharbeitsstrategie gespeichert war. |
-| `scrap_count` | `0` | Anzahl empfangener Ausschussaktionen für diesen Job. | Bei jeder Aktion `job_scrap` erhöht der Job den Zähler um `1`. |
+| `defect_detected_time` | `None` | Zeitpunkt des letzten Defekts. | `mark_defective()` speichert `env.now()`. |
+| `defect_operation` | `None` | Fehlerhafte Operation als Objekt. | Die Maschine übergibt sie an `mark_defective()`. |
+| `defect_machine` | `None` | Verursachende konfigurierte Maschine. | Die Maschine übergibt sie an `mark_defective()`. |
+| `defect_product_state_before` | `None` | Eingangsprodukttyp der fehlerhaften Operation. | Die Maschine übergibt `operation.consumes_product_type.name`; Nacharbeit setzt diesen Produktzustand. |
+| `defect_product_state_target` | `None` | Vorgesehener Ausgangsprodukttyp der Operation. | Die Maschine übergibt `operation.produces_product_type.name`; Herabstufung setzt diesen Produktzustand. |
+| `defect_severity` | `None` | Schweregrad des letzten Defekts. | Die Maschine übergibt den gezogenen Wert ab `0.001`. |
+| `defect_recovery_strategy` | `None` | Nacharbeit, Herabstufung oder Ausschuss. | Job oder Main-Roboter speichern die gewählte Strategie. Ein neuer Defekt löscht sie; eine erfolgreiche Bearbeitung löscht eine Nacharbeitsstrategie. |
+| `recovery_in_progress` | `False` | Nacharbeit gewählt oder laufend. | Job oder Main-Roboter setzen `True`. Nach der Bearbeitung wird es wieder `False`, auch bei erneutem Defekt. |
+| `defect_count` | `0` | Anzahl erkannter Defekte dieses Jobs. | Jeder Aufruf von `mark_defective()` erhöht den Wert um `1`. |
+| `rework_count` | `0` | Anzahl gewählter, nicht zwingend erfolgreicher Nacharbeiten. | Der Job zählt jede Nacharbeitsaktion; der Main-Roboter zählt die Übernahme nur ohne bereits gespeicherte Nacharbeitsstrategie. |
+| `scrap_count` | `0` | Anzahl empfangener Ausschussaktionen. | Jede Aktion `job_scrap` erhöht den Wert um `1`. |
 
-- **Zufallsprüfung bei Nacharbeit:** `rework_count` geht in den Schlüssel
-  für die Qualitätszufallszahlen ein. Eine weitere Nacharbeit erhält damit
-  einen anderen Kontextschlüssel.
-- **Aktionsdaten direkt übernehmen:** `SimOrderJob.process()` kann die im
-  Code vorgesehenen Attributfelder auch direkt aus einem Aktions-Payload
-  übernehmen. Die Tabellen beschreiben, welche Komponenten sie im Ablauf
-  der vorhandenen Steuerungen liefern und aktualisieren.
+`rework_count` gehört zum Schlüssel der Qualitätszufallszahlen. Eine weitere
+Nacharbeit erhält dadurch einen anderen Schlüssel. `SimOrderJob.process()`
+übernimmt die vorgesehenen Attributfelder aus dem Aktions-Payload.
 
 #### UML-Zustandsdiagramm eines Jobs
 
@@ -591,142 +507,103 @@ stateDiagram-v2
 
 ### `SimRobot.py`
 
-**Aufgabe:** Gemeinsame Bewegungen in X, Y und Z sowie die
-Positionsdarstellung bereitstellen. Diese Grundlage war bereits vorhanden.
+**Aufgabe:** Gemeinsame Bewegungen in X, Y und Z bereitstellen.
 
 **Erweiterungen:**
 
-- **Genau den ausgewählten Job aufnehmen:**
-  `take_selected_job_from_store()` entnimmt den im Aktions-Payload angegebenen
-  Job.
-- **Geschwindigkeit schwanken lassen:** Jeder Aufruf von `move_x`, `move_y`
-  oder `move_z` zieht einen neuen Faktor zwischen `0.95` und `1.05`.
-  Die effektive Geschwindigkeit ist `Grundgeschwindigkeit × Zufallsfaktor`.
-- **Aktuelle Geschwindigkeit speichern:** `effective_movement_speed()`
-  speichert den Zufallsfaktor in `movement_speed_multiplier`. `move_x()`,
-  `move_y()` und `move_z()` speichern die effektive Geschwindigkeit in
-  `movement_speed`. Am Ende der Bewegung setzen sie diesen Wert auf `0.0`:
-  Der Roboter steht; seine Grundgeschwindigkeit bleibt unverändert.
+- **Job aufnehmen:** `take_selected_job_from_store()` entnimmt genau den
+  ausgewählten Job.
+- **Geschwindigkeit variieren:** Jede Achsenbewegung zieht einen Faktor von
+  `0.95` bis `1.05`: `Geschwindigkeit = Grundgeschwindigkeit × Faktor`.
+- **Bewegungsdaten speichern:** `movement_speed_multiplier` enthält den
+  Faktor, `movement_speed` die effektive Geschwindigkeit. Nach der Bewegung
+  wird diese auf `0.0` gesetzt; die Grundgeschwindigkeit bleibt gleich.
 
 ### `SimRobotMain.py`
 
-**Aufgabe:** Jobs zwischen Startlager, Korridoren und Endlager
-transportieren. Diese Transportaufgabe war bereits vorhanden.
+**Aufgabe:** Jobs zwischen Startlager, Korridoren und Endlager transportieren.
 
 **Erweiterungen:**
 
-- **Bei der Bridge registrieren:** Der Roboter meldet sich selbst zusammen
-  mit Start- und Endlager an.
-- **Aktionen statt festem Transportablauf ausführen:** Er fordert Aktionen
-  an und führt `pick_main_robot`, `place_main_robot` oder `wait_main_robot`
-  aus. Job, Transportziel sowie Ein- und Auslagerzeiten kommen aus dem
-  Aktions-Payload.
-- **Auswahl und Beladung speichern:** `current_job` enthält den geladenen
-  Job. Der Roboter übernimmt die von der Steuerung vorgegebene Priorität
-  sowie gegebenenfalls die nächste Operation und Maschine.
-- **Bewegungsgeschwindigkeit festlegen:** Die Grundgeschwindigkeit beträgt
-  jetzt `2.0`; die Schwankung pro Achsenbewegung berechnet `SimRobot`.
-- **Abschlusszeit erfassen:** Beim Transport zum Endlager ruft der Roboter
-  `job.mark_finished()` auf. Das geschieht nach dem Absenken, aber vor der
-  letzten Einlagerungszeit und dem tatsächlichen Ablegen im Endlager.
-- **Ablage melden:** Nach dem Ablegen aktualisiert er die betroffenen Daten
-  und benachrichtigt die Bridge mit `notify_state_change()`.
+- **Registrieren:** Roboter, Start- und Endlager bei der Bridge anmelden.
+- **Aktionen ausführen:** `pick_main_robot`, `place_main_robot` und
+  `wait_main_robot` mit Job, Ziel und Lagerzeiten aus dem Payload ausführen.
+- **Beladung speichern:** `current_job` sowie die übergebene Priorität,
+  nächste Operation und Maschine übernehmen.
+- **Bewegen:** Grundgeschwindigkeit `2.0`; Schwankungen kommen aus `SimRobot`.
+- **Abschluss melden:** Beim Endlagertransport `job.mark_finished()` nach
+  dem Absenken, aber vor der letzten Einlagerungszeit und Ablage aufrufen.
+- **Bridge benachrichtigen:** Nach der Ablage `notify_state_change()` aufrufen.
 
 ### `SimRobotCorridorArm.py`
 
 **Aufgabe:** Jobs zwischen Korridor- und Maschinenpuffern transportieren.
-Diese Transportaufgabe war bereits vorhanden.
 
 **Erweiterungen:**
 
-- **Bei der Bridge registrieren:** Jeder Roboter meldet sich selbst unter
-  einer ID aus Korridorname und Korridorseite an.
-- **Aktionen von der Steuerung ausführen:** Er fordert Aktionen an und führt
-  `pick_corridor_arm_robot`, `place_corridor_arm_robot` oder
-  `wait_corridor_arm_robot` aus. Job, Ziel und Lagerzeiten werden übergeben;
-  der Roboter bestimmt keine eigene Route.
-- **Auswahl und Beladung speichern:** Der Roboter verwaltet `current_job`
-  und übernimmt die im Payload vorgegebenen Jobdaten, beispielsweise die
-  Priorität und die ausgewählte Maschine.
-- **Bewegungsgeschwindigkeit festlegen:** Die Grundgeschwindigkeit beträgt
-  jetzt `1.5`; die Schwankung pro Achsenbewegung berechnet `SimRobot`.
-- **Ablage melden:** Nach dem Ablegen aktualisiert er die betroffenen Daten
-  und benachrichtigt die Bridge mit `notify_state_change()`.
+- **Registrieren:** Die ID enthält Korridorname und Korridorseite.
+- **Aktionen ausführen:** `pick_corridor_arm_robot`,
+  `place_corridor_arm_robot` und `wait_corridor_arm_robot` mit den
+  übergebenen Jobs, Zielen und Lagerzeiten ausführen.
+- **Beladung speichern:** `current_job` und die vorgegebenen Jobdaten übernehmen.
+- **Bewegen:** Grundgeschwindigkeit `1.5`; Schwankungen kommen aus `SimRobot`.
+- **Bridge benachrichtigen:** Nach der Ablage `notify_state_change()` aufrufen.
 
 ### `SimMachine.py`
 
-**Aufgabe:** Eine konfigurierte `Machine` mit Puffern, Werkzeugen und
-Bearbeitungen simulieren. Maschinenpuffer, Werkzeugwechsel und
-Werkzeuglebensdauer waren bereits vorhanden.
-Die Bearbeitungsdauer entsprach dort unmittelbar `operation.duration`.
+**Aufgabe:** Eine konfigurierte Maschine mit Puffern, Werkzeugen und
+Bearbeitungen simulieren. Zuvor war die Bearbeitungsdauer direkt
+`operation.duration`; Puffer, Werkzeugwechsel und Lebensdauer waren vorhanden.
 
 **Erweiterungen:**
 
-- **Steuerung und Ausführung trennen:** Die Maschine fordert Aktionen über
-  die Bridge an und führt getrennte Pick-, Verarbeitungs- und Warteaktionen
-  aus. Sie wählt Job, Operation und Werkzeug nicht mehr selbst aus.
-- **Kapazitäten und Ausstattung übernehmen:** Die Puffer verwenden die
-  konfigurierten Kapazitäten; die Werkzeugliste stammt von der konkreten
-  `Machine`. Neu ist auch der Zustand mit montiertem Schutzwerkzeug.
-- **Bearbeitungsdauer erweitern:** Produktgröße, Maschinengeschwindigkeit
-  und ein maschinenspezifischer Variationsfaktor beeinflussen die Dauer.
-- **Qualität prüfen:** Nach jeder Bearbeitung wird mit der
-  Defektwahrscheinlichkeit dieser Maschine geprüft, ob ein Defekt entsteht.
-  Das Ergebnis wird am Job gespeichert; die Steuerung wählt die Reaktion.
+- **Aktionen empfangen:** Die Steuerung wählt Job, Operation und Werkzeug.
+  Die Maschine führt Pick, Verarbeitung oder Warten aus.
+- **Ausstattung übernehmen:** Konfigurierte Pufferkapazitäten, erlaubte
+  Werkzeuge und das anfangs montierte Schutzwerkzeug berücksichtigen.
+- **Dauer berechnen:** Produktgröße, Geschwindigkeit und Dauervariation einbeziehen.
+- **Qualität prüfen:** Defekte mit dem Maschinenrisiko erzeugen und am Job
+  speichern. Die Steuerung wählt die Reaktion.
 
 #### Aufbau und Laufzeitdaten
 
-- **Konfiguration:** `self.machine` verweist auf die konfigurierte Maschine.
-- **Puffer:** `store_in` und `store_out` sind getrennte Eingangs- und
-  Ausgangspuffer mit den konfigurierten Kapazitäten.
-- **Registrierung bei der Bridge:** Jede `SimMachine` registriert sich selbst
-  unter ihrer eigenen ID und meldet dabei auch `store_in` und `store_out` an.
-- **Bezugsgrößen:** `max_product_weight` und `max_product_volume` sind das
-  größte Gewicht und Volumen der Auftragsziele und aller Roh- und
-  Zwischenprodukttypen auf deren definierten Herstellungswegen. Sie dienen
-  der Größenanpassung der Bearbeitungsdauer.
-- **Werkzeugausstattung:** `self.tool_types` ist eine eigene Kopie der
-  Werkzeugliste der konkreten `Machine`.
+- **Konfiguration:** `self.machine` ist die konfigurierte Maschine;
+  `self.tool_types` ist eine Kopie ihrer Werkzeugliste.
+- **Puffer und Registrierung:** Die Maschine meldet ihre ID sowie
+  `store_in` und `store_out` mit den konfigurierten Kapazitäten bei der Bridge an.
+- **Produktgrößen:** Die von `SimLayout` bestimmten Maxima dienen der
+  [Berechnung der Bearbeitungsdauer](#verarbeitungsdauer).
 - **Werkzeuglebensdauer:** Pro Werkzeugtyp werden vier Werte verwaltet:
   - `remaining_life_units`: aktueller Restwert.
   - `remaining_life_units_t`: Simulationszeitpunkt dieses Restwerts.
   - `remaining_life_units_next`: erwarteter Restwert nach der Operation.
   - `remaining_life_units_next_t`: erwarteter Abschlusszeitpunkt der Operation.
-- **Anfangszustand:** `dummy_tool_mounted=True` bedeutet, dass das
-  Schutzwerkzeug montiert ist. `tool_type=None` und `current_job=None`
-  bedeuten, dass noch kein Produktionswerkzeug und kein Job geladen sind.
-- **Maschinengeschwindigkeit:** Einmal beim Erzeugen der Maschine wird
-  `machine.processing_speed_factor` mit einem Zufallsfaktor zwischen `0.45`
-  und `2.0` multipliziert. Dieser Wert bleibt für den Lauf unverändert.
-- **Dauervariation:** `processing_variation` wird einmal pro Maschine
-  zwischen `0.90` und `1.10` gezogen und skaliert jede ihrer Bearbeitungsdauern.
-- **Anlaufverzögerung:** `startup_delay` wird einmal zwischen `0` und `4`
-  Zeiteinheiten gezogen. Sie wird nur vor der ersten Bearbeitung angewendet;
-  `_startup_delay_applied` verhindert ihre Wiederholung.
+- **Anfangszustand:** Schutzwerkzeug montiert (`dummy_tool_mounted=True`),
+  kein Produktionswerkzeug (`tool_type=None`), kein Job (`current_job=None`).
+- **Geschwindigkeit:** `machine.processing_speed_factor` wird einmal mit
+  einem Zufallswert von `0.45` bis `2.0` multipliziert.
+- **Dauervariation:** `processing_variation` wird einmal von `0.90` bis `1.10` gezogen.
+- **Anlaufverzögerung:** `startup_delay` beträgt zufällig `0` bis `4`
+  Zeiteinheiten und gilt nur vor der ersten Bearbeitung.
+
+Die drei gezogenen Maschinenwerte bleiben während des Laufs gleich.
 
 #### Prozess und Aktionen
 
 Der Prozess läuft wiederholt ab:
 
-1. Ist der Ausgangspuffer voll, setzt die Maschine den Zustand `blocked`,
-   sonst `waiting`.
-2. Die Maschine meldet ihren Zustand mit `bridge.request_action(self)` und
-   wartet auf die von der Steuerung gelieferte Aktion.
-3. Bei `pick_machine_job` nimmt sie genau den im Payload genannten Job aus dem
-   genannten Store. Sie aktualisiert dessen `location`, übernimmt die
-   `queue_priority` und speichert den Job in `self.current_job`.
-4. Bei `process_machine_job` führt sie genau die übergebene Operation mit dem
-   übergebenen Werkzeug aus.
-5. Bei `wait_machine` wartet sie eine Simulationszeiteinheit und fordert
-   anschließend eine neue Aktion an.
+1. Zustand setzen: `blocked` bei vollem Ausgangspuffer, sonst `waiting`.
+2. Mit `bridge.request_action(self)` eine Aktion anfordern und empfangen.
+3. `pick_machine_job`: Ausgewählten Job aufnehmen, `location` und
+   `queue_priority` aktualisieren und in `current_job` speichern.
+4. `process_machine_job`: Übergebene Operation mit dem übergebenen Werkzeug ausführen.
+5. `wait_machine`: Eine Simulationszeiteinheit warten und erneut anfragen.
 
-- **Keine Ersatzwahl:** Fehlt der ausgewählte Job im angegebenen Store,
-  wird die Pick-Aktion beendet, ohne einen anderen Job aufzunehmen.
+Ein fehlender ausgewählter Job wird nicht durch einen anderen ersetzt.
 
 #### Werkzeugwechsel und Lebensdauer
 
-Der Aktions-Payload von `process_machine_job` liefert die auszuführende
-Operation, das Werkzeug und die benötigten Ausführungsdaten:
+`process_machine_job` übergibt folgende Daten:
 
 - `operation` und `tool_type`: ausgewählte Operation und Werkzeugtyp.
 - `total_life_units`: vollständige Lebensdauer des verwendeten Werkzeugs.
@@ -748,31 +625,19 @@ Je nach `tool_setup_action` führt die Maschine folgende Schritte aus:
 - `replace_tool_same_type`: Das verbrauchte Werkzeug wird entfernt und durch
   ein Werkzeug desselben Typs ersetzt.
 
-- **Werkzeug ersetzen:** Reicht die verbleibende Lebensdauer für die
-  Operation nicht aus, wird beim Werkzeugwechsel ein neues Werkzeug mit
-  `total_life_units` angenommen.
-- **Verbrauch verbuchen:** Nach der Operation wird die Lebensdauer um
-  `consumed_life_units` reduziert.
-- **Anzeige aktualisieren:** Die Lebensdaueranzeige interpoliert während der
-  geplanten Bearbeitungsdauer vom Anfangswert zum erwarteten Restwert.
-  Nach dem Abschluss wird der tatsächliche Restwert gespeichert.
+Reicht die Lebensdauer nicht, wird ein neues Werkzeug mit `total_life_units`
+eingesetzt. Nach der Bearbeitung werden `consumed_life_units` abgezogen.
+Währenddessen zeigt die Anzeige den Übergang zum erwarteten Restwert;
+anschließend wird der tatsächliche Restwert gespeichert.
 
 #### Verarbeitungsdauer
 
-- **Verwendetes Produkt:** Die Größenberechnung verwendet den
-  Eingangsprodukttyp der ausgeführten Operation
-  (`operation.consumes_product_type`). Damit zählen Gewicht und Volumen
-  des Werkstücks vor dieser Bearbeitung, nicht die des bestellten Endprodukts.
-- **Berücksichtigte Produkttypen:** Die bestellten Endprodukte aller
-  Aufträge im Szenario sowie alle Roh- und Zwischenprodukttypen auf ihren
-  definierten Herstellungswegen.
-- **`max_product_weight`:** Größtes Gewicht unter diesen Produkttypen.
-  Das Gewicht des gerade bearbeiteten Werkstücks wird durch diesen Wert geteilt.
-- **`max_product_volume`:** Größtes Volumen unter diesen Produkttypen.
-  Das Volumen des gerade bearbeiteten Werkstücks wird durch diesen Wert geteilt.
-- **Unabhängige Maxima:** Das größte Gewicht und das größte Volumen können
-  zu unterschiedlichen Produkttypen gehören. `SimLayout` bestimmt beide
-  Werte beim Aufbau des Simulationslayouts.
+- **Werkstück:** Es zählt der Eingangsprodukttyp der Operation
+  (`operation.consumes_product_type`), nicht das bestellte Endprodukt.
+- **Bezugsgrößen:** `SimLayout` ermittelt Gewicht und Volumen aller
+  Auftragsziele sowie ihrer Roh- und Zwischenprodukte. `max_product_weight`
+  und `max_product_volume` sind die jeweiligen Maxima; sie können zu
+  unterschiedlichen Produkten gehören.
 - **Größenfaktor berechnen:**
 
 ```python
@@ -783,9 +648,8 @@ volume_ratio = float(volume) / self.max_product_volume
 size_factor = 1.0 + 0.5 * weight_ratio + 0.5 * volume_ratio
 ```
 
-- **Wirkung des Größenfaktors:** Bei positiven Produktgrößen liegen die
-  Verhältnisse zwischen `0` und `1`. Der Faktor liegt damit zwischen `1.0`
-  und `2.0` und verlängert die konfigurierte Operationsdauer.
+- **Größenfaktor:** Die Größenverhältnisse liegen bei positiven Produktgrößen
+  zwischen `0` und `1`, der Faktor damit zwischen `1.0` und `2.0`.
 - **Bearbeitungsdauer berechnen:**
 
 ```python
@@ -793,27 +657,19 @@ duration = operation.duration * size_factor / self.processing_speed_factor
 duration *= self.processing_variation
 ```
 
-- **Maschinengeschwindigkeit berücksichtigen:** Ein größerer
-  `processing_speed_factor` verkürzt die Bearbeitungsdauer.
-- **Dauervariation berücksichtigen:** Die berechnete Bearbeitungsdauer wird
-  mit `processing_variation` multipliziert. Dieser Faktor wird einmal pro
-  Maschine gezogen und bleibt während des Laufs gleich.
+Ein größerer `processing_speed_factor` verkürzt die Dauer.
+`processing_variation` skaliert sie mit dem festen Variationswert der Maschine.
 
 #### Defektprüfung und Recovery
 
-- **Maschinenrisiko übernehmen:** `self.defect_probability` wird beim
-  Erzeugen der `SimMachine` einmal bestimmt und gilt während des Laufs für
-  alle Bearbeitungen dieser Maschine.
-- **Nach jeder Bearbeitung prüfen:** Nach Ablauf der Bearbeitungsdauer wird
-  `_sample_defect_severity(job, operation)` aufgerufen, auch nach einer
-  Nacharbeit.
-- **Zufallszahlen reproduzierbar erzeugen:** Seed, Szenario, Auftrag,
-  Jobnummer, Operation und `rework_count` bilden den Schlüssel. Aus dessen
-  SHA-256-Fingerabdruck wird der Startwert eines eigenen Zufallsgenerators
-  abgeleitet. Derselbe Schlüssel liefert dieselbe Zufallszahlenfolge.
-- **Defekt und Schweregrad bestimmen:** Die erste Zufallszahl wird mit der
-  Defektwahrscheinlichkeit der Maschine verglichen. Nur wenn sie kleiner
-  ist, wird eine zweite Zufallszahl als Schweregrad zurückgegeben:
+- **Risiko:** `self.defect_probability` bleibt für alle Bearbeitungen des Laufs gleich.
+- **Zeitpunkt:** Nach jeder Bearbeitung, auch Nacharbeit, wird
+  `_sample_defect_severity(job, operation)` aufgerufen.
+- **Zufallszahlen:** Seed, Szenario, Auftrag, Jobnummer, Operation und
+  `rework_count` bilden einen Schlüssel. Dessen SHA-256-Fingerabdruck liefert
+  den Startwert eines eigenen Zufallsgenerators.
+- **Qualitätsergebnis:** Ist die erste Zufallszahl kleiner als das
+  Maschinenrisiko, liefert eine zweite den Schweregrad:
 
 ```python
 if quality_rng.random() < self.defect_probability:
@@ -821,29 +677,20 @@ if quality_rng.random() < self.defect_probability:
 return None
 ```
 
-- **Relevanten Defekt speichern:** Bei einem Schweregrad ab `0.001` ruft die
-  Maschine `job.mark_defective()` auf. Operation, Maschine, Produktzustände
-  und Schweregrad werden im Job gespeichert; sein bisheriger
-  `processing_state` bleibt erhalten.
-- **Intaktes Ergebnis speichern:** Bei `None` oder einem Schweregrad unter
-  `0.001` erhält der Job den von der Operation erzeugten Produktzustand und
-  `general_state="intact"`.
-- **Nacharbeit abschließen:** Nach einer Nacharbeitsoperation wird
-  `recovery_in_progress=False` gesetzt, auch wenn erneut ein Defekt entsteht.
-  Eine erledigte Nacharbeitsstrategie wird bei intaktem Ergebnis entfernt;
-  bei einem neuen Defekt löscht `mark_defective()` die bisherige Strategie.
-- **Zuständigkeit abgrenzen:** Die Maschine erzeugt und speichert das
-  Qualitätsergebnis. Welche Defektstrategie danach gewählt wird, entscheidet
-  die Steuerung.
+- **Defekt ab `0.001`:** `job.mark_defective()` speichert die Defektdaten;
+  der bisherige `processing_state` bleibt erhalten.
+- **Kein relevanter Defekt:** Bei `None` oder Schweregrad unter `0.001`
+  werden Ausgangsprodukttyp und `general_state="intact"` gesetzt.
+- **Nacharbeit beenden:** Nach der Bearbeitung wird `recovery_in_progress=False`.
+  Erfolg entfernt die Nacharbeitsstrategie; ein neuer Defekt setzt sie zurück.
+
+Die Maschine erzeugt das Ergebnis. Die Steuerung entscheidet über die Reaktion.
 
 #### Abschluss der Verarbeitung und Zustände
 
-- **Auswahl zurücksetzen:** Nach der Bearbeitung werden `selected_operation`
-  und `selected_machine` des Jobs auf `None` gesetzt.
-- **Job ablegen:** Die Maschine legt ihn mit seiner Priorität im übergebenen
-  Zielstore ab und aktualisiert seine `location`.
-- **Maschine freigeben:** `current_job` wird auf `None` gesetzt. Mit der
-  nächsten `request_action()`-Anfrage wird wieder eine Aktion angefordert.
+- **Auswahl löschen:** `selected_operation` und `selected_machine` auf `None` setzen.
+- **Ablegen:** Job mit seiner Priorität in den Zielstore legen und `location` setzen.
+- **Freigeben:** `current_job=None` setzen und eine neue Aktion anfordern.
 
 Die wichtigsten Maschinenzustände sind:
 
@@ -856,10 +703,8 @@ Die wichtigsten Maschinenzustände sind:
 
 #### UML-Zustandsdiagramm von `SimMachine`
 
-- **Darstellung:** Das Diagramm zeigt die Maschinenzustände während eines
-  normalen Simulationslaufs.
-- **Jobauswahl:** Die Steuerung bestimmt über die `SimulationBridge`,
-  welcher Job geladen und verarbeitet wird.
+Die Steuerung wählt über die Bridge den Job und die Bearbeitung.
+Das Diagramm zeigt die dabei durchlaufenen Maschinenzustände.
 
 ```mermaid
 stateDiagram-v2
@@ -893,93 +738,63 @@ stateDiagram-v2
 
 ### `SimMachineShutdown` in `SimMachine.py`
 
-**Aufgabe:** Einen einmaligen Werkzeugabschluss ausführen, getrennt von
-der wiederholten Jobverarbeitung. Diese Salabim-Komponente ist neu gegenüber
-`origin/main`.
+**Aufgabe:** Einen einmaligen Werkzeugabschluss ausführen. Diese Komponente
+ist neu gegenüber `origin/main`.
 
-- **Produktionswerkzeug entfernen:** Falls eines montiert ist, wird es unter
-  Berücksichtigung seiner Demontagezeit entfernt.
-- **Schutzwerkzeug montieren:** Anschließend wird das Schutzwerkzeug mit
-  `dummy_tool_mount_time` montiert. Ist es bereits montiert, ist nichts zu tun.
-- **Aufrufbedingungen:** Der allgemeine
-  [SimulationRunner](sources/SpineML/SimulationExecution/SimulationRunner.py)
-  startet diesen Prozess nicht. `simulate()` startet ihn nur bei
-  `till == sim.inf`, wenn der erste Simulationslauf ohne Stopp durch den
-  `SimCompletionWatcher` zurückkehrt. Er wird daher nicht automatisch nach
-  jedem Produktionslauf ausgeführt.
-- **Kennzahlen abgrenzen:** `tool_change_time` enthält nur tatsächlich
-  ausgeführte Montage- und Demontagezeiten. Ein separat ausgeführter
-  Werkzeugabschluss verändert die gespeicherten Jobabschlusszeiten und damit
-  den daraus berechneten Makespan nicht.
+- **Werkzeug wechseln:** Produktionswerkzeug demontieren und Schutzwerkzeug
+  mit `dummy_tool_mount_time` montieren. Ist es bereits montiert, entfällt der Wechsel.
+- **Starten:** Der [SimulationRunner](sources/SpineML/SimulationExecution/SimulationRunner.py)
+  startet diesen Prozess nicht. `simulate()` tut dies nur bei `till == sim.inf`,
+  wenn der erste Lauf nicht durch den CompletionWatcher gestoppt wurde.
+- **Kennzahlen:** Tatsächlich ausgeführte Wechsel zählen zu `tool_change_time`.
+  Gespeicherte Jobabschlusszeiten und Makespan ändern sich dadurch nicht.
 
 ### `SimScenario.py`
 
 **Aufgabe:** Für jeden Auftrag eine `SimOrder`-Komponente erzeugen.
-Dieser Aufbau war bereits vorhanden.
 
 **Erweiterungen:**
 
-- **Bridge weitergeben:** Jeder `SimOrder` erhält dieselbe
-  `SimulationBridge` und reicht sie an seine Jobs weiter.
-- **Produktionsende überwachen lassen:** Nach dem Erzeugen der Aufträge
-  wird ein `SimCompletionWatcher` angelegt, der die Jobabschlüsse überwacht.
+- **Bridge weitergeben:** Jeder Auftrag reicht sie an seine Jobs weiter.
+- **Produktionsende überwachen:** Einen `SimCompletionWatcher` für alle Jobs erzeugen.
 
 ### `SimCompletionWatcher` in `SimScenario.py`
 
 **Aufgabe:** Den Lauf beenden, sobald alle Jobprozesse abgeschlossen sind.
-Der Watcher ist eine neue, eigenständige Salabim-Komponente.
+Diese Salabim-Komponente ist neu.
 
 #### Automatisches Simulationsende
 
-1. **Jobs sammeln:** Der Konstruktor sammelt einmalig die Jobs aus den
-   erzeugten Aufträgen.
-2. **Abschlussflags prüfen:** Der eigene `process()`-Ablauf prüft in
-   Abständen von einer Simulationszeiteinheit, ob alle Jobs
-   `process_finished=True` besitzen. Dieses Flag setzt der Job beim Empfang
-   einer Abschlussaktion mit `finish_process=True`.
-3. **Simulation stoppen:** Ist die Jobliste nicht leer und sind alle
-   Jobprozesse abgeschlossen, löst der Watcher `sim.SimulationStopped` aus.
-   Der Stopp erfolgt bei der nächsten Prüfung der Flags.
-4. **Ergebnisse auswerten:** Der Simulationsrunner fängt dieses Signal ab
-   und sammelt anschließend die Produktionskennzahlen.
+1. Alle erzeugten Jobs einmalig sammeln.
+2. Jede Simulationszeiteinheit prüfen, ob alle `process_finished=True` haben.
+   Dieses Flag setzt die Abschlussaktion mit `finish_process=True`.
+3. Bei nicht leerer Jobliste und vollständigem Abschluss `sim.SimulationStopped`
+   auslösen. Der Runner fängt das Signal ab und sammelt die Kennzahlen.
 
 ### Seed und Reproduzierbarkeit
 
-**Ziel:** Produktionsläufe mit denselben Eingaben reproduzierbar machen.
-Ein Seed ist der Startwert eines Zufallszahlengenerators. Die gemeinsame
-Seed-Vorgabe übernimmt der allgemeine
-[SimulationRunner](sources/SpineML/SimulationExecution/SimulationRunner.py).
+Ein **Seed** ist der Startwert eines Zufallszahlengenerators. Der
+[Runner](sources/SpineML/SimulationExecution/SimulationRunner.py) setzt vor
+jedem Lauf `random.seed(seed)`, `sim.Environment(random_seed=seed)` und
+`SimMachine.QUALITY_SEED`.
 
-- **Seed vor dem Lauf setzen:** Der Runner setzt `random.seed(seed)`,
-  `sim.Environment(random_seed=seed)` und `SimMachine.QUALITY_SEED`.
-- **Maschinenfaktoren wiederholen:** Geschwindigkeit, Dauervariation und
-  Anlaufverzögerung werden einmal pro Maschine gezogen. Gleiche
-  Konfiguration und gleicher Seed liefern dieselben Anfangswerte.
-- **Bewegungsschwankungen wiederholen:** Für jede Achsenbewegung wird ein
-  neuer Faktor gezogen. Bei gleichem Seed und gleichem Entscheidungsablauf
-  ist die Folge dieser Ziehungen reproduzierbar.
-- **Automatisches Maschinenrisiko bestimmen:**
-  `Machine.resolve_defect_probability()` verwendet einen eigenen Generator
-  aus Seed und Maschinenidentität. Ein ausdrücklich vorgegebener Wert wird
-  nicht verändert.
-- **Qualitätsprüfung wiederholen:** Derselbe Kontextschlüssel liefert
-  dieselben Qualitätszufallszahlen. Der Vergleich mit dem Risiko der
-  ausgewählten Maschine ist unter
-  [Defektprüfung und Recovery](#defektprüfung-und-recovery) beschrieben.
-- **Entscheidungsablauf unterscheiden:** Derselbe Seed garantiert nicht
-  dieselben Produktionsergebnisse für unterschiedliche Policies oder
-  Gewichtssätze. Andere Entscheidungen verändern Transport, Wartezeiten,
-  Maschinenwahl und gegebenenfalls Nacharbeiten.
-- **Normalen Start unterscheiden:** `simulate(...)` besitzt derzeit kein
-  `seed`-Argument. Die hier beschriebene Seed-Vorgabe erfolgt über den Runner
-  bei der Optimierung.
+- **Pro Maschine:** Geschwindigkeit, Dauervariation und Anlaufverzögerung
+  werden einmal gezogen. Automatische Defektwahrscheinlichkeiten verwenden
+  Seed und Maschinenidentität; ausdrücklich gesetzte Werte bleiben gleich.
+- **Pro Bewegung:** Jede Achsenbewegung zieht einen Geschwindigkeitsfaktor.
+- **Pro Bearbeitung:** Der Kontextschlüssel bestimmt die Zufallszahlen der
+  [Qualitätsprüfung](#defektprüfung-und-recovery).
+
+Bei gleichen Eingaben und Entscheidungen wird der Zufallsablauf wiederholt.
+Andere Policies oder Gewichtssätze können trotz gleichem Seed andere
+Produktionsabläufe erzeugen. `simulate(...)` selbst hat kein `seed`-Argument;
+die beschriebene Vorgabe erfolgt über den Runner.
 
 ## SimulationBridge
 
 Die [SimulationBridge](sources/SpineML/SimulationInterface/SimulationBridge.py)
 verbindet die laufenden Salabim-Komponenten mit einer austauschbaren Policy.
-Sie gehört zu `SpineML/SimulationInterface`, nicht zu einer bestimmten
-Steuerung. Die zugehörigen Datentypen und abstrakten Schnittstellen stehen in
+Sie ist unabhängig von der Steuerung. Datentypen und Schnittstellen stehen in
 [InterfaceTypes.py](sources/SpineML/SimulationInterface/InterfaceTypes.py).
 
 | Seite | Aufgabe |
@@ -988,47 +803,35 @@ Steuerung. Die zugehörigen Datentypen und abstrakten Schnittstellen stehen in
 | Policy | Aus einer `PolicyObservation` eine `PolicyDecision` mit den ausgewählten Aktionen erzeugen. |
 | Bridge | Beobachtungen zusammenstellen, die Policy aufrufen, IDs auflösen und Aktionen zustellen. |
 
-Die Bridge erzeugt keine Produktionsrouten und berechnet keine Aktionsscores.
-Auch die Auswahlstrategie und die Vermeidung konkurrierender Picks sind
-Aufgaben der Policy. Ohne übergebene Policy erzeugt die Bridge eine
-`HeuristicPolicy`; dieser Standard wird erst bei Bedarf geladen.
+Routen, Scores, Auswahl und die Vermeidung konkurrierender Picks gehören zur
+Policy. Ohne übergebene Policy lädt die Bridge bei Bedarf eine `HeuristicPolicy`.
 
 ### Registrierung und Aktions-Stores
 
-- `register()` meldet Jobs, Maschinen, Main-Roboter und Korridorarm-Roboter
-  mit ihrer Policy-ID an. Jede dieser Komponenten erhält einen eigenen
-  Aktions-Store; ihre Zustände erscheinen im Snapshot.
-- `register_corridor()` macht Korridore und ihre Stores für die ID-Auflösung
-  bekannt, erzeugt aber keinen Aktions-Store für den Korridor.
-- `register_store()` ordnet einen Store-Namen dem tatsächlichen Salabim-Store
-  zu. Stores sind keine selbst entscheidenden Policy-Objekte.
-- Aufbauklassen wie `SimLayout`, `SimCorridorArm`, `SimOrder`, `SimScenario`
-  und `SimCompletionWatcher` erhalten ebenfalls keinen eigenen Aktions-Store.
+- `register()` meldet Jobs, Maschinen und Roboter mit ihrer Policy-ID an.
+  Sie erhalten eigene Aktions-Stores und erscheinen im Snapshot.
+- `register_corridor()` registriert Korridore und ihre Stores nur für die
+  ID-Auflösung, ohne eigenen Aktions-Store.
+- `register_store()` ordnet Store-Namen den Salabim-Stores zu.
+- Stores sowie `SimLayout`, `SimCorridorArm`, `SimOrder`, `SimScenario`
+  und `SimCompletionWatcher` entscheiden nicht selbst und erhalten keinen Aktions-Store.
 
 ### Warum die Policy IDs verwendet
 
-Beobachtungen enthalten Zustandsdaten und IDs statt Referenzen auf die
-laufenden Salabim-Komponenten. Die Policy benennt damit einen Job, eine
-Operation, eine Maschine oder einen Store, ohne das Laufzeitobjekt selbst
-zu verändern. Erst die Bridge übersetzt die ausgewählte Aktion zurück in
-Objektreferenzen für die Simulation.
+Beobachtungen enthalten Zustandsdaten und IDs statt Laufzeitobjekten.
+Die Policy benennt Jobs, Operationen, Maschinen und Stores, ohne sie direkt
+zu verändern. Erst die Bridge ersetzt IDs durch Objektreferenzen.
 
 **Beispiel: Die Policy wählt die Maschine `Near basic`.**
 
-1. **Policy gibt die ID zurück:** Im Aktions-Payload steht
-   `selected_machine_id: "Near basic"`.
-2. **Bridge sucht das Objekt:** Ihre Nachschlagetabelle
-   `machines_by_id` ordnet dieser ID das konfigurierte `Machine`-Objekt zu.
-3. **Bridge übergibt das Objekt an die Simulation:** In der ausführbaren
-   Aktion steht anschließend `selected_machine` mit diesem Objekt anstelle
-   von `selected_machine_id`. Der ausführende Roboter kann die gewählte
-   Maschine damit am Job speichern.
+1. Die Policy gibt `selected_machine_id: "Near basic"` im Payload zurück.
+2. Die Bridge findet das konfigurierte `Machine`-Objekt in `machines_by_id`.
+3. Sie ersetzt `selected_machine_id` durch `selected_machine` mit diesem
+   Objekt. Der Roboter kann die Auswahl damit am Job speichern.
 
-`policy_payload_id_mappings()` legt die Zuordnung von ID-Feldern zu
-Objektfeldern und Registern fest. `create_simulation_actions()` kopiert den
-Payload und ersetzt diese ID-Felder durch die aufgelösten Objekte.
-Beispielsweise wird aus `selected_machine_id` das Feld `selected_machine`;
-ein ausdrücklich übergebenes `None` bleibt dabei `None`.
+`policy_payload_id_mappings()` ordnet ID-Felder den Objektfeldern und Registern
+zu. `create_simulation_actions()` kopiert den Payload und löst die IDs auf.
+Ein ausdrücklich übergebenes `None` bleibt `None`.
 
 **Maschinenauswahl, Aktionsempfänger und Puffer unterscheiden:**
 
@@ -1040,31 +843,27 @@ ein ausdrücklich übergebenes `None` bleibt dabei `None`.
 
 ### Zustände melden und Aktionen empfangen
 
-Eine aktionsfähige Komponente durchläuft wiederholt diese Schritte:
+Eine aktionsfähige Komponente wiederholt diese Schritte:
 
-1. `yield bridge.request_action(self)` markiert die Komponente als wartend und meldet eine
-   Zustandsänderung.
+1. `yield bridge.request_action(self)` markiert sie als wartend und meldet
+   eine Zustandsänderung.
 2. `action = yield bridge.action(self)` entnimmt die ausgewählte Aktion aus
    ihrem Aktions-Store.
-3. Die Komponente führt die Aktion aus und aktualisiert ihre Daten.
-4. Für ihre nächste Entscheidung fordert sie erneut eine Aktion an.
+3. Sie führt die Aktion aus und aktualisiert ihre Daten.
 
-`request_action()` trägt die Komponente in die Menge der wartenden Objekte
-ein und ruft `notify_state_change()` auf. Diese Meldung erhöht die
-Zustandsversion und legt einen `PolicyTrigger` im zentralen Store ab. Der
-Trigger enthält Ereignis-ID, Sender-ID, Version und Simulationszeit.
+`request_action()` ruft `notify_state_change()` auf. Diese Methode erhöht die
+Zustandsversion und legt einen `PolicyTrigger` mit Ereignis-ID, Sender-ID,
+Version und Simulationszeit im zentralen Store ab.
 
-`notify_state_change()` ist auch ohne neue Aktionsanforderung möglich.
-Eine solche Meldung veranlasst eine neue Beobachtung, markiert ihren Sender
-aber nicht automatisch als wartend. Die mitgelieferten Policies entscheiden
-anhand von `is_waiting_for_action`, welche Objekte eine Aktion erhalten.
+`notify_state_change()` allein löst eine neue Beobachtung aus, markiert den
+Sender aber nicht als wartend. Die mitgelieferten Policies berücksichtigen
+nur Objekte mit `is_waiting_for_action=True`.
 
 ### Snapshot und Aktualitätsprüfung
 
-Die Bridge entnimmt einen Trigger, gibt mit `hold(0)` anderen gleichzeitigen
-Ereignissen Gelegenheit zur Ausführung und sammelt danach bereits vorliegende
-Trigger derselben Simulationszeit. Für diese Gruppe erzeugt sie eine
-`PolicyObservation` mit folgendem Snapshot:
+Die Bridge entnimmt einen Trigger und lässt mit `hold(0)` gleichzeitige
+Ereignisse ausführen. Danach sammelt sie vorliegende Trigger derselben
+Simulationszeit und erzeugt eine `PolicyObservation` mit diesem Snapshot:
 
 | Feld | Inhalt |
 | --- | --- |
@@ -1073,15 +872,13 @@ Trigger derselben Simulationszeit. Für diese Gruppe erzeugt sie eine
 | `configuration_model` | ID-basierte Konfiguration von Layouts, Korridoren, Maschinen, Operationen, Produkt- und Werkzeugtypen. |
 | `policy_trigger_event_ids`, `policy_trigger_sender_ids` | IDs der auslösenden Triggergruppe und ihrer Sender, wenn diese Gruppe übergeben wurde. |
 
-Das Konfigurationsmodell wird beim ersten Snapshot erstellt und anschließend
-wiederverwendet. Die Laufzeitzustände werden für jeden Snapshot neu beobachtet.
+Das Konfigurationsmodell wird einmal erstellt, die Laufzeitzustände bei jedem
+Snapshot neu beobachtet.
 
-Nach `policy.make_decision()` vergleicht die Bridge die Snapshot-Version mit
-der aktuellen Zustandsversion. Bei einer inzwischen gemeldeten Änderung
-erstellt sie Beobachtung und Entscheidung erneut. Nur eine aktuelle
-Entscheidung wird in `SimulationAction`-Objekte übersetzt und verteilt.
-Diese Prüfung ersetzt weder die technischen Prüfungen des Aktionsgenerators
-noch eine fachliche Validierung beliebiger benutzerdefinierter Aktionen.
+Nach `policy.make_decision()` prüft die Bridge die Snapshot-Version. Wurde eine
+Zustandsänderung gemeldet, wiederholt sie Beobachtung und Entscheidung. Nur eine
+aktuelle Entscheidung wird in `SimulationAction`-Objekte übersetzt und verteilt.
+Das ersetzt weder Generatorprüfungen noch die fachliche Prüfung eigener Aktionen.
 
 ### Ablauf zwischen Simulation und Policy
 
@@ -1121,25 +918,21 @@ sequenceDiagram
     Sim->>Bridge: Nächste Anforderung oder Zustandsmeldung
 ```
 
-Eine `PolicyDecision` kann Aktionen für mehrere wartende Objekte enthalten.
-Erst nach der Rückgabe dieser gesamten Entscheidung beginnt die Bridge mit
-der Zustellung an die einzelnen Aktions-Stores. Die Komponenten führen ihre
-empfangenen Aktionen selbst aus; die Bridge führt keine Produktionsaktion aus.
+Eine `PolicyDecision` kann mehrere wartende Objekte bedienen. Erst nach ihrer
+Rückgabe stellt die Bridge die Aktionen zu; die Komponenten führen sie aus.
 
 <a id="schnittstellen-der-steuerung"></a>
 
 ### Wie Generator, Policy und Bridge zusammenarbeiten
 
-Die `SimulationBridge` ruft `make_decision(observation)` der eingesetzten
-Policy auf. Die Policy fordert beim Generator Aktionskandidaten an, wählt
-daraus aus und gibt die ausgewählten Aktionen als `PolicyDecision` an die
-Bridge zurück. Diese gemeinsame Übergabe ist in
+Die Bridge ruft `policy.make_decision(observation)` auf. Die Policy holt
+Kandidaten vom Generator und gibt ihre Auswahl als `PolicyDecision` zurück.
+Diese Schnittstelle ist in
 [InterfaceTypes.py](sources/SpineML/SimulationInterface/InterfaceTypes.py)
 definiert.
 
-Die drei vorhandenen Policies verwenden standardmäßig die Generator-Klasse
-[`SpineActionGenerator`](#actiongenerator). Sie unterscheiden sich darin,
-**wie sie aus den erzeugten Kandidaten auswählen**:
+Alle drei Policies nutzen standardmäßig den
+[`SpineActionGenerator`](#actiongenerator), wählen aber unterschiedlich aus:
 
 | Konkrete Policy | Aktionsauswahl |
 | --- | --- |
@@ -1147,12 +940,10 @@ Die drei vorhandenen Policies verwenden standardmäßig die Generator-Klasse
 | [`RandomPolicy`](sources/SpineML/Control/RandomPolicy/RandomPolicy.py) | Wählt gleichverteilt zufällig unter Nicht-Warteaktionen. Warten ist nur der Fallback; ausgewählte Picks erhalten die neutrale Priorität `0.0`. |
 | [`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) | Eine übergebene Entscheidungsfunktion wählt den Index eines Kandidaten. Gibt es nur einen Kandidaten, wird er standardmäßig direkt übernommen. |
 
-**Nur die HeuristicPolicy verwendet hier einen Selector und einen Evaluator.**
-Beide gehören zu ihrer internen Aktionsauswahl. RandomPolicy und
-RLCandidatePolicy wählen ohne diese beiden Bausteine aus.
+**Nur die HeuristicPolicy benötigt Selector und Evaluator.**
 
-Das Diagramm zeigt den Aufruf und die Rückgabe der Daten. **Nur der Zweig
-der eingesetzten Policy wird verwendet**, nicht alle drei:
+Das Diagramm zeigt den Datenfluss. **Nur der Zweig der eingesetzten Policy
+wird verwendet:**
 
 ```mermaid
 flowchart TD
@@ -1195,41 +986,33 @@ flowchart TD
     T --> E["Job, Roboter oder Maschine<br/>führt die empfangene Aktion aus"]
 ```
 
-**Der Generator wählt keine Aktion aus und ruft die Bridge nicht auf.**
-Er gibt seine Kandidaten an die aufrufende Policy zurück. Erst deren
-vollständige `PolicyDecision` geht an die Bridge. Die Simulationskomponenten
-führen die Aktionen aus, nicht die Bridge.
+**Der Generator wählt nicht aus und ruft die Bridge nicht auf.** Er gibt
+Kandidaten an die Policy zurück; erst ihre vollständige Entscheidung geht
+an die Bridge.
 
 <a id="generalcontrol"></a>
 <a id="aktionserzeugung-und-policies"></a>
 
 ## ActionGenerator
 
-Die konkrete Klasse heißt `SpineActionGenerator`; sie steht in
+`SpineActionGenerator` steht in
 [ActionGeneration/ActionGenerator.py](sources/SpineML/Control/ActionGeneration/ActionGenerator.py).
-`generate_actions(observation)` liefert eine Liste aus Dictionaries mit
-`action_type` und `payload` für genau ein Objekt. Dessen ID steht in
-`observation.current_object_id`. Die Payloads sind vollständig; bei Picks
-ist die EDD-basierte `queue_priority` bereits enthalten.
+`generate_actions(observation)` liefert Dictionaries mit `action_type` und
+vollständigem `payload` für `observation.current_object_id`. Pick-Payloads
+enthalten bereits die EDD-basierte `queue_priority`.
 
-Zuerst erzeugt `_generate_actions()` die Kandidaten anhand von Objekttyp und
-Zustand. Danach entfernt `generate_actions()` identische Einträge unter
-Beibehaltung ihres ersten Auftretens. Der Generator berechnet keine Scores,
-wählt keinen Kandidaten aus und verändert keine Simulationskomponente.
+`_generate_actions()` erzeugt Kandidaten nach Objekttyp und Zustand.
+`generate_actions()` entfernt Duplikate und behält jeweils den ersten Eintrag.
+Er berechnet keine Scores, wählt nichts aus und verändert keine Komponente.
 
 <a id="pick-priorität-im-actiongenerator"></a>
 
 ### Berechnung der Pick-Priorität
 
-[SpineActionGenerator.generate_actions()](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
-liefert Pick-Kandidaten bereits mit `queue_priority` im Payload.
-`SpineActionGenerator.calculate_edd_priority()` berechnet diesen Wert aus
-der Deadline des im Kandidaten angegebenen Jobs und der aktuellen Simulationszeit.
-Die Berechnung erfolgt direkt beim Erzeugen der Pick-Payloads:
-
-- `create_pick_actions_for_store()` trägt die Priorität für Roboter-Picks ein.
-- `create_machine_pick_actions()` trägt sie für Maschinen-Picks ein.
-- Beide verwenden dieselbe Formel in `calculate_edd_priority()`.
+`calculate_edd_priority()` berechnet `queue_priority` aus Jobdeadline und
+Simulationszeit. `create_pick_actions_for_store()` und
+`create_machine_pick_actions()` tragen sie direkt in Roboter- und
+Maschinen-Pick-Payloads ein.
 
 Für `r = latest_end_time - current_time` gilt:
 
@@ -1246,27 +1029,20 @@ Für `r = latest_end_time - current_time` gilt:
 | `10` | `0` | `0.5 / (1 + 0)` | `0.5` |
 | `11` | `−1` | `0.5 + 0.5 × 1 / (1 + 1)` | `0.75` |
 
-Je näher die Deadline liegt beziehungsweise je weiter sie überschritten ist,
-desto höher ist die berechnete EDD-Priorität. Die Berechnung allein wählt noch
-keinen Job aus; das entscheidet die Policy.
-
-Die Priorität ist ein Payload-Wert für die spätere Store-Einordnung, kein
-fertiger Aktionsscore. Der Generator schreibt sie nicht direkt in den Job.
-`LocalHeuristicActionEvaluator` liest sie für die Pick-Bewertung aus dem Payload;
-`RLCandidatePolicy` verwendet die erzeugten Kandidaten ohne weitere Vorbereitung.
-`RandomPolicy` verwendet die EDD-Priorität nicht zur Auswahl und setzt im
-ausgewählten Pick-Payload ausdrücklich `queue_priority = 0.0`.
+Mit näherer oder stärker überschrittener Deadline steigt die EDD-Priorität.
+Sie dient der späteren Store-Einordnung, ist aber kein Aktionsscore und wählt
+keinen Job aus. Der Generator schreibt sie nicht direkt in den Job.
+Die Heuristik liest sie zur Bewertung; die RL-Policy übernimmt die Kandidaten
+unverändert. `RandomPolicy` ignoriert sie bei der Auswahl und setzt im
+gewählten Pick-Payload `queue_priority = 0.0`.
 
 ### Welche Aktionen werden für welches Objekt erzeugt?
 
-`_generate_actions()` prüft den Objekttyp und ruft die zugehörige
-Erzeugungsmethode auf. Die folgenden Abschnitte beschreiben die Regeln
-getrennt für Jobs, Main-Roboter, Korridorroboter und Maschinen.
+`_generate_actions()` ruft je nach Objekttyp die passende Erzeugungsmethode auf.
 
 #### Job
 
-Der Generator prüft die Bedingungen der Reihe nach. Die erste zutreffende
-Zeile bestimmt die erzeugten Aktionen:
+Die erste zutreffende Zeile bestimmt die Aktionen:
 
 | Bedingung | Erzeugte Aktionen |
 | --- | --- |
@@ -1293,15 +1069,13 @@ Zeile bestimmt die erzeugten Aktionen:
 | Nicht defekt; als Ausschuss markiert, herabgestuft oder Zielprodukttyp erreicht | Endlager. |
 | Sonst | Arm-Eingangspuffer der jeweils nächsten Maschine aus `selectable_routes_for_job()`. |
 
-**Kapazitätsprüfung:** Ein Place-Kandidat wird nur erzeugt, wenn der
-jeweilige Zielstore `has_capacity == True` meldet. Zusätzlich gibt es immer
-`wait_main_robot`; ohne zulässiges Ablageziel bleibt nur diese Warteaktion.
+**Kapazität:** Place-Kandidaten benötigen `has_capacity == True` am Zielstore.
+`wait_main_robot` wird immer angeboten; ohne Ablageziel bleibt nur Warten.
 
-**Bei einem defekten Job:** Die Methode erzeugt Transportaktionen
-(`place_main_robot`), keine `job_rework_*`-Aktionen. Sie prüft dabei die
-Existenz der Zielmaschine, deren Korridorzugehörigkeit zum Layout und die
-Kapazität des Arm-Eingangspuffers. Die [Verfügbarkeitsprüfung der
-Defektmaschine](#nacharbeitskandidaten) wird hier nicht erneut ausgeführt.
+**Defekte Jobs:** Hier entstehen nur Transportaktionen (`place_main_robot`),
+keine `job_rework_*`-Aktionen. Geprüft werden Zielmaschine, Korridorzugehörigkeit
+zum Layout und Arm-Pufferkapazität, nicht erneut die
+[Verfügbarkeit der Defektmaschine](#nacharbeitskandidaten).
 
 #### Korridorroboter
 
@@ -1323,10 +1097,9 @@ Defektmaschine](#nacharbeitskandidaten) wird hier nicht erneut ausgeführt.
 | Im selben Korridor, am anderen Arm | Eingangspuffer des anderen Korridorarms. |
 | In einem anderen Korridor | Main-Store des aktuellen Korridors. |
 
-**Kapazitätsprüfung:** Ein Place-Kandidat wird nur bei
-`has_capacity == True` des jeweiligen Zielstores erzeugt. Dazu kommt immer
-`wait_corridor_arm_robot`. Ein defekter Job ohne gespeicherte
-Nacharbeitsauswahl erhält hier keine Ersatzroute aus seinen Defektdaten.
+**Kapazität:** Place-Kandidaten benötigen `has_capacity == True` am Zielstore.
+`wait_corridor_arm_robot` wird immer angeboten. Für defekte Jobs ohne
+gespeicherte Nacharbeitsauswahl entsteht hier keine Ersatzroute aus Defektdaten.
 
 #### Maschine
 
@@ -1336,9 +1109,8 @@ Nacharbeitsauswahl erhält hier keine Ersatzroute aus seinen Defektdaten.
 | Job geladen und Ausgangspuffer hat Platz (`has_capacity == True`) | `create_machine_process_actions()`: nur `process_machine_job`. |
 | Job geladen und Ausgangspuffer voll | `create_machine_process_actions()`: nur `wait_machine`. |
 
-**Werkzeugvorbereitung:** Die Verarbeitungsaktion übernimmt die bereits
-gewählte Operation und Maschine. Ihr Payload enthält außerdem
-`tool_setup_action`:
+**Werkzeugvorbereitung:** Der Payload übernimmt die gewählte Operation und
+Maschine und enthält `tool_setup_action`:
 
 | Prüfung in dieser Reihenfolge | `tool_setup_action` |
 | --- | --- |
@@ -1347,35 +1119,23 @@ gewählte Operation und Maschine. Ihr Payload enthält außerdem
 | Kein Werkzeugwechsel nötig, Restlebensdauer reicht nicht aus | `replace_tool_same_type` |
 | Sonst | `keep_tool` |
 
-Werkzeugvorbereitung und Bearbeitung gehören zu `process_machine_job`;
-es werden dafür keine getrennten Werkzeugwechsel-Kandidaten erzeugt.
+Werkzeugvorbereitung gehört zu `process_machine_job`, nicht zu eigenen Kandidaten.
 
 ### Mehrere Kandidaten pro wartendem Objekt
 
-- **Möglichkeiten sammeln:** Lässt die Zustandsregel mehrere Aktionen zu,
-  erzeugt der Generator sie gemeinsam als Kandidatenliste.
-- **Auswahl der Policy überlassen:** Die Heuristik bewertet die Liste;
-  `RandomPolicy` wählt zufällig und `RLCandidatePolicy` fragt einen externen
-  Agenten. Der Generator führt keinen Kandidaten selbst aus.
-- **Payload-Beispiele lesen:** Die folgenden Beispiele zeigen jeweils
-  einen Aktionskandidaten. Die Namen sind
-  schematisch; bei einem echten Lauf müssen die IDs zur Konfiguration passen.
+Alle erlaubten Möglichkeiten bilden eine Kandidatenliste. Die Policy wählt
+daraus; der Generator führt nichts aus. Die folgenden Payloads sind Beispiele
+mit schematischen IDs. In echten Läufen müssen diese zur Konfiguration passen.
 
 **Beispiel: Herabstufung eines defekten Jobs**
 
-- **Verfügbare Defektaktionen:** Ihre Erzeugung ist unter
-  [Job](#job) beschrieben. Die Herabstufung ist im Nacharbeitsbereich eine
-  Alternative zur Nacharbeit und zum Warten.
-- **Keine Nacharbeitskandidaten:** Gibt es im nacharbeitbaren Bereich
-  weder eine alternative Route noch eine verfügbare Defektmaschine,
-  bleiben `downgrade_product` und `wait_job`. Die Policy wählt zwischen
-  diesen Kandidaten; die Herabstufung erfolgt nicht automatisch.
-- **Herabstufungsprodukt bestimmen:** Verwendet wird der vorgesehene
-  Produkttyp der fehlerhaften Operation. Er kann ein Zwischenprodukt sein
-  und muss nicht dem Auftragsziel entsprechen.
-- **Herabstufung kennzeichnen:** Der Payload setzt diesen Produkttyp als
-  `processing_state`, dazu `general_state="intact"` und `downgraded=True`.
-  Die Qualitätsabweichung bleibt durch das zusätzliche Flag erkennbar.
+- Im [Nacharbeitsbereich](#job) konkurriert Herabstufung mit Nacharbeit und
+  Warten. Gibt es weder alternative Route noch verfügbare Defektmaschine, bleiben
+  `downgrade_product` und `wait_job`; Herabstufung erfolgt nicht automatisch.
+- Verwendet wird das vorgesehene Ergebnis der fehlerhaften Operation,
+  gegebenenfalls ein Zwischenprodukt statt des Auftragsziels.
+- Der Payload setzt diesen Produkttyp als `processing_state`, dazu
+  `general_state="intact"` und das Qualitätskennzeichen `downgraded=True`.
 
 Beispiel für eine Herabstufungsaktion:
 
@@ -1396,9 +1156,8 @@ Beispiel für eine Herabstufungsaktion:
 
 **Beispiel: Pick eines Roboters**
 
-1. Eine eigene `pick_*`-Aktion für jeden auswählbaren Job im Store (Beispiel:
-   zwei Jobs erzeugen zwei Pick-Kandidaten).
-2. Zusätzlich eine `wait_*`-Aktion.
+Für jeden auswählbaren Job entsteht eine `pick_*`-Aktion, dazu `wait_*`.
+Zwei Jobs ergeben also zwei Pick-Kandidaten und eine Warteaktion.
 
 Beispiel für eine Pick-Aktion des Main-Roboters bei Deadline `10` und
 aktueller Zeit `9`: `queue_priority = 0.5 / (1 + 1) = 0.25`.
@@ -1418,12 +1177,10 @@ aktueller Zeit `9`: `queue_priority = 0.5 / (1 + 1) = 0.25`.
 
 **Beispiel: Place eines Roboters**
 
-1. Eine Route legt die nächste Operation und Maschine fest. Daraus ergibt
-   sich der nächste Zielstore des Roboters.
-2. Hat dieser Store Platz, wird ein `place_*`-Kandidat erzeugt. Zwei
-   unterschiedliche nächste Schritte können so zwei Place-Kandidaten ergeben.
-3. Zusätzlich gibt es eine `wait_*`-Aktion. Identische Kandidaten werden
-   anschließend entfernt.
+Eine Route bestimmt die nächste Operation, Maschine und damit den Zielstore.
+Hat dieser Platz, entsteht ein `place_*`-Kandidat. Verschiedene nächste
+Schritte können mehrere Kandidaten ergeben. Dazu kommt `wait_*`;
+Duplikate werden anschließend entfernt.
 
 Beispiel für eine Place-Aktion des Main-Roboters:
 
@@ -1443,9 +1200,8 @@ Beispiel für eine Place-Aktion des Main-Roboters:
 
 **Beispiel: Verarbeitung auf einer Maschine**
 
-- **Voraussetzung:** Ein Job ist geladen und der Ausgangspuffer hat Platz.
-- **Payload:** Er enthält die auszuführende Operation, das Werkzeug, dessen
-  Lebensdauerwerte, die Werkzeugvorbereitung und den Ausgangsstore.
+Ein Job ist geladen und der Ausgangspuffer hat Platz. Der Payload enthält
+Operation, Werkzeug, Lebensdauerwerte, Werkzeugvorbereitung und Ausgangsstore.
 
 Beispiel für eine Verarbeitungsaktion:
 
@@ -1467,29 +1223,26 @@ Beispiel für eine Verarbeitungsaktion:
 
 ### Identische Kandidaten entfernen
 
-- **Identische Kandidaten erkennen:** Nur gleicher `action_type` und
-  gleicher Payload gelten als Duplikat. Verschiedene vollständige Routen
-  können denselben nächsten Schritt und damit eine identische Aktion ergeben.
-- **Unterschiedliche Kandidaten behalten:** Aktionen mit unterschiedlichen
-  Payloads bleiben erhalten und stehen der Policy zur Auswahl.
-- **Nur die Liste dieses Objekts bereinigen:** Der Generator entfernt hier
-  keine konkurrierenden Picks verschiedener Roboter. Diese zusätzliche
-  Prüfung übernimmt die jeweilige Policy: Die [Heuristik](#heuristicpolicy)
-  verwirft später ausgewählte doppelte Picks; Random- und RL-Policy filtern
-  bereits vergebene Jobs vor ihrer nächsten Auswahl.
+Gleicher `action_type` und gleicher Payload gelten als Duplikat. Das kann
+vorkommen, wenn verschiedene vollständige Routen denselben nächsten Schritt
+haben. Unterschiedliche Payloads bleiben erhalten.
+
+Diese Bereinigung betrifft nur ein Objekt. Konkurrierende Picks verschiedener
+Roboter verhindert die Policy: Die [Heuristik](#heuristicpolicy) verwirft
+spätere doppelte Picks; Random- und RL-Policy filtern bereits vergebene Jobs
+vor ihrer nächsten Auswahl.
 
 ### Berechnung von Operations- und Maschinenrouten
 
-Eine **Route** verbindet eine Operationsfolge mit einer passenden
-Maschinenfolge. Der Aktionskandidat enthält daraus die **nächste Operation
-und Maschine**, nicht die vollständige Reservierung dieses Herstellungswegs.
+Eine **Route** verbindet Operations- und Maschinenfolge. Ein Aktionskandidat
+enthält nur die **nächste Operation und Maschine**; er reserviert nicht die
+gesamte Route.
 
 1. **Operationsfolgen finden:**
-   `calculate_operation_sequences_between()` sucht Folgen vom aktuellen
-   Produkttyp bis zum Zielprodukttyp. Für die Freigabe verwendet
-   `create_release_job_action()` stattdessen
-   `calculate_operation_sequences()`: Diese Methode sucht vom Zielprodukt
-   rückwärts nach Herstellungsfolgen.
+   `calculate_operation_sequences_between()` sucht vom aktuellen zum
+   Zielprodukttyp. Bei der Freigabe nutzt `create_release_job_action()`
+   stattdessen `calculate_operation_sequences()`, das vom Zielprodukt
+   rückwärts sucht.
 
 2. **Passende Maschinen zuordnen:**
    `calculate_machine_sequences_from_operation_sequence()` prüft für jede
@@ -1500,26 +1253,21 @@ und Maschine**, nicht die vollständige Reservierung dieses Herstellungswegs.
    - Falls `tool_type_ids` angegeben ist: Enthält diese Liste den benötigten
      Werkzeugtyp?
 
-   Jede passende Kombination wird als Maschinenfolge aufgenommen.
-   **Die aktuelle Belegung und die Pufferkapazitäten werden bei dieser
-   Zuordnung nicht geprüft.**
+   Jede passende Kombination wird aufgenommen. **Aktuelle Belegung und
+   Pufferkapazität werden dabei nicht geprüft.**
 
 3. **Routen für einen Job liefern:**
-   `selectable_routes_for_job()` prüft zuerst, ob bereits eine
-   Nacharbeitsstrategie mit konkreter Operation und Maschine gespeichert ist.
-   Dann liefert sie nur diesen festgelegten Nacharbeitsschritt.
-   Andernfalls erhalten defekte, als Ausschuss markierte, herabgestufte oder
-   noch nicht konfigurierte Jobs keine normale Produktionsroute. Ist der
-   Zielprodukttyp bereits erreicht, wird ebenfalls keine Route geliefert.
-   Für die übrigen Jobs kombiniert die Methode die Operations- und
-   Maschinenfolgen.
+   `selectable_routes_for_job()` liefert bei gespeicherter Nacharbeitsstrategie
+   nur die festgelegte Operation und Maschine. Sonst erhalten defekte,
+   ausgeschusterte, herabgestufte, unkonfigurierte und bereits fertige Jobs
+   keine normale Route. Für die übrigen Jobs werden Operations- und
+   Maschinenfolgen kombiniert.
 
 <a id="nacharbeitskandidaten"></a>
 
 ### Nacharbeitskandidaten
 
-Für die in der [Job-Tabelle](#job) aufgeführten Nacharbeitsaktionen gelten
-unterschiedliche Prüfungen:
+Die [Nacharbeitsaktionen](#job) haben unterschiedliche Voraussetzungen:
 
 - **`job_rework_on_defect_machine`:**
   `machine_available_for_rework()` muss alle vier Bedingungen bestätigen:
@@ -1530,34 +1278,25 @@ unterschiedliche Prüfungen:
   - Ihr Ausgangspuffer hat freie Kapazität (`available_capacity > 0`).
 
 - **`job_rework_on_alternative_machine`:**
-  `find_rework_routes_with_alternative_machine()` liest Defektoperation,
-  Defektmaschine und Zielprodukt aus der Beobachtung.
-  `find_alternative_rework_routes()` sucht anschließend Routen, die zuerst
+  `find_rework_routes_with_alternative_machine()` liest die Defektdaten und
+  das Zielprodukt. `find_alternative_rework_routes()` sucht Routen, die zuerst
   **dieselbe fehlerhafte Operation auf einer anderen Maschine wiederholen**
-  und danach zum Zielprodukt führen. Dabei gelten die oben beschriebenen
-  Prüfungen für Maschinentyp, Layout und Werkzeug. Nur die erste Maschine
-  darf nicht die Defektmaschine sein; bei späteren Operationen darf sie
-  wieder vorkommen.
+  und danach zum Zielprodukt führen. Geprüft werden Maschinentyp, Layout und
+  Werkzeug. Die Defektmaschine ist nur als erste Maschine ausgeschlossen.
 
-  **Die aktuelle Belegung und die Puffer der Alternativmaschine werden
-  hier nicht geprüft.** Die Kapazitätsprüfung des nächsten Ablageziels
+  **Belegung und Puffer der Alternativmaschine werden hier nicht geprüft.**
+  Die Kapazitätsprüfung des nächsten Ablageziels
   erfolgt beim [Main-Roboter](#main-roboter) beziehungsweise beim
   [Korridorroboter](#korridorroboter).
 
-Ergeben mehrere alternative Routen denselben nächsten Nacharbeitsschritt,
-entfernt `generate_actions()` die identischen Aktionskandidaten.
+Gleiche nächste Nacharbeitsschritte entfernt `generate_actions()` als Duplikate.
 
 ## RandomPolicy: zufällige Vergleichssteuerung
 
-[`RandomPolicy`](sources/SpineML/Control/RandomPolicy/RandomPolicy.py) ist die
-zufällige Vergleichssteuerung. Sie implementiert dieselbe `Policy`-Schnittstelle
-wie die Heuristik, benötigt aber keinen Evaluator oder Selector.
-
-- **Gemeinsame technische Grundlage:** Sie verwendet denselben
-  `SpineActionGenerator` und dieselbe `SimulationBridge` wie die Heuristik.
-- **Keine heuristische Bewertung:** Sie verwendet keine Aktionsscores,
-  lokalen Gewichte oder EDD-Priorität zur Auswahl. Die vom Generator gelieferte
-  Pick-Priorität ersetzt sie in ihrer ausgewählten Aktion durch `0.0`.
+[`RandomPolicy`](sources/SpineML/Control/RandomPolicy/RandomPolicy.py) nutzt
+dieselbe Schnittstelle, Bridge und denselben Generator wie die Heuristik.
+Sie benötigt weder Evaluator noch Selector und verwendet keine Scores,
+lokalen Gewichte oder EDD-Priorität zur Auswahl.
 
 `make_decision()` wählt für jedes wartende Objekt:
 
@@ -1569,16 +1308,14 @@ wie die Heuristik, benötigt aber keinen Evaluator oder Selector.
 4. Nur wenn keine Nicht-Warteaktion verfügbar ist, wird eine angebotene
    `wait_*`-Aktion gewählt. Ohne Kandidaten wird keine Aktion zurückgegeben.
 
-- **Nicht-Warteaktionen:** Dazu zählen Freigabe, Pick, Ablegen, Verarbeitung
-  und technisch mögliche Defektbehandlungen. Sie heißen im Code „produktiv“.
-- **Pro Kandidat auswählen:** Drei verschiedene Routenkandidaten sind drei
-  Auswahlmöglichkeiten, auch wenn sie dieselbe Aktionsart haben.
-- **Keine Deadline-Priorität setzen:** Bei Picks gilt `queue_priority = 0.0`.
-  Die vorhandene Store-Reihenfolge bei gleicher Priorität bleibt bestehen.
-- **Technische Zulässigkeit beibehalten:** Der Generator prüft weiterhin,
-  welche Aktionen möglich sind. Zufällig ist nur die Auswahl unter diesen
-  Kandidaten; Warten bleibt der Fallback.
-- **Als Alternative einsetzen:** Die Heuristik bleibt die Standardsteuerung.
+- **Nicht-Warteaktionen:** Freigabe, Pick, Ablegen, Verarbeitung und mögliche
+  Defektbehandlungen heißen im Code „produktiv“.
+- **Auswahl pro Kandidat:** Drei Routen sind drei Auswahlmöglichkeiten,
+  auch bei gleicher Aktionsart.
+- **Neutrale Picks:** `queue_priority = 0.0` erhält die Store-Reihenfolge bei
+  gleicher Priorität.
+- Zufällig ist nur die Auswahl unter technisch möglichen Kandidaten.
+  Die Heuristik bleibt Standardsteuerung.
 
 Ein Headless-Lauf mit dieser Policy:
 
@@ -1592,35 +1329,30 @@ runner = SimulationRunner(layout, scenario)
 metrics = runner.run_policy(RandomPolicy(seed=101), seed=101)
 ```
 
-Für einen weiteren unabhängigen Lauf wird eine neue `RandomPolicy` erzeugt.
-Ihr eigener `random.Random(seed)` steuert die Auswahl; der Runner setzt
-getrennt davon den Simulations-Seed. Die Zufallsauswahl dieser Policy
-verbraucht damit keine Werte des globalen Zufallszahlengenerators des
-Simulationskerns.
+Jeder unabhängige Lauf erhält eine neue `RandomPolicy` mit eigenem
+`random.Random(seed)`. Der Runner setzt den Simulations-Seed getrennt davon;
+Policy-Auswahl und globaler Simulationszufall bleiben unabhängig.
 
 <a id="generatorselectorpolicy"></a>
 
 ## HeuristicPolicy
 
 [HeuristicPolicy.py](sources/SpineML/Control/HeuristicPolicy/HeuristicPolicy.py)
-koordiniert die heuristische Auswahl. Standardmäßig verbindet die Klasse
+verbindet standardmäßig
 `SpineActionGenerator`, `LocalHeuristicActionEvaluator(HeuristicWeights())`
-und `HeuristicActionSelector`. Generator, Evaluator und Selector können beim
-Erzeugen der Policy ausgetauscht werden. Der Evaluator berechnet Scores aus
-den bereits vollständig erzeugten Kandidaten.
+und `HeuristicActionSelector`. Alle drei Bausteine sind austauschbar.
+Der Evaluator bewertet die vollständigen Generatorkandidaten.
 
 ### Ablauf von `make_decision()`
 
-1. Die Policy durchläuft die Snapshot-Objekte in ihrer Einfügereihenfolge und
-   berücksichtigt diejenigen mit `is_waiting_for_action=True`.
-2. Für jedes Objekt erstellt sie eine `PolicyObservation` mit dessen
-   `current_object_id` und demselben Snapshot.
-3. Der Generator erzeugt die Kandidaten. Der Selector lässt sie durch den
-   Evaluator direkt bewerten und wählt eine Aktion.
-4. Die Policy sammelt die `SelectedObjectAction`-Objekte. Bei mehreren Picks
-   desselben Jobs bleibt der zuerst ausgewählte Pick erhalten; spätere werden
-   verworfen. Für diese Objekte wird in diesem Aufruf keine Ersatzaktion gewählt.
-5. Die verbleibenden Aktionen gehen zusammen als `PolicyDecision` an die Bridge.
+1. Snapshot-Objekte in Einfügereihenfolge durchlaufen; nur
+   `is_waiting_for_action=True` berücksichtigen.
+2. Je Objekt eine `PolicyObservation` mit seiner `current_object_id` und
+   demselben Snapshot erstellen.
+3. Kandidaten erzeugen, durch den Evaluator bewerten und vom Selector auswählen lassen.
+4. Ausgewählte `SelectedObjectAction`-Objekte sammeln. Bei doppelten Picks
+   desselben Jobs nur den ersten behalten, ohne Ersatzaktion für die übrigen.
+5. Alle verbleibenden Aktionen als `PolicyDecision` an die Bridge geben.
 
 <a id="ablauf-der-generalcontrol"></a>
 
@@ -1637,57 +1369,40 @@ flowchart TD
     G --> H[Bridge löst IDs auf<br/>und stellt Aktionen zu]
 ```
 
-Die [lokale Aktionsbewertung](#heuristicpolicy-lokale-aktionsbewertung)
-beschreibt die Score-Berechnung. Die Gewichtssuche verändert deren
-`HeuristicWeights`, nicht die technischen Regeln des gemeinsamen Generators.
+Die Gewichtssuche verändert die `HeuristicWeights` der
+[lokalen Bewertung](#heuristicpolicy-lokale-aktionsbewertung), nicht die Generatorregeln.
 
 <a id="actionselector"></a>
 
 ### HeuristicActionSelector
 
 [HeuristicActionSelector.py](sources/SpineML/Control/HeuristicPolicy/HeuristicActionSelector.py)
-ist der konkrete Selector der Heuristik. Er erhält die Kandidatenliste eines
-Objekts, einen Evaluator, die Beobachtung und die Ziel-ID. Er erzeugt keine
-neuen Produktionsaktionen und wird weder von `RandomPolicy` noch von
-`RLCandidatePolicy` für deren reguläre Auswahl benötigt.
+erhält Kandidatenliste, Evaluator, Beobachtung und Ziel-ID eines Objekts.
+Er erzeugt keine Aktionen. Random- und RL-Policy verwenden ihn nicht.
 
-Der Standard-`HeuristicActionSelector` arbeitet in folgenden Schritten:
+Der Standard-Selector arbeitet so:
 
-1. Gibt es für das wartende Objekt keine Aktion, gibt er eine leere
-   `PolicyDecision` zurück.
-2. Der Selector lässt jeden erzeugten Kandidaten unmittelbar durch
-   `LocalHeuristicActionEvaluator.evaluate_action()` bewerten. Er ruft keine
-   zusätzliche Payload-Vorbereitung auf und übernimmt den Kandidaten unverändert.
-3. Der höchste Score wird gesucht. Alle Aktionen mit genau diesem Score gelten
-   als beste Aktionen.
-4. Zusätzlich gelten Aktionen als fast gleich gut, wenn ihr Score höchstens
-   `0.05` unter dem höchsten Score liegt. Bei einem Höchstwert von `0.80`
-   werden zum Beispiel auch Aktionen ab `0.75` als fast gleich gut gesammelt.
-5. **Exploration:** Mit `EXPLORATION_EPSILON = 0.10` wird mit einer
-   Wahrscheinlichkeit von `10 %` eine fast gleich gute, aber nicht exakt
-   beste Alternative ausprobiert. Nicht-Warteaktionen werden unter diesen
-   Alternativen bevorzugt. Gibt es keine solche Alternative, bleibt eine
-   exakt beste Aktion die Auswahl.
-6. **Keine Exploration:** In den übrigen Fällen wählt der Selector zufällig
-   eine der exakt besten Aktionen. Diese Zufallsauswahl löst nur Gleichstände
-   auf.
+1. Ohne Kandidaten eine leere `PolicyDecision` zurückgeben.
+2. Jeden Kandidaten unverändert mit
+   `LocalHeuristicActionEvaluator.evaluate_action()` bewerten, ohne zusätzliche
+   Payload-Vorbereitung.
+3. Alle Aktionen mit dem höchsten Score als beste Aktionen sammeln.
+4. Aktionen bis `0.05` darunter als fast gleich gut sammeln, beispielsweise
+   ab `0.75` bei einem Höchstscore von `0.80`.
+5. **Exploration:** Mit `EXPLORATION_EPSILON = 0.10` eine fast gleich gute,
+   aber nicht exakt beste Alternative ausprobieren. Dabei Nicht-Warteaktionen
+   bevorzugen. Ohne solche Alternative eine exakt beste Aktion wählen.
+6. **Sonst:** Zufällig eine exakt beste Aktion wählen, also nur Gleichstände auflösen.
 
-- **Ergebnis zurückgeben:** Die gewählte Aktion geht als `PolicyDecision`
-  für das Zielobjekt an die `HeuristicPolicy`.
-- **Ziel der Exploration:** Auch fast gleich gute Produktionsentscheidungen
-  ausprobieren, ohne deutlich schlechter bewertete Aktionen zu verwenden.
-- **Auswirkung auf die Produktion:** Andere Aktionen können den weiteren
-  Simulationsverlauf und die globalen Kennzahlen verändern. Gemeinsame Seeds
-  und die Mittelung mehrerer Läufe beziehen diesen Einfluss in den Vergleich
-  ein.
-- **Abgrenzung zur Gewichtssuche:** Die Exploration verändert weder Scores
-  noch lokale Gewichtssätze. Der Vergleich von Defektstrategien wie
-  `job_rework_on_defect_machine` und `job_rework_on_alternative_machine`
-  beruht weiterhin auf der normalen Score-Berechnung.
-- **Zufallsquelle:** `HeuristicPolicyFactory(weights)(seed)` erzeugt für
-  jeden Lauf einen frischen Selector mit eigenem `random.Random(seed)`.
-  Ein direkt ohne `rng` erzeugter Selector verwendet dagegen das gemeinsame
-  Python-`random`-Modul.
+Die gewählte Aktion geht als `PolicyDecision` an die `HeuristicPolicy`.
+Exploration erprobt nahe Alternativen, verändert aber weder Scores noch
+Gewichtssätze. Auch Defektstrategien werden weiterhin regulär bewertet.
+Andere Entscheidungen können globale Kennzahlen ändern; gemeinsame Seeds
+und Mittelwerte mehrerer Läufe berücksichtigen diesen Einfluss.
+
+`HeuristicPolicyFactory(weights)(seed)` erzeugt je Lauf einen frischen Selector
+mit eigenem `random.Random(seed)`. Ohne `rng` nutzt ein direkt erzeugter
+Selector dagegen das gemeinsame Python-`random`-Modul.
 
 <a id="heuristiccontrol"></a>
 
@@ -1697,82 +1412,65 @@ Der Standard-`HeuristicActionSelector` arbeitet in folgenden Schritten:
 
 #### Ziel und Grundidee
 
-Die Heuristik vergleicht **für jedes wartende Objekt dessen technisch mögliche
-Aktionen**. Der lokale Evaluator berechnet ihre Scores; der
+Die Heuristik vergleicht **die technisch möglichen Aktionen jedes wartenden
+Objekts**. Der Evaluator berechnet Scores; der
 [HeuristicActionSelector](#actionselector) wählt daraus eine Aktion.
-Ein höherer Score ist vorteilhafter.
+Höher ist vorteilhafter.
 
-- **Lokale Regeln:** Kurze Transportwege, dringende Jobs oder ein bereits
-  passendes Werkzeug erhalten vorteilhafte Teilwerte. Der lokale Gewichtssatz
-  bestimmt, wie stark diese Kriterien im Score zählen.
-- **Kein vollständiger Produktionsplan:** Die Policy bewertet die aktuell
-  angebotenen Aktionen. Sie spielt deren gesamte zukünftige Folgen nicht vorab
-  durch. Bei einer neuen Beobachtung entscheidet sie erneut. Der Selector wählt
-  überwiegend eine bestbewertete Aktion und erkundet gelegentlich eine fast
-  gleich gute Alternative.
-- **Lokale und globale Bewertung:** Ein hoher Aktionsscore bedeutet nicht
-  automatisch ein besseres Produktionsergebnis. Die
-  [Gewichtssuche](#optimierungsvorgang) vergleicht deshalb vollständige
-  Simulationsläufe anhand ihrer globalen Bewertungszahlen.
+- **Lokale Regeln:** Kurze Wege, dringende Jobs und passende Werkzeuge
+  erhalten hohe Teilwerte. Der Gewichtssatz bestimmt ihre Bedeutung im Score.
+- **Kein Gesamtplan:** Die Policy berechnet nicht alle zukünftigen Folgen.
+  Sie entscheidet bei jeder Beobachtung neu, meist für eine beste Aktion,
+  gelegentlich für eine fast gleich gute Alternative.
+- **Lokale und globale Bewertung:** Hohe Aktionsscores garantieren kein
+  besseres Produktionsergebnis. Die [Gewichtssuche](#optimierungsvorgang)
+  vergleicht deshalb globale Bewertungszahlen vollständiger Läufe.
 
 #### Ablauf der Bewertung
 
-- **Umsetzung:** Der Bewertungsteil der Policy steht in
-  [LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicPolicy/LocalHeuristicActionEvaluator.py).
+Umgesetzt in
+[LocalHeuristicActionEvaluator.py](sources/SpineML/Control/HeuristicPolicy/LocalHeuristicActionEvaluator.py):
 
-1. **Vollständige Kandidaten übernehmen:** Der Generator hat die Payloads
-   bereits erzeugt und bei Picks die aktuelle `queue_priority` eingetragen.
-   Der Evaluator verwendet diesen Wert direkt; er bereitet den Kandidaten
-   nicht nochmals vor.
-2. **Rohwerte ermitteln:** `evaluate_action()` ruft je nach `action_type`
-   die passende Bewertungsmethode auf, etwa `evaluate_machine_pick_action()`.
-   Diese liest die **Bewertungsgrößen** (Rohwerte der Kriterien, zum Beispiel
-   eine Transportzeit von vier Zeiteinheiten) aus dem Simulationszustand,
-   der Konfiguration und den Aktionsdaten.
-3. **Rohwerte abbilden:** Die heuristischen Regeln bestimmen, wie daraus
-   **Teilwerte** (auf den Bereich `0` bis `1` abgebildete Werte) entstehen.
-   Zum Beispiel liefert `inverse_scale(4)` den Teilwert `0.2`.
-4. **Score berechnen:** `calculate_action_score()` verbindet die Teilwerte
-   mit ihren Gewichten zu einem gewichteten Durchschnitt.
-   Bei bestimmten Defektaktionen wird anschließend eine Deadline-Strafe
-   abgezogen. Der Endscore kann dadurch negativ werden und wird nicht
-   nachträglich begrenzt.
-5. **Aktion auswählen:** Der `HeuristicActionSelector` wählt mit den fertigen
-   Scores eine bestbewertete Aktion oder erkundet gelegentlich eine fast
-   gleich gute Alternative. Erst der Simulationskern führt sie aus.
+1. **Kandidaten übernehmen:** Vollständige Payloads einschließlich
+   `queue_priority` direkt verwenden, ohne erneute Vorbereitung.
+2. **Rohwerte lesen:** `evaluate_action()` ruft nach `action_type` die passende
+   Methode auf, etwa `evaluate_machine_pick_action()`. Sie liest Kriterien
+   aus Zustand, Konfiguration und Payload.
+3. **Teilwerte bilden:** Heuristische Regeln bilden gültige Rohwerte auf
+   `[0, 1]` ab, etwa `inverse_scale(4) = 0.2`.
+4. **Score berechnen:** `calculate_action_score()` bildet den gewichteten
+   Durchschnitt. Bei bestimmten Defektaktionen folgt ein Deadline-Strafabzug.
+   Der Endscore darf negativ sein und wird nicht begrenzt.
+5. **Auswählen:** Der Selector wählt anhand der Scores; erst der
+   Simulationskern führt die Aktion aus.
 
 #### Bewertungsgrößen und heuristische Regeln
 
-- **Bewertungsgröße:** Der aus dem Snapshot oder der Konfiguration gelesene
-  Rohwert, beispielsweise eine Transportzeit von `4` Zeiteinheiten.
-- **Heuristische Regel:** Legt fest, welche Eigenschaft bevorzugt wird,
-  beispielsweise eine kürzere Transportzeit.
-- **Teilwert:** Die Formel setzt diese Regel in eine Zahl um:
-  `inverse_scale(4) = 0.2`. Die folgenden Regeln verwenden dieselbe
-  Vorteilsrichtung: Ein höherer Teilwert ist vorteilhafter.
+- **Bewertungsgröße:** Rohwert, etwa Transportzeit `4`.
+- **Heuristische Regel:** Bevorzugte Eigenschaft, etwa kürzere Transportzeit.
+- **Teilwert:** Zahlenwert der Regel, etwa `inverse_scale(4) = 0.2`.
+  Bei allen folgenden Regeln ist höher vorteilhafter.
 
 #### Allgemeine heuristische Regeln
 
 ##### 1. Termindruck: dringendere Jobs bevorzugen
 
 - **Bewertungsgröße:** Restzeit `t = latest_end_time − aktuelle Zeit`.
-  `latest_end_time` ist die Deadline des Auftrags, zu dem der Job gehört.
-- **Regel:** Je näher die Deadline liegt oder je weiter sie überschritten
-  ist, desto höher ist die EDD-Priorität (`Earliest Due Date`).
+  `latest_end_time` ist die Auftragsdeadline.
+- **Regel:** Mit näherer oder stärker überschrittener Deadline steigt die
+  EDD-Priorität (`Earliest Due Date`).
 - **Abbildung in [`SpineActionGenerator.calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionGenerator.py):**
   - Bei `t >= 0`: `Teilwert = 0.5 × inverse_scale(t)`.
   - Bei `t < 0`: `Teilwert = 0.5 + 0.5 × direct_scale(-t)`.
 - **Beispiel:** Zwei Zeiteinheiten vor der Deadline ergibt sich etwa
   `0.167`, genau bei der Deadline `0.5` und zwei Zeiteinheiten danach etwa
-  `0.833`. Negative Restzeit wird also als Überfälligkeit behandelt.
-- **Verwendung:** Bei Picks steht der Wert bereits im Payload. Für Freigabe
-  und Warten delegiert der Evaluator seine EDD-Berechnung an dieselbe
-  Generator-Methode. Die allgemeinen Skalierer `inverse_scale()` und
-  `direct_scale()` sind im Evaluator definiert.
+  `0.833`.
+- **Berechnung:** Picks enthalten den Wert im Payload. Für Freigabe und
+  Warten nutzt der Evaluator dieselbe Generator-Methode. Die allgemeinen
+  Skalierer `inverse_scale()` und `direct_scale()` stehen im Evaluator.
 
-- **Wertebereich:** Vor der Deadline liegt die Priorität unter `0.5`, genau
-  bei der Deadline beträgt sie `0.5`, danach liegt sie darüber. Bei sehr
-  großer Restzeit nähert sie sich `0`, bei sehr großer Überfälligkeit `1`.
+- **Wertebereich:** Vor der Deadline unter `0.5`, genau dort `0.5`, danach
+  darüber. Bei großer Restzeit nähert sie sich `0`, bei großer Überfälligkeit `1`.
 
 ```mermaid
 xychart-beta
@@ -1791,12 +1489,11 @@ xychart-beta
 ##### 2. Verarbeitungs-, Transport- und Lagerzeiten: kürzere Zeiten bevorzugen
 
 - **Bewertungsgröße:** Eine nichtnegative Zeit `x`.
-- **Regel:** Eine kürzere Zeit soll einen höheren Teilwert ergeben.
+- **Regel:** Kürzere Zeiten erhalten höhere Teilwerte.
 - **Abbildung:** `inverse_scale(x) = 1 / (1 + x)`.
 - **Beispiel:** Zeit `1 → 0.5`; Zeit `4 → 0.2`.
 
-- **Grenzwerte:** Bei `x = 0` ergibt sich `1`; mit wachsendem `x` nähert
-  sich der Teilwert `0`.
+- **Grenzwerte:** `x = 0` ergibt `1`; für wachsendes `x` nähert sich der Wert `0`.
 
 ```mermaid
 xychart-beta
@@ -1816,10 +1513,9 @@ xychart-beta
 ##### 3. Maschinenwarteschlange: weniger wartende Jobs bevorzugen
 
 - **Bewertungsgröße:** Anzahl `n` der Jobs im Eingangspuffer der Maschine.
-- **Regel:** Eine kürzere Warteschlange soll einen höheren Teilwert ergeben.
+- **Regel:** Kürzere Warteschlangen erhalten höhere Teilwerte.
 - **Abbildung:** `inverse_scale(n) = 1 / (1 + n)`.
-- **Beispiel:** Kein wartender Job ergibt `1`; drei wartende Jobs ergeben
-  `0.25`.
+- **Beispiel:** Null Jobs ergeben `1`; drei Jobs `0.25`.
 
 - **Verwendung:** [Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot),
   [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
@@ -1827,13 +1523,10 @@ xychart-beta
 
 ##### 4. Werkzeugpassung: ein bereits montiertes passendes Werkzeug bevorzugen
 
-- **Bewertungsgröße:** Übereinstimmung zwischen benötigtem und montiertem
-  Werkzeugtyp. Jede Operation hat einen festgelegten benötigten Werkzeugtyp.
-- **Regel und Abbildung:** Gleicher Werkzeugtyp ergibt den Teilwert `1`,
-  ein anderer Werkzeugtyp oder kein montiertes Werkzeug ergibt `0`.
-  Das Kriterium geht bei Maschinen-Pick und Nacharbeit immer ein.
-- **Beispiel:** Benötigt die Operation Fräser A und Fräser A ist montiert,
-  ist der Teilwert `1`; bei montiertem Fräser B ist er `0`.
+- **Bewertungsgröße:** Benötigter und montierter Werkzeugtyp.
+- **Regel und Abbildung:** Passender Typ ergibt `1`, anderer oder fehlender
+  Typ `0`. Das Kriterium zählt bei Maschinen-Pick und Nacharbeit immer.
+- **Beispiel:** Fräser A benötigt und montiert: `1`; Fräser B montiert: `0`.
 
 - **Verwendung:** [Maschinen-Pick](#maschinen-pick-pick_machine_job),
   [Nacharbeit auf der Defektmaschine](#nacharbeit-auf-der-defektmaschine-job_rework_on_defect_machine) und
@@ -1843,16 +1536,14 @@ xychart-beta
 
 - **Bewertungsgröße:** Verhältnis
   `r = verbleibende Werkzeuglebensdauer / Verbrauch der geplanten Operation`.
-- **Regel:** Eine größere Reserve im Verhältnis zum Verbrauch soll einen
-  höheren Teilwert ergeben.
+- **Regel:** Größere relative Reserve erhält einen höheren Teilwert.
 - **Abbildung:** Bei positivem Verbrauch gilt
   `Teilwert = direct_scale(r) = r / (1 + r)`. Bei Verbrauch `0` entfällt
-  dieses Kriterium, da das Verhältnis sonst eine Division durch null wäre.
+  das Kriterium wegen Division durch null.
 - **Beispiel:** Vier verbleibende und zwei benötigte Einheiten ergeben
   `r = 2` und den Teilwert `2 / 3 ≈ 0.667`.
 
-- **Grenzwerte:** Bei `r = 0` ergibt sich `0`; mit wachsendem `r` nähert
-  sich der Teilwert `1`.
+- **Grenzwerte:** `r = 0` ergibt `0`; für wachsendes `r` nähert sich der Wert `1`.
 
 ```mermaid
 xychart-beta
@@ -1869,64 +1560,50 @@ xychart-beta
 ##### 6. Freie Pufferkapazität: einen größeren freien Anteil bevorzugen
 
 - **Bewertungsgröße:** Freie Plätze und Gesamtkapazität des Ziel-Stores.
-- **Regel:** Je größer der freie Anteil, desto höher der Teilwert.
+- **Regel:** Ein größerer freier Anteil ist vorteilhafter.
 - **Abbildung mit `normalize_ratio()`:**
   `normalize_ratio(freie Plätze, Gesamtkapazität) = freie Plätze / Gesamtkapazität`.
-- **Beispiel:** Zwei von zehn freien Plätzen ergeben `0.2`; acht von zehn
-  ergeben `0.8`.
+- **Beispiel:** Zwei von zehn Plätzen frei: `0.2`; acht von zehn: `0.8`.
 
-- **Wertebereich:** Bei positiver, endlicher Kapazität und gültiger Belegung
-  liegt dieser Anteil zwischen `0` und `1`.
+- **Wertebereich:** `[0, 1]` bei positiver, endlicher Kapazität und gültiger Belegung.
 - **Verwendung:** [Ablegen](#ablegen-place_main_robot-und-place_corridor_arm_robot).
 
 ##### 7. Defektschwere: bei stärkerem Defekt die Herabstufung höher bewerten
 
 - **Bewertungsgröße:** `defect_severity` des Jobs.
-- **Regel:** Je höher der Defektschweregrad, desto stärker spricht dieses
-  Kriterium für eine Herabstufung.
+- **Regel:** Höhere Defektschwere spricht stärker für Herabstufung.
 - **Abbildung in `evaluate_defect_action()`:**
-  `Teilwert = defect_severity`. Der bereits zwischen `0` und `1` liegende
-  Schweregrad wird unverändert übernommen.
+  `Teilwert = defect_severity`, unverändert im Bereich `[0, 1]`.
 - **Beispiel:** Schweregrad `0.2 → 0.2`; Schweregrad `0.5 → 0.5`.
 
 - **Verwendung:** [Herabstufung](#herabstufung-downgrade_product).
 
 ##### 8. Warten: je höher der Termindruck, desto niedriger der Teilwert
 
-- **Bewertungsgröße:** Termindruck des Jobs, ausgedrückt durch seine
-  EDD-Priorität. Eine höhere EDD-Priorität bedeutet einen dringenderen Job.
-- **Regel:** Je höher die EDD-Priorität, desto niedriger der Teilwert für
-  Warten. Warten wird dadurch für dringende Jobs weniger vorteilhaft bewertet.
-- **Abbildung:** Für normales Warten in `evaluate_wait_action()` und für
-  Warten eines defekten Jobs in `evaluate_defect_action()` gilt bei bekannter
-  Deadline dieselbe Formel:
+- **Bewertungsgröße:** EDD-Priorität des Jobs.
+- **Regel:** Höhere Dringlichkeit macht Warten weniger vorteilhaft.
+- **Abbildung:** Bei bekannter Deadline verwenden `evaluate_wait_action()`
+  und `evaluate_defect_action()` dieselbe Formel:
   `Teilwert = 1.0 - EDD`.
 - **Ohne Job oder Deadline:** `evaluate_wait_action()` verwendet den festen
   Ersatzwert `DEFAULT_WAIT_SCORE = 0.01`.
-- **Beispiel:** Bei `EDD = 0.75` ergibt sich in beiden Fällen
-  `1.0 - 0.75 = 0.25`. Bei einem defekten Job kann anschließend noch ein
-  Strafabzug hinzukommen.
+- **Beispiel:** `EDD = 0.75` ergibt `0.25`. Bei Defekt kann ein Strafabzug folgen.
 
 - **Verwendung:** [Normales Warten](#normales-warten-wait_) und
   [Warten bei einem Defekt](#warten-bei-einem-defekt-wait_job).
 
 #### Verwendung der Bewertungsgrößen nach Aktionstyp
 
-- **Zuordnung:** Die folgenden Abschnitte nennen pro Aktionstyp die
-  Rohwerte, ihre Ermittlung und die verwendeten Gewichte.
-- **Regeln nachlesen:** Die Kriterien verlinken auf die
-  [allgemeinen Regeln](#allgemeine-heuristische-regeln) mit Formel und Beispiel.
-- **Beiträge verbinden:** Die Ausdrücke zeigen jeweils `Teilwert × Gewicht`.
-  Für den [Gesamtscore](#gewichte-und-gesamtscore) addiert
-  `calculate_action_score()` die Beiträge und teilt durch ihre Gewichtssumme.
-- **Optionale Kriterien:** Jeder Aktionstyp nennt ausdrücklich, wann ein
-  Kriterium entfällt. Ein vorhandener Teilwert von `0` entfällt nicht.
-- **Fallback:** Greift keine der Dispatchregeln in `evaluate_action()`,
-  liefert die Methode den Score `0`.
+Die folgenden Abschnitte nennen Rohwerte, Ermittlung und Gewichte je Aktion.
+Die Kriterien verlinken auf [Regeln mit Formeln und Beispielen](#allgemeine-heuristische-regeln).
+`Teilwert × Gewicht` bezeichnet einen Beitrag; der
+[Gesamtscore](#gewichte-und-gesamtscore) teilt ihre Summe durch die Gewichtssumme.
+Optionale Kriterien entfallen nur unter den genannten Bedingungen, nicht bei
+Teilwert `0`. Ohne passende Dispatchregel liefert `evaluate_action()` den Score `0`.
 
 ##### Freigabe: `release_job`
 
-- **Bewertung:** `evaluate_release_action()` berücksichtigt zwei Kriterien:
+`evaluate_release_action()` berücksichtigt:
 
 1. **[Termindruck](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × release_edd_weight`.
 2. **[Durchschnittliche Routenverarbeitungszeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):**
@@ -1934,12 +1611,8 @@ xychart-beta
 
 ###### Ermittlung der Routenzeit
 
-1. **Routen ermitteln:** `estimate_release_processing_time()` bestimmt die
-   möglichen Operationsfolgen zum Zielprodukt.
-2. **Dauern addieren:** Für jede Route werden die konfigurierten Dauern aller
-   ihrer Operationen addiert.
-3. **Mittelwert bilden:** Der Durchschnitt der Routenzeiten liefert den
-   Rohwert für die Freigabebewertung.
+`estimate_release_processing_time()` ermittelt Operationsfolgen zum Zielprodukt,
+addiert je Route die konfigurierten Operationsdauern und mittelt die Routenzeiten.
 
 Beispiel:
 
@@ -1948,13 +1621,13 @@ Beispiel:
 - Der Rohwert für die Freigabe ist `(8 + 12) / 2 = 10`.
 - Daraus entsteht der Teilwert `inverse_scale(10) = 1 / 11 ≈ 0.091`.
 
-- **Abgrenzung:** Der Mittelwert bewertet die Freigabe, wählt aber keine
-  Route aus. Transport- und Wartezeiten sind nicht enthalten.
+Der Mittelwert bewertet die Freigabe, wählt keine Route aus und enthält keine
+Transport- oder Wartezeiten.
 
 ##### Roboter-Pick: `pick_main_robot` und `pick_corridor_arm_robot`
 
-- **Aufgabe:** Der Roboter nimmt einen Job aus einem Quell-Store auf.
-- **Bewertung:** `evaluate_robot_pick_action()` berücksichtigt:
+Der Roboter nimmt einen Job aus einem Quell-Store auf.
+`evaluate_robot_pick_action()` berücksichtigt:
 
 1. **[EDD-/Queue-Priorität](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × queue_priority_weight`.
 2. **[Entnahmezeit](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(storage_out_time) × pick_source_storage_time_weight`.
@@ -1963,32 +1636,25 @@ Beispiel:
 
 ###### Ermittlung der Transportzeit
 
-- **Weg:** `transport_time_value()` schätzt den Weg von der aktuellen
-  Roboterposition zum Quell-Store aus `target_store_id` im Payload.
-- **Achsweise Bewegung:** Die Wege in X-, Y- und Z-Richtung werden addiert:
+`transport_time_value()` schätzt die achsweise Fahrt von der Roboterposition
+zum Quell-Store (`target_store_id`):
 
 `Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
 
-- **Beispiel:** Drei Wegeinheiten in X-Richtung und eine in Y-Richtung bei
-  Grundgeschwindigkeit `2` Wegeinheiten pro Zeiteinheit ergeben den Rohwert
-  `(3 + 1 + 0) / 2 = 2` Zeiteinheiten. Der Teilwert ist dann
-  `inverse_scale(2) = 1 / 3 ≈ 0.333`.
+Beispiel: X-Weg `3`, Y-Weg `1` und Grundgeschwindigkeit `2` ergeben
+`(3 + 1 + 0) / 2 = 2` Zeiteinheiten und `inverse_scale(2) ≈ 0.333`.
 
 ###### Auslagerzeit am Quell-Store
 
-- **Bedeutung:** Die Auslagerzeit beschreibt das Herausnehmen des Jobs,
-  nicht die Fahrt zum Store.
-- **Datenquelle:** `pick_source_storage_time_value()` liest
-  `storage_out_time` aus dem Payload. Fehlt das Feld, entfällt der Teilwert.
-- **Beispiel:** Eine Auslagerzeit von `2` ergibt
-  `inverse_scale(2) = 1 / 3 ≈ 0.333`.
-- **Getrennte Kriterien:** Transport- und Auslagerzeit gehen jeweils mit
-  ihrem eigenen Gewicht in den Score ein.
+`pick_source_storage_time_value()` liest `storage_out_time` aus dem Payload.
+Das ist die Entnahmezeit, nicht die Fahrtzeit. Fehlt das Feld, entfällt das
+Kriterium. Zeit `2` ergibt `inverse_scale(2) ≈ 0.333`. Transport und Entnahme
+haben getrennte Gewichte.
 
 ##### Maschinen-Pick: `pick_machine_job`
 
-- **Aufgabe:** Die Maschine nimmt einen Job aus ihrem Eingangspuffer auf.
-- **Bewertung:** `evaluate_machine_pick_action()` berücksichtigt:
+Die Maschine nimmt einen Job aus ihrem Eingangspuffer auf.
+`evaluate_machine_pick_action()` berücksichtigt:
 
 1. **[EDD-/Queue-Priorität](#1-termindruck-dringendere-jobs-bevorzugen):** `EDD × queue_priority_weight`.
 2. **[Operationsdauer](#2-verarbeitungs--transport--und-lagerzeiten-kürzere-zeiten-bevorzugen):** `inverse_scale(operation.duration) × machine_pick_operation_duration_weight`.
@@ -2001,26 +1667,19 @@ Beispiel:
 
 ###### Verwendete Operationsdauer
 
-- **Datenquelle:** Der Evaluator liest `selected_operation_id` aus dem Job
-  und verwendet die konfigurierte Dauer `operation.duration` dieser Operation.
-- **Umfang:** Es zählt nur die nächste Operation auf dieser Maschine, nicht
-  die Summe aller noch benötigten Operationen bis zum Endprodukt.
-- **Beispiel:** Eine Operationsdauer von `4` Zeiteinheiten ergibt
-  `inverse_scale(4) = 1 / (1 + 4) = 0.2`. Eine andere mögliche Operation mit
-  Dauer `1` erhält den höheren Teilwert `0.5`.
+Der Evaluator liest `selected_operation_id` aus dem Job und verwendet deren
+`operation.duration`. Es zählt nur die nächste Operation, nicht die restliche
+Route. Dauer `4` ergibt `inverse_scale(4) = 0.2`; Dauer `1` ergibt `0.5`.
 
 ##### Verarbeitung: `process_machine_job`
 
-- **Score:** `evaluate_process_action()` liefert `0`.
-- **Auswahl:** Für eine geladene Maschine mit freiem Ausgangspuffer erzeugt
-  der Generator nur diese Verarbeitungsaktion. Der Score `0` verhindert ihre
-  Ausführung daher nicht.
+`evaluate_process_action()` liefert `0`. Bei geladener Maschine und freiem
+Ausgangspuffer ist dies der einzige Kandidat; Score `0` verhindert die Ausführung nicht.
 
 ##### Ablegen: `place_main_robot` und `place_corridor_arm_robot`
 
-- **Aufgabe:** Der Roboter legt den getragenen Job in einem Ziel-Store ab,
-  etwa im Eingangspuffer einer Maschine. Der Job wird dabei nicht verarbeitet.
-- **Bewertung:** `evaluate_place_action()` berücksichtigt:
+Der Roboter legt den Job in einem Ziel-Store ab, ohne ihn zu verarbeiten.
+`evaluate_place_action()` berücksichtigt:
 
 1. **[Freie Zielkapazität](#6-freie-pufferkapazität-einen-größeren-freien-anteil-bevorzugen):**
    `Anteil freier Plätze × target_store_free_capacity_weight`.
@@ -2041,27 +1700,23 @@ Beispiel:
 ###### Verwendete Zeitwerte
 
 - **Transportzeit:** `transport_time_value()` verwendet den Weg von der
-  aktuellen Roboterposition zum Ziel-Store aus `target_store_id`:
+  Roboterposition zum Ziel-Store (`target_store_id`):
 
 `Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
 
-- **Transport-Teilwert:** Der Rohwert wird mit `inverse_scale()` abgebildet.
-- **Operationsdauer am Ziel:** Bei `selected_operation_id` im Payload liest
-  `place_processing_time_value()` die konfigurierte `operation.duration`.
-  Sie bewertet das Ziel und gehört nicht zur Ablagedauer des Roboters.
-  Eine Operationsdauer von `4` ergibt `inverse_scale(4) = 0.2`.
-  Ohne angegebene Operation entfällt das Kriterium.
-- **Einlagerzeit:** `place_target_storage_time_value()` liest
-  `storage_in_time` aus dem Payload. Diese Zeit beschreibt das Ablegen,
-  nicht die Fahrt zum Store, und bildet einen eigenen Teilwert.
-  Eine Einlagerzeit von `2` ergibt
-  `inverse_scale(2) = 1 / 3 ≈ 0.333`. Fehlt das Feld, entfällt der Teilwert.
+- **Transport-Teilwert:** `inverse_scale(Transportzeit)`.
+- **Operationsdauer am Ziel:** `place_processing_time_value()` liest bei
+  `selected_operation_id` im Payload die `operation.duration`.
+  Sie bewertet das Ziel, nicht die Ablagedauer: Dauer `4` ergibt `0.2`.
+  Ohne Operation entfällt das Kriterium.
+- **Einlagerzeit:** `place_target_storage_time_value()` liest `storage_in_time`.
+  Dies ist die Ablagezeit, nicht die Fahrtzeit, mit eigenem Teilwert.
+  Zeit `2` ergibt `inverse_scale(2) ≈ 0.333`; ohne Feld entfällt das Kriterium.
 
 ##### Normales Warten: `wait_*`
 
-- **Geltungsbereich:** Dieser Fall gilt für `wait_job` eines nicht defekten
-  Jobs und für Warteaktionen von Robotern und Maschinen.
-- **Datenquelle:** `evaluate_wait_action()` verwendet die
+- **Geltungsbereich:** Nicht defekte Jobs sowie Roboter und Maschinen.
+- **Datenquelle:** `evaluate_wait_action()` nutzt die
   [EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen) des wartenden
   beziehungsweise aktuell geladenen Jobs.
 - **Beispielsituation:** Bei einer geladenen Maschine mit vollem
@@ -2073,41 +1728,30 @@ Beispiel:
 - **Ersatzwert:** Ohne Job oder dessen Deadline gilt
   `DEFAULT_WAIT_SCORE = 0.01`.
 - **Beispiel:** `EDD = 0.75` ergibt den Teilwert `1.0 - 0.75 = 0.25`.
-- **Gesamtscore:** `calculate_action_score()` erhält nur diesen Teilwert mit
-  `wait_action_weight`. Das Gewicht kürzt sich heraus; der Score entspricht
-  dem Teilwert.
+- **Gesamtscore:** Nur dieser Teilwert mit `wait_action_weight` geht ein.
+  Das Gewicht kürzt sich heraus; Score und Teilwert sind gleich.
 
 ##### Defektbehandlung
 
-- **Aktionen erzeugen:** Der [ActionGenerator](#job) bestimmt, welche
-  Defektaktionen für den Job angeboten werden.
-- **Aktionen bewerten:**
-  [`evaluate_defect_action()`](sources/SpineML/Control/HeuristicPolicy/LocalHeuristicActionEvaluator.py)
-  berechnet für jeden dieser Kandidaten einen Score. Die beiden
-  Nacharbeitsarten werden dafür an `evaluate_defect_recovery_action()`
-  weitergegeben.
-- **Aktion auswählen:** Der [ActionSelector](#actionselector) verwendet
-  diese Scores für seine Auswahl. Ein höherer Score ist vorteilhafter.
-- **Nacharbeitsarten vergleichen:** Beide Nacharbeitsarten verwenden dieselben
-  Kriterien und Kriteriengewichte. Ihre Deadline-Strafen sind dagegen separat
-  einstellbar; im Standardgewichtssatz betragen beide `0.5`.
+Der [ActionGenerator](#job) bestimmt die angebotenen Defektaktionen.
+[`evaluate_defect_action()`](sources/SpineML/Control/HeuristicPolicy/LocalHeuristicActionEvaluator.py)
+bewertet sie; Nacharbeit delegiert sie an `evaluate_defect_recovery_action()`.
+Der [Selector](#actionselector) wählt anhand der Scores.
+
+Beide Nacharbeitsarten verwenden dieselben Kriterien und Gewichte.
+Ihre Deadline-Strafen sind getrennt einstellbar, standardmäßig beide `0.5`.
 
 **Welche Rolle spielt die Deadline?**
 
 `remaining_time = latest_end_time − aktuelle Zeit`
 
-- **Vor der Deadline (`remaining_time > 0`):** Nacharbeit und Warten
-  erhalten keinen Deadline-Strafabzug. Herabstufung erhält keinen
-  Deadline-Bonus.
-- **Ab der Deadline (`remaining_time <= 0`):** Vom Nacharbeits- und
-  Warte-Score wird eine Strafe abgezogen. Bei Herabstufung geht ein
-  zusätzlicher Teilwert in den gewichteten Durchschnitt ein.
-- **Beispiel:** Bei Deadline `10` liegt Zeit `8` noch davor
-  (`remaining_time = 2`). Genau bei Zeit `10` gilt bereits die zweite
-  Regel (`remaining_time = 0`), ebenso bei Zeit `11` (`remaining_time = −1`).
-- **Bewertung statt Verbot:** Eine angebotene Nacharbeit bleibt auch
-  ab der Deadline zur Auswahl. Der Evaluator prüft nicht, ob sie noch
-  rechtzeitig abgeschlossen werden kann.
+- **Davor (`remaining_time > 0`):** Keine Deadline-Strafen oder -Boni.
+- **Ab dann (`remaining_time <= 0`):** Strafabzug bei Nacharbeit und Warten;
+  zusätzlicher Teilwert im Durchschnitt bei Herabstufung.
+- **Beispiel:** Deadline `10`, Zeit `8`: Restzeit `2`, erste Regel.
+  Zeit `10` oder `11`: Restzeit `0` oder `−1`, zweite Regel.
+- **Kein Verbot:** Nacharbeit bleibt wählbar. Der Evaluator prüft nicht,
+  ob sie rechtzeitig fertig werden kann.
 
 Die folgenden Beispiele verwenden den [Standardgewichtssatz](#heuristicweights).
 Die [Begründung der Deadline-Werte](#warum-diese-deadline-strafen-und-dieser-bonus)
@@ -2115,11 +1759,9 @@ folgt nach den einzelnen Defektaktionen.
 
 ###### Nacharbeit auf der Defektmaschine: `job_rework_on_defect_machine`
 
-- **Zweck:** Die fehlerhafte Operation auf derselben Maschine wiederholen.
-  Mit „Defektmaschine“ ist die Maschine gemeint, auf der der Produktdefekt
-  entstanden ist.
-- **Bewertete Maschine:** Alle Maschinen- und Werkzeugdaten beziehen sich
-  auf diese Maschine.
+Die fehlerhafte Operation wird auf derselben Maschine wiederholt, auf der
+der Produktdefekt entstand. Alle Maschinen- und Werkzeugdaten beziehen sich
+auf diese „Defektmaschine“.
 
 **Bewertungsgrößen und Teilwerte:**
 
@@ -2130,26 +1772,20 @@ folgt nach den einzelnen Defektaktionen.
 | [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) | Benötigter Werkzeugtyp montiert: `1`, sonst `0` | `defect_recovery_tool_match_weight` (`0.2`) |
 | [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen) | `direct_scale(verbleibende Lebensdauer / Verbrauch der Operation)` | `defect_recovery_tool_reserve_weight` (`0.2`) |
 
-- **Optionale Kriterien:** Transportzeit geht nur ein, wenn sie geschätzt
-  werden kann; Werkzeugreserve nur bei positivem Werkzeugverbrauch.
-  Entfällt ein Kriterium, entfällt auch sein Gewicht aus dem Durchschnitt.
-- **Transport zur selben Maschine:** Liegt der Job in ihrem Ausgangspuffer,
-  ergibt die direkte Wegschätzung zum Eingangspuffer `0`, weil beide
-  Puffer dieselben Modellkoordinaten haben. Der Transport-Teilwert ist
-  dann `inverse_scale(0) = 1`. Das bedeutet nicht, dass Aufnahme und Ablage
-  in der Simulation keine Zeit benötigen.
-- **Score vor der Deadline:** `calculate_action_score()` bildet den
-  [gewichteten Durchschnitt](#gewichte-und-gesamtscore) der verwendeten Teilwerte.
-- **Score ab der Deadline:** Von diesem Durchschnitt wird
-  `rework_defect_machine_deadline_penalty_weight` abgezogen,
-  standardmäßig `0.5`.
+- **Optional:** Transportzeit nur bei möglicher Schätzung, Werkzeugreserve
+  nur bei positivem Verbrauch. Sonst entfällt jeweils auch das Gewicht.
+- **Transport zur selben Maschine:** Ein- und Ausgangspuffer haben dieselben
+  Modellkoordinaten. Vom Ausgangs- zum Eingangspuffer beträgt die Wegschätzung
+  daher `0`, der Teilwert `inverse_scale(0) = 1`. Aufnahme und Ablage kosten
+  in der Simulation trotzdem Zeit.
+- **Score:** [Gewichteter Durchschnitt](#gewichte-und-gesamtscore), ab der
+  Deadline abzüglich `rework_defect_machine_deadline_penalty_weight`
+  (Standard: `0.5`).
 
-**Rechenbeispiel:** Der Eingangspuffer ist leer, der Job liegt im
-Ausgangspuffer, und das benötigte Werkzeug ist montiert. Es hat noch
-`5` Lebensdauereinheiten; die Wiederholung verbraucht `5` Einheiten.
-Die Teilwerte sind damit `1` für die Warteschlange, `1` für die
-Transportzeit, `1` für die Werkzeugpassung und `direct_scale(5 / 5) = 0.5`
-für die Werkzeugreserve:
+**Rechenbeispiel:** Eingangspuffer leer, Job im Ausgangspuffer, passendes
+Werkzeug montiert. Restlebensdauer und Verbrauch sind jeweils `5`.
+Teilwerte: Warteschlange `1`, Transport `1`, Werkzeugpassung `1`, Reserve
+`direct_scale(5 / 5) = 0.5`:
 
 `Nacharbeitsscore = (1 × 0.3 + 1 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 8 / 9 ≈ 0.889`
 
@@ -2160,10 +1796,8 @@ für die Werkzeugreserve:
 
 ###### Nacharbeit auf einer anderen Maschine: `job_rework_on_alternative_machine`
 
-- **Zweck:** Dieselbe fehlerhafte Operation auf einer anderen geeigneten
-  Maschine wiederholen.
-- **Bewertete Maschine:** Warteschlange, montiertes Werkzeug und
-  Werkzeuglebensdauer werden von der ausgewählten anderen Maschine gelesen.
+Dieselbe fehlerhafte Operation wird auf einer anderen geeigneten Maschine
+wiederholt. Bewertet werden deren Warteschlange, Werkzeug und Werkzeuglebensdauer.
 
 **Bewertungsgrößen und Teilwerte:**
 
@@ -2174,31 +1808,24 @@ für die Werkzeugreserve:
 | [Werkzeugpassung](#4-werkzeugpassung-ein-bereits-montiertes-passendes-werkzeug-bevorzugen) | Benötigter Werkzeugtyp montiert: `1`, sonst `0` | `defect_recovery_tool_match_weight` (`0.2`) |
 | [Werkzeugreserve](#5-werkzeugreserve-mehr-lebensdauer-im-verhältnis-zum-verbrauch-bevorzugen) | `direct_scale(verbleibende Lebensdauer / Verbrauch der Operation)` | `defect_recovery_tool_reserve_weight` (`0.2`) |
 
-- **Optionale Kriterien:** Transportzeit geht nur bei möglicher Schätzung
-  ein, Werkzeugreserve nur bei positivem Werkzeugverbrauch. Nicht
-  verwendete Kriterien gehen auch nicht in die Gewichtssumme ein.
-- **Transportzeit schätzen:** `defect_recovery_transport_time_value()`
-  verwendet den direkten Abstand vom gespeicherten Jobstandort zum
-  Eingangspuffer der ausgewählten Maschine:
+- **Optional:** Transportzeit nur bei möglicher Schätzung, Werkzeugreserve
+  nur bei positivem Verbrauch; sonst entfällt auch das jeweilige Gewicht.
+- **Transport:** `defect_recovery_transport_time_value()` nutzt den direkten
+  Abstand vom Jobstandort zum Eingangspuffer der gewählten Maschine:
 
 `geschätzte Transportzeit = (|Δx| + |Δy| + |Δz|) / Grundgeschwindigkeit`
 
-- **Verwendete Geschwindigkeit:** Die Schätzung nutzt die konfigurierte
-  Grundgeschwindigkeit eines Korridorarms im Zielkorridor; ersatzweise die
-  eines Main-Roboters. Sie enthält keine vollständige Transportfolge mit
-  Zwischenpuffern, Aufnahme, Ablage oder Wartezeiten.
-- **Score vor der Deadline:** `calculate_action_score()` bildet den
-  [gewichteten Durchschnitt](#gewichte-und-gesamtscore) der verwendeten Teilwerte.
-- **Score ab der Deadline:** Von diesem Durchschnitt wird
-  `rework_alternative_machine_deadline_penalty_weight` abgezogen,
-  standardmäßig `0.5`.
+- **Geschwindigkeit:** Konfigurierte Grundgeschwindigkeit eines Korridorarms
+  im Zielkorridor, ersatzweise eines Main-Roboters. Zwischenpuffer, Aufnahme,
+  Ablage und Wartezeiten fehlen in dieser Schätzung.
+- **Score:** [Gewichteter Durchschnitt](#gewichte-und-gesamtscore), ab der
+  Deadline abzüglich `rework_alternative_machine_deadline_penalty_weight`
+  (Standard: `0.5`).
 
-**Rechenbeispiel:** Der Eingangspuffer der ausgewählten Maschine ist leer.
-Das benötigte Werkzeug ist montiert, mit Restlebensdauer `5` und Verbrauch
-`5`. Für dieses Beispiel beträgt der direkte Abstand `1.5` und die
-Grundgeschwindigkeit `1.5`; die geschätzte Transportzeit ist also
-`1.5 / 1.5 = 1`. Die Teilwerte sind `1`, `inverse_scale(1) = 0.5`, `1`
-und `direct_scale(5 / 5) = 0.5`:
+**Rechenbeispiel:** Eingangspuffer leer, passendes Werkzeug montiert,
+Restlebensdauer und Verbrauch jeweils `5`. Abstand und Grundgeschwindigkeit
+betragen jeweils `1.5`, also Transportzeit `1.5 / 1.5 = 1`.
+Teilwerte: `1`, `inverse_scale(1) = 0.5`, `1`, `direct_scale(5 / 5) = 0.5`:
 
 `Nacharbeitsscore = (1 × 0.3 + 0.5 × 0.2 + 1 × 0.2 + 0.5 × 0.2) / (0.3 + 0.2 + 0.2 + 0.2) = 7 / 9 ≈ 0.778`
 
@@ -2209,20 +1836,16 @@ und `direct_scale(5 / 5) = 0.5`:
 
 ###### Herabstufung: `downgrade_product`
 
-- **Zweck:** Den Job als herabgestuft übernehmen, statt ihn nachzuarbeiten.
-  Der verwendete Produkttyp ist das vorgesehene Ergebnis der fehlerhaften
-  Operation; das kann auch ein Zwischenprodukt sein. Weitere reguläre
-  Bearbeitungsschritte entfallen.
+- **Zweck:** Statt Nacharbeit das vorgesehene Ergebnis der fehlerhaften
+  Operation als herabgestuft übernehmen, gegebenenfalls ein Zwischenprodukt.
+  Weitere reguläre Bearbeitung entfällt.
 - **Bewertungsgröße:** Die
   [Defektschwere](#7-defektschwere-bei-stärkerem-defekt-die-herabstufung-höher-bewerten)
-  wird direkt als Teilwert verwendet. Je größer sie ist, desto höher
-  wird Herabstufung bewertet.
-- **Score vor der Deadline:** Nur dieser Teilwert geht mit
-  `product_downgrade_defect_severity_weight` ein. Deshalb entspricht
-  der Score dem Defektschweregrad.
-- **Score ab der Deadline:** Zusätzlich geht der feste Teilwert `1` mit
-  `deadline_reached_downgrade_bonus_weight` ein. Beide Beiträge werden
-  zu einem gewichteten Durchschnitt verbunden:
+  wird unverändert als Teilwert verwendet.
+- **Score davor:** Nur Defektschwere mit `product_downgrade_defect_severity_weight`;
+  der Score entspricht daher der Defektschwere.
+- **Score ab der Deadline:** Zusätzlich Teilwert `1` mit
+  `deadline_reached_downgrade_bonus_weight`, als gewichteter Durchschnitt:
 
 `Score = (Defektschwere × product_downgrade_defect_severity_weight + 1 × deadline_reached_downgrade_bonus_weight) / (product_downgrade_defect_severity_weight + deadline_reached_downgrade_bonus_weight)`
 
@@ -2234,25 +1857,22 @@ Beide Gewichte haben im Standardgewichtssatz den Wert `0.5`:
 | `10` | `8` – vor der Deadline | `(0.4 × 0.5) / 0.5 = 0.4` |
 | `10` | `11` – Deadline überschritten | `(0.4 × 0.5 + 1 × 0.5) / (0.5 + 0.5) = 0.7` |
 
-- **Bedeutung des Bonus:** Im Beispiel steigt der Score von `0.4` auf
-  `0.7`, also um `0.3`. Es wird nicht pauschal `0.5` zum Score addiert.
+Der Bonus erhöht den Score hier von `0.4` auf `0.7`, also um `0.3`,
+nicht pauschal um `0.5`.
 
 ###### Warten bei einem Defekt: `wait_job`
 
-- **Zweck:** Der defekte Job wartet zunächst, statt eine neue Nacharbeit
-  oder Herabstufung einzuleiten. Warten behebt den Defekt nicht.
-- **Bewertungsgröße:** Die gemeinsame
+- **Zweck:** Warten statt neuer Nacharbeit oder Herabstufung; der Defekt bleibt.
+- **Bewertungsgröße:**
   [`calculate_edd_priority()`](sources/SpineML/Control/ActionGeneration/ActionGenerator.py)
   berechnet den
   [Termindruck als EDD-Priorität](#1-termindruck-dringendere-jobs-bevorzugen).
   Die [Warteregel](#8-warten-je-höher-der-termindruck-desto-niedriger-der-teilwert)
-  bildet daraus den Teilwert `1.0 - EDD`: Je dringender der Job ist,
-  desto niedriger wird Warten bewertet.
-- **Score vor der Deadline:** Es geht nur dieser Teilwert mit
-  `wait_defect_job_weight` ein. Der gewichtete Durchschnitt ist daher
+  liefert `1.0 - EDD`: Je dringender der Job, desto niedriger der Teilwert.
+- **Score davor:** Nur dieser Teilwert mit `wait_defect_job_weight`, also
   ebenfalls `1.0 - EDD`.
-- **Score ab der Deadline:** Davon wird
-  `deadline_missed_wait_penalty_weight` abgezogen, standardmäßig `0.2`:
+- **Score ab der Deadline:** Abzüglich `deadline_missed_wait_penalty_weight`
+  (Standard: `0.2`):
 
 `Score = (1.0 - EDD) - deadline_missed_wait_penalty_weight`
 
@@ -2267,24 +1887,18 @@ Beide Gewichte haben im Standardgewichtssatz den Wert `0.5`:
 ###### Ausschuss: `job_scrap`
 
 - **Zweck:** Den Job als Ausschuss markieren.
-- **Angebot:** Wenn keine Nacharbeit bereits läuft und der Schweregrad
-  außerhalb von `0.001 <= defect_severity < 0.6` liegt, erzeugt der
-  [ActionGenerator](#job) ausschließlich `job_scrap`.
-- **Bewertungsgrößen:** Keine. `evaluate_defect_action()` liefert
-  konstant `Score = 1.0`, unabhängig von Deadline und Gewichten.
-- **Auswahl:** In diesem Fall gibt es keine andere Defektaktion zur
-  Auswahl; Ausschuss konkurriert nicht mit Nacharbeit oder Herabstufung.
+- **Angebot:** Ohne laufende Nacharbeit und außerhalb von
+  `0.001 <= defect_severity < 0.6` erzeugt der [Generator](#job) nur `job_scrap`.
+- **Score:** Konstant `1.0`, unabhängig von Deadline und Gewichten.
+  Ausschuss konkurriert hier nicht mit anderen Defektaktionen.
 
 ###### Warum diese Deadline-Strafen und dieser Bonus?
 
-- **Ziel:** Ab der Deadline soll weiteres Warten weniger vorteilhaft
-  sein als zuvor. Auch Nacharbeit soll niedriger bewertet werden;
-  Herabstufung soll dagegen einen höheren Score erhalten.
-- **Festgelegte Grenzen:** Für den Standardgewichtssatz wurden
-  Nacharbeit höchstens `0.5`, Warten höchstens `0.3` und Herabstufung
-  mindestens `0.5` gewählt. Die Werte werden in
-  [HeuristicWeights.py](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py)
-  daraus abgeleitet:
+Ab der Deadline sollen Nacharbeit und Warten niedriger, Herabstufung höher
+bewertet werden. Gewählte Standardgrenzen sind: Nacharbeit höchstens `0.5`,
+Warten höchstens `0.3`, Herabstufung mindestens `0.5`.
+[HeuristicWeights.py](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py)
+leitet daraus die Parameter ab:
 
 | Aktion | Mathematische Begründung des Standardwerts ab der Deadline |
 | --- | --- |
@@ -2292,26 +1906,21 @@ Beide Gewichte haben im Standardgewichtssatz den Wert `0.5`:
 | [Warten](#warten-bei-einem-defekt-wait_job) | Ab der Deadline gilt `EDD >= 0.5`, also `1 − EDD <= 0.5`. Für einen Endscore von höchstens `0.3` wird `0.5 − 0.3 = 0.2` abgezogen. |
 | [Herabstufung](#herabstufung-downgrade_product) | Bei Defektschwere `0` soll der Score `0.5` betragen, bei Defektschwere `1` soll er `1` betragen. Das ergibt `Score = 0.5 + 0.5 × Defektschwere`, umgesetzt mit den beiden Gewichten `0.5` und `0.5`. |
 
-- **Herabstufungsbonus:** Die Anhebung beträgt damit
-  `0.5 × (1 − Defektschwere)`. Bei positiver Defektschwere liegt der
-  Herabstufungsscore ab der Deadline über dem maximalen Nacharbeitsscore
-  und dem maximalen Warte-Score.
-- **Geltungsbereich:** Diese Grenzen gelten für den Standardgewichtssatz.
-  Ein manuell geänderter oder optimierter Gewichtssatz kann andere
-  Grenzen ergeben. Die Grenzwerte sind bewusst gewählte Steuerungsziele,
-  keine mathematisch nachgewiesenen Optimalwerte.
+- **Bonus:** `0.5 × (1 − Defektschwere)`. Bei positiver Defektschwere liegt
+  Herabstufung ab der Deadline über dem maximalen Nacharbeits- und Warte-Score.
+- **Grenzen:** Sie gelten nur für den Standardgewichtssatz. Andere
+  Gewichtssätze können sie verändern. Es sind gewählte Steuerungsziele,
+  keine nachgewiesenen Optimalwerte.
 
 ##### Abschluss: `complete_job`
 
-- **Bewertung:** `evaluate_action()` verwendet den festen Teilwert `1` mit
-  `complete_job_weight`.
-- **Ergebnis:** Weil nur dieser eine Teilwert eingeht, ist der Score `1`.
+`evaluate_action()` verwendet Teilwert `1` mit `complete_job_weight`.
+Da nur ein Teilwert eingeht, ist der Score `1`.
 
 ##### Abgrenzung zur tatsächlich simulierten Dauer
 
-Die Simulation übernimmt die Rolle der Produktionsumgebung und liefert deren
-**simulierte Ist-Zustände**. Für noch nicht ausgeführte Aktionen verwendet die
-Heuristik dagegen **Schätzungen aus Sollwerten**:
+Die Simulation liefert **simulierte Ist-Zustände**. Noch nicht ausgeführte
+Aktionen bewertet die Heuristik dagegen mit **Schätzungen aus Sollwerten**:
 
 | Zeitwert | Schätzung der Heuristik | Ausführung in der Simulation |
 | --- | --- | --- |
@@ -2319,79 +1928,58 @@ Heuristik dagegen **Schätzungen aus Sollwerten**:
 | Roboterbewegung | Achsweise Wegstrecke geteilt durch die konfigurierte Grundgeschwindigkeit. | `SimRobot` verändert die Geschwindigkeit für jede Achsbewegung zufällig um bis zu fünf Prozent. |
 | Nacharbeitstransport | Direkter achsweiser Weg vom Jobstandort zum Eingangspuffer der Zielmaschine. | Der tatsächliche Transport kann mehrere Roboter, Zwischenpuffer sowie Aufnahme-, Ablage- und Wartezeiten umfassen. |
 
-Die Policy berücksichtigt somit den beobachteten aktuellen Zustand, kennt aber
-die zukünftige tatsächliche Ausführungsdauer nicht vollständig.
+Die zukünftige tatsächliche Ausführungsdauer kennt die Policy nicht vollständig.
 
 #### Gewichte und Gesamtscore
 
-- **Aufgabe:** `calculate_action_score()` verbindet die Teilwerte eines
-  Aktionskandidaten zu einem Gesamtscore.
-- **Eingabe:** Für jedes verwendete Kriterium wird ein Paar aus Teilwert
-  und Gewicht übergeben. Die beschriebenen Regeln bilden gültige Rohwerte auf
-  Teilwerte in `[0, 1]` ab; ein höherer Teilwert ist vorteilhafter.
-- **Bedeutung der Gewichte:** Sie bestimmen die relative Wichtigkeit der
-  Teilwerte derselben Aktion. `0.6` zählt beispielsweise doppelt so stark
-  wie `0.3`.
-- **Berechnung:** Die Funktion bildet den gewichteten Durchschnitt:
+`calculate_action_score()` erhält je Kriterium ein Paar aus Teilwert und Gewicht.
+Die Teilwerte liegen bei gültigen Rohwerten in `[0, 1]`; höher ist besser.
+Gewichte bestimmen ihre relative Bedeutung innerhalb derselben Aktion:
+`0.6` zählt doppelt so stark wie `0.3`. Die Funktion bildet den gewichteten
+Durchschnitt:
 
 `Gesamtscore = Summe(Teilwert × Gewicht) / Summe(zugehörige Gewichte)`
 
-- **Teilwert `0` berücksichtigen:** Er ist eine Bewertung, kein fehlender
-  Wert. `0 × Gewicht = 0` geht in den Zähler ein; das Gewicht bleibt im
-  Nenner enthalten.
-- **Beispiel:** Zwei verwendete Kriterien haben die Teilwerte `1` und `0`
-  mit jeweils dem Gewicht `1`:
+- **Teilwert `0`:** Gültige Bewertung, kein fehlender Wert. Sein Beitrag im
+  Zähler ist `0`, sein Gewicht bleibt im Nenner.
+- **Beispiel:** Teilwerte `1` und `0`, beide mit Gewicht `1`:
 
 `Gesamtscore = (1 × 1 + 0 × 1) / (1 + 1) = 0.5`
 
-- **Nicht verwendetes Kriterium weglassen:** Die Funktion erhält dafür
-  weder Teilwert noch Gewicht. Nur mit dem ersten Kriterium wäre der Score
-  `(1 × 1) / 1 = 1`. Ein Teilwert von `0` darf deshalb nicht wie ein
-  fehlendes Kriterium behandelt werden.
-- **Beispiel für ein entfallendes Kriterium:** Die Werkzeugreserve wird
-  nicht verwendet, wenn die Operation keine Werkzeuglebensdauer verbraucht.
+- **Entfallendes Kriterium:** Weder Teilwert noch Gewicht werden übergeben.
+  Nur mit dem ersten Kriterium wäre der Score `(1 × 1) / 1 = 1`.
+  Deshalb darf Teilwert `0` nicht wie ein fehlendes Kriterium behandelt werden.
+- **Beispiel:** Ohne Lebensdauerverbrauch entfällt die Werkzeugreserve.
 
 ##### Warum unterschiedliche Kriterien kombiniert werden können
 
-Kombiniert werden die Teilwerte nach der Abbildung auf dieselbe
-Vorteilsrichtung:
+Die Abbildung gibt allen Teilwerten dieselbe Vorteilsrichtung:
 
-- **Transportzeit:** Kleiner ist besser. `inverse_scale()` bildet deshalb
-  kurze Zeiten auf höhere Teilwerte ab. Zeit `1` ergibt `0.5`; Zeit `4`
-  ergibt `0.2`.
+- **Transportzeit:** Kleiner ist besser. `inverse_scale(1) = 0.5`,
+  `inverse_scale(4) = 0.2`.
 - **Freie Kapazität:** Größer ist besser. `freie Plätze / Gesamtkapazität`
-  liefert bei mehr freien Plätzen einen höheren Teilwert. Zwei von zehn
-  freien Plätzen ergeben `2 / 10 = 0.2`; acht von zehn ergeben
-  `8 / 10 = 0.8`.
+  ergibt bei zwei von zehn freien Plätzen `0.2`, bei acht von zehn `0.8`.
 
-- **Gemeinsame Bedeutung:** Für beide Kriterien ist ein höherer Teilwert
-  vorteilhafter. Die dimensionslosen Werte zwischen `0` und `1` können
-  deshalb gemeinsam in den Score eingehen.
-- **Relative Wichtigkeit:** Die Gewichte bestimmen, wie stark kurze
-  Transportzeiten gegenüber freier Kapazität zählen.
+Beide dimensionslosen Teilwerte liegen in `[0, 1]`, und höher ist besser.
+Ihre Gewichte legen fest, wie stark kurze Fahrten gegenüber freier Kapazität zählen.
 
 ##### Warum durch die Gewichtssumme geteilt wird
 
-- **Zähler:** Die gewichtete Summe allein ist noch kein Durchschnitt. Sie
-  hängt auch von der Größe der verwendeten Gewichte ab.
-- **Nenner:** Die Division durch die Gewichtssumme macht die relative
-  Wichtigkeit der Teilwerte wirksam. Der Anteil eines Gewichts lautet:
+Die gewichtete Summe hängt von der Größe der Gewichte ab und ist noch kein
+Durchschnitt. Die Division durch die Gewichtssumme ergibt relative Anteile:
 
 `Relativer Gewichtsanteil = Gewicht / Summe(aller für diese Aktion verwendeten Gewichte)`
 
-- **Anteile aufsummieren:** Alle beziehen sich auf dieselbe Aktion und
-  dieselbe Gewichtssumme. Für alle verwendeten Kriterien zusammen gilt:
+Für alle verwendeten Kriterien derselben Aktion gilt:
 
 `Summe(relativer Gewichtsanteile) = Gewichtssumme / Gewichtssumme = 1`
 
-- **Gewichte von Anteilen unterscheiden:** Die ursprünglichen Gewichte
-  und die gewichtete Summe müssen nicht `1` ergeben.
-- **Rundung beachten:** Drei Anteile von jeweils `1/3` ergeben exakt `1`.
-  Gerundet können dagegen `0.33 + 0.33 + 0.33 = 0.99` angezeigt werden.
-- **Beispiel:** Die Teilwerte `0.8` und `0.2` erhalten die Gewichte `1.0`
-  und `0.5`. Der erste zählt doppelt so stark. Die Gewichtssumme ist
-  `1.0 + 0.5 = 1.5`; die relativen Anteile sind `1.0 / 1.5 = 2/3` und
-  `0.5 / 1.5 = 1/3`. Das Diagramm zeigt die vollständige Rechnung:
+- Die ursprünglichen Gewichte und die gewichtete Summe müssen nicht `1` ergeben.
+- Rundung kann abweichen: Drei Anteile `1/3` ergeben exakt `1`, angezeigt
+  werden möglicherweise `0.33 + 0.33 + 0.33 = 0.99`.
+- **Beispiel:** Teilwerte `0.8` und `0.2`, Gewichte `1.0` und `0.5`.
+  Gewichtssumme `1.5`, relative Anteile `2/3` und `1/3`: Der erste Teilwert
+  zählt doppelt. Das Diagramm zeigt die Rechnung:
 
 ```mermaid
 flowchart TD
@@ -2403,34 +1991,28 @@ flowchart TD
     S --> B["Zwischen den Teilwerten:<br/>0.2 ≤ 0.6 ≤ 0.8<br/>Damit auch im Bereich von 0 bis 1"]
 ```
 
-- **Ergebnis:** Der Score `0.6` liegt näher am stärker gewichteten Teilwert
-  `0.8`. Die gewichtete Summe `0.9` ist noch nicht der Gesamtscore;
-  erst die Division liefert den Durchschnitt.
+Score `0.6` liegt näher am stärker gewichteten Teilwert `0.8`.
+Die gewichtete Summe `0.9` allein ist noch kein Gesamtscore.
 
 <a id="warum-der-gesamtscore-zwischen-0-und-1-liegt"></a>
 
 ##### Wertebereich vor Deadline-Strafen
 
-- **Einzelnen Beitrag betrachten:** Für jeden Teilwert `xᵢ` in `[0, 1]`
-  und sein positives Gewicht `wᵢ` gilt:
+Für Teilwert `xᵢ` in `[0, 1]` und positives Gewicht `wᵢ` gilt:
 
 `0 ≤ xᵢ × wᵢ ≤ wᵢ`
 
-- **Beiträge addieren:** Daraus folgt für Zähler und Nenner:
+Addition aller Beiträge ergibt:
 
 `0 ≤ Summe(Teilwert × Gewicht) ≤ Summe(zugehörige Gewichte)`
 
-- **Durch die Gewichtssumme teilen:** Der Zähler ist weder negativ noch
-  größer als der positive Nenner. Deshalb gilt:
+Der Zähler liegt zwischen null und dem positiven Nenner. Nach Division gilt:
 
 `0 ≤ Gesamtscore ≤ 1`
 
-- **Bereich entsteht durch die Rechnung:** `calculate_action_score()`
-  berechnet diesen Durchschnitt ohne nachträgliche Begrenzung. Die Aussage
-  gilt vor möglichen Strafabzügen.
-- **Kurve lesen:** Sind alle Teilwerte `0`, ist der Score `0`; sind alle
-  `1`, ist er `1`. Haben alle Teilwerte gemeinsam den Wert `x`, entspricht
-  auch ihr gewichteter Durchschnitt `x`:
+Der Bereich entsteht rechnerisch, ohne nachträgliche Begrenzung, und gilt
+**vor Strafabzügen**. Gleiche Teilwerte `x` ergeben auch den Durchschnitt `x`,
+insbesondere `0` für lauter Nullen und `1` für lauter Einsen:
 
 `Score(x) = Summe(x × Gewicht) / Summe(Gewichte) = x`
 
@@ -2442,58 +2024,44 @@ xychart-beta
     line [0, 0.25, 0.5, 0.75, 1]
 ```
 
-- **Sonderfall mit einem Teilwert:** Es gilt
-  `(Teilwert × Gewicht) / Gewicht = Teilwert`. Das betrifft beispielsweise
-  `complete_job` und normale Warteaktionen. Eine Änderung ihres einzigen
-  Gewichts verändert den Score daher nicht.
+Bei nur einem Teilwert gilt `(Teilwert × Gewicht) / Gewicht = Teilwert`.
+Deshalb verändert das einzige Gewicht von `complete_job` oder normalen
+Warteaktionen deren Score nicht.
 
 ##### HeuristicWeights
 
-- **Parameter festlegen:**
-  [HeuristicWeights.py](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py)
-  enthält die einstellbaren Parameter der lokalen Bewertung.
-- **Werte prüfen:** Beim Erzeugen eines `HeuristicWeights`-Objekts werden
-  dessen Gewichte auf `(0, 1]` geprüft. `calculate_action_score()` prüft oder
-  begrenzt die übergebenen Werte nicht selbst.
-- **Lokale und globale Ziele trennen:**
-  [WeightOptimization](sources/SpineML/Control/HeuristicPolicy/WeightOptimization)
-  verändert diese lokalen Parameter. Die
-  [globalen Gewichte](#globale-gewichte-in-optimizationpy) legen dagegen fest,
-  wie vollständige Produktionsläufe beurteilt werden.
+[HeuristicWeights.py](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py)
+enthält die lokalen Parameter und prüft sie beim Erzeugen auf `(0, 1]`.
+`calculate_action_score()` prüft oder begrenzt sie nicht selbst.
+
+[WeightOptimization](sources/SpineML/Control/HeuristicPolicy/WeightOptimization)
+verändert diese lokalen Parameter. Die
+[globalen Gewichte](#globale-gewichte-in-optimizationpy) bewerten dagegen ganze Produktionsläufe.
 
 #### Rechenbeispiel: zwei Ablageziele
 
-- **Ausgangszustand:** Der Main-Roboter trägt einen intakten, noch nicht
-  fertigen Job. Die nächste Operation kann auf Maschine A oder B erfolgen.
-- **Aktionstyp:** Der `ActionGenerator` erzeugt zwei Kandidaten vom Typ
-  `place_main_robot`:
+Der Main-Roboter trägt einen intakten, unfertigen Job. Die nächste Operation
+kann auf Maschine A oder B erfolgen. Der Generator erzeugt zwei
+`place_main_robot`-Kandidaten:
 
 - **Kandidat A:** Den Job in Korridorpuffer A für den Weitertransport zu
   Maschine A ablegen.
 - **Kandidat B:** Den Job in Korridorpuffer B für den Weitertransport zu
   Maschine B ablegen.
 
-- **Annahmen:** Die folgenden Rohwerte dienen als Beispiel. Die Rechnung
-  verwendet alle fünf Kriterien von `evaluate_place_action()` für diese
-  Kandidaten und die Standardgewichte aus `HeuristicWeights`.
+Das Beispiel verwendet alle fünf Kriterien von `evaluate_place_action()`
+und die Standardgewichte aus `HeuristicWeights`.
 
-1. **Bewertungsgrößen:** Die Wege zu den Korridorpuffern betragen `8` und `2`
-   Längeneinheiten. Bei konfigurierter Grundgeschwindigkeit `2` ergeben sich
-   Transportzeitschätzungen von `4` und `1`. In Puffer A sind vier von zehn
-   Plätzen frei, in Puffer B zwei von zehn. Im Eingangspuffer von Maschine A
-   warten drei Jobs; der Eingangspuffer von Maschine B ist leer. Die
-   konfigurierte Einlagerzeit beträgt jeweils `1`, die Dauer der nächsten
-   Operation auf beiden Routen `4`.
-2. **Abbildung auf Teilwerte:** `inverse_scale()` bildet Transportzeit,
-   Einlagerzeit, Maschinenwarteschlangenlänge und Operationsdauer ab. Der freie
-   Kapazitätsanteil ergibt sich aus `freie Plätze / Gesamtkapazität`. Für alle
-   Teilwerte gilt damit dieselbe Vorteilsrichtung: Höher ist vorteilhafter.
-3. **Gewichtssatz:** Die Tabelle zeigt die tatsächlich verwendeten
-   Standardgewichte. Die Kapazität bezieht sich auf den **Korridorpuffer**, die
-   Warteschlangenlänge dagegen auf den **Eingangspuffer der Zielmaschine**.
-4. **Gesamtscore:** `calculate_action_score()` addiert die gewichteten
-   Teilwerte und teilt durch die Gewichtssumme
-   `0.2 + 0.25 + 0.15 + 0.25 + 0.15 = 1.0`:
+1. **Rohwerte:** Wege `8` und `2`, Grundgeschwindigkeit `2`: Transportzeiten
+   `4` und `1`. In Korridorpuffer A sind vier von zehn Plätzen frei, in B zwei
+   von zehn. Vor Maschine A warten drei Jobs, vor B keiner. Einlagerzeit
+   jeweils `1`, nächste Operationsdauer jeweils `4`.
+2. **Teilwerte:** `inverse_scale()` für Zeiten und Warteschlangenlänge,
+   `freie Plätze / Gesamtkapazität` für Kapazität. Höher ist immer besser.
+3. **Gewichtssatz:** Standardgewichte laut Tabelle. Kapazität meint den
+   **Korridorpuffer**, Warteschlangenlänge den **Eingangspuffer der Zielmaschine**.
+4. **Score:** Gewichtete Teilwerte addieren und durch
+   `0.2 + 0.25 + 0.15 + 0.25 + 0.15 = 1.0` teilen:
 
 | Bewertungsgröße | Standardgewicht | Kandidat A: Rohwert → Teilwert | Kandidat B: Rohwert → Teilwert |
 |---|---|---|---|
@@ -2510,8 +2078,7 @@ Die gewichteten Summen lauten:
 - **A:** `0.4 × 0.2 + 0.2 × 0.25 + 0.5 × 0.15 + 0.25 × 0.25 + 0.2 × 0.15 = 0.2975`.
 - **B:** `0.2 × 0.2 + 0.5 × 0.25 + 0.5 × 0.15 + 1 × 0.25 + 0.2 × 0.15 = 0.52`.
 
-Für den höheren Score von B sind die Unterschiede der gewichteten Beiträge
-entscheidend:
+Die gewichteten Beiträge erklären den Vorteil von B:
 
 - **Freie Pufferkapazität:** A erhält `0.4 × 0.2 = 0.08`, B nur
   `0.2 × 0.2 = 0.04`. Das ist ein Vorteil von `0.04` für A.
@@ -2521,16 +2088,13 @@ entscheidend:
   `0.25 × 0.25 = 0.0625`. Das ist ein Vorteil von `0.1875` für B.
 
 - **Gleiche Beiträge:** Einlagerzeit und Operationsdauer ändern den Abstand
-  nicht. Die übrigen Beiträge ergeben einen Vorteil von
-  `0.075 + 0.1875 − 0.04 = 0.2225` für B. Bei der Gewichtssumme `1.0` ist
-  dies auch der Scoreabstand: `0.52 − 0.2975 = 0.2225`.
+  nicht. Bs Vorteil ist `0.075 + 0.1875 − 0.04 = 0.2225`. Bei Gewichtssumme
+  `1.0` entspricht dies dem Scoreabstand `0.52 − 0.2975 = 0.2225`.
 - **Warten vergleichen:** Bei aktueller Zeit `11` und Deadline `10` gilt
   `EDD = 0.75`. Der zusätzliche Kandidat `wait_main_robot` erreicht
   `1 − 0.75 = 0.25`; B liegt auch darüber.
-- **Nächste Beobachtung berücksichtigen:** Kandidaten und Scores werden
-  erneut bestimmt. Ist Puffer B inzwischen voll, wird dafür keine
-  Ablageaktion erzeugt. Die Bewertung vergleicht nur die vom Generator
-  zugelassenen Möglichkeiten.
+- **Neue Beobachtung:** Kandidaten und Scores werden neu bestimmt. Ist
+  Puffer B voll, entfällt diese Ablageaktion. Bewertet werden nur erlaubte Kandidaten.
 
 ### Optimierungsvorgang
 
@@ -2538,15 +2102,14 @@ entscheidend:
 
 #### Ziel der Optimierung
 
-Gesucht wird ein lokaler Gewichtssatz, mit dem die heuristische Policy im
-Mittel bessere Produktionsergebnisse erzielt.
-Verglichen wird der Mittelwert seiner globalen Bewertungszahlen über dieselben Seeds.
+Gesucht wird ein lokaler Gewichtssatz für bessere Produktionsergebnisse.
+Dazu wird jeder Satz mit denselben Seeds simuliert. Der kleinere Mittelwert
+der globalen Bewertungszahlen gewinnt.
 
 ##### Gesamter Optimierungsablauf
 
-Die Schritte 0 bis 6 im Diagramm entsprechen den folgenden Abschnitten.
-Eine **Iteration** umfasst genau die Schritte 2 bis 5: Kandidaten erzeugen,
-alle prüfen, den besten auswählen und über das Weitersuchen entscheiden.
+Eine **Iteration** umfasst die Schritte 2 bis 5: Gewichtssätze erzeugen,
+prüfen, den besten auswählen und über das Weitersuchen entscheiden.
 
 ```mermaid
 flowchart TD
@@ -2564,13 +2127,10 @@ flowchart TD
     E -- Nein --> F["6. Random, Standardheuristik und gefundenen Gewichtssatz<br/>auf separaten TEST_SEEDS vergleichen"]
 ```
 
-- **Abhängigkeiten:** Erst die Baseline, dann die Gewichtssuche, dann der
-  Testvergleich. Die nächste Iteration benötigt die Auswahl der vorherigen.
-- **Ausführungsmodus:** `sequential` führt die Läufe direkt nacheinander aus;
-  `parallel` verteilt unabhängige Läufe derselben Phase auf einen Prozesspool.
-  Suchregeln, Seeds, Bewertungsformeln und Ergebnisreihenfolge bleiben gleich.
-  Die [CPU-Erklärung und Messungen](#parallele-optimierung-mit-mehreren-cpu-prozessen)
-  stehen am Ende.
+`sequential` führt die Läufe nacheinander aus; `parallel` verteilt unabhängige
+Läufe derselben Phase auf einen Prozesspool. Suche, Seeds, Bewertung und
+Ergebnisreihenfolge bleiben gleich. Details stehen unter
+[CPU-Ausführung und Messungen](#parallele-optimierung-mit-mehreren-cpu-prozessen).
 
 #### 0. Modell laden und Optimierung starten
 
@@ -2582,45 +2142,41 @@ flowchart TD
 .\.venv\Scripts\python.exe -m streamlit run sources/apps/heuristic_optimization_app.py
 ```
 
-1. **Modell prüfen:** Standard ist `EXAMPLE_FILE = "example-5.py"` in
-   [heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py). Die Oberfläche zeigt den Dateinamen.
-2. **Ausführung wählen:** Unter **Execution mode** entweder
-   **Sequential (previous execution)** ohne Prozesspool oder
-   **Parallel (process pool)** wählen; voreingestellt ist der parallele Modus.
-3. **Starten:** **Start optimization** startet einen vollständigen Durchlauf.
-   Währenddessen sind Startknopf und Moduswahl gesperrt. Es wird keine
-   3D-Animation gestartet. Modell und Code dürfen während des Laufs nicht geändert werden.
+1. **Modell prüfen:** Die Oberfläche zeigt den Dateinamen. Standard ist
+   `EXAMPLE_FILE = "example-5.py"` in
+   [heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py).
+2. **Execution mode wählen:** **Sequential (previous execution)** läuft
+   ohne Prozesspool; **Parallel (process pool)** ist voreingestellt.
+3. **Start optimization drücken:** Startknopf und Moduswahl bleiben bis zum
+   Ende gesperrt. Der Lauf hat keine 3D-Animation. Modell und Code währenddessen
+   nicht ändern.
 
 ##### Produktionsbeispiel für den Steuerungsvergleich
 
 [example-5.py](sources/examples/normal/example-5.py) enthält 24 Jobs aus acht
 Aufträgen, drei Endprodukte, zwölf Operationstypen und zwölf Maschinen in drei
-Seitenkorridoren. Alternative Bearbeitungswege, Werkzeuge, Puffer, Defektrisiken,
-Startzeiten und Deadlines erzeugen unterschiedliche Entscheidungsmöglichkeiten.
-Ob der gefundene Gewichtssatz hilft, zeigt erst der Testvergleich in Schritt 6.
+Seitenkorridoren. Bearbeitungswege, Werkzeuge, Puffer, Defektrisiken und Termine
+bieten unterschiedliche Entscheidungen. Erst Schritt 6 prüft, ob die Suche hilft.
 
 <a id="beteiligte-dateien"></a>
 <a id="technische-einbindung-modellladen-worker-thread-und-fortschrittsanzeige"></a>
 
 ##### Modell und Hintergrundlauf vorbereiten
 
-Streamlit-Thread und Hintergrundthread sind Ausführungseinheiten im selben
-Python-Prozess. Die Worker des Prozesspools sind dagegen eigene Prozesse.
+Oberfläche und Hintergrundthread laufen im selben Python-Prozess.
+Die Worker des Prozesspools sind eigene Prozesse.
 
-- **Oberfläche:** Der Streamlit-Thread startet den Hintergrundthread und liest
-  dessen Fortschritts- und Ergebnisdaten aus `state`.
-- **Koordination:** Der Hintergrundthread erstellt den Optimierer und führt
-  Baseline, Suche und Testvergleich aus. Globale Bewertung und Mittelwertbildung
-  bleiben in diesem Elternprozess, nicht in den Poolprozessen.
-- **Direkter Modus:** Layout und Szenario werden über
-  [ModelLoader.py](sources/SpineML/SimulationExecution/ModelLoader.py) geladen.
-  Anschließend führt `SimulationRunner` die übergebenen Policies nacheinander aus.
-- **Paralleler Modus:** `ParallelSimulationRunner` erhält zunächst nur den
-  Modellpfad. Beim ersten Batch startet sein persistenter Spawn-Pool.
-  Jeder Worker lädt das Modell einmal und verwendet es für weitere Aufträge.
-  Pro Auftrag entstehen eine frische Policy, Bridge und Salabim-Umgebung.
-- **Abschluss:** Der Hintergrundthread schließt den Pool auch im Fehlerfall.
-  Erst danach meldet er den Lauf als beendet; Fehler werden in der Oberfläche angezeigt.
+- **Oberfläche:** Startet den Hintergrundthread und liest Fortschritt und
+  Ergebnisse aus `state`.
+- **Hintergrundthread:** Koordiniert Baseline, Suche und Testvergleich.
+  Globale Bewertung und Mittelwerte werden hier berechnet, nicht im Pool.
+- **Direkter Modus:** [ModelLoader.py](sources/SpineML/SimulationExecution/ModelLoader.py)
+  lädt Layout und Szenario. `SimulationRunner` führt die Policies nacheinander aus.
+- **Paralleler Modus:** `ParallelSimulationRunner` erhält den Modellpfad.
+  Beim ersten Laufstapel startet der Spawn-Pool. Jeder Worker lädt das Modell
+  einmal; jeder Auftrag erhält eine neue Policy, Bridge und Salabim-Umgebung.
+- **Abschluss:** Der Hintergrundthread schließt den Pool auch bei Fehlern.
+  Erst danach meldet er das Ende. Fehler erscheinen in der Oberfläche.
 
 Die zugehörigen Aufrufe im Code:
 
@@ -2628,14 +2184,13 @@ Die zugehörigen Aufrufe im Code:
 | --- | --- |
 | `_start_optimization()` | Setzt alte Anzeigeergebnisse zurück und startet den Hintergrundthread. |
 | `worker()` | Koordiniert Vorbereitung, Baseline, Gewichtssuche, Testvergleich und Abschluss. |
-| `create_optimizer()` | Erstellt den gewählten Runner, die globale Bewertung und den Gewichtssatz-Optimierer; startet noch keine Produktionssimulation. |
-| `load_layout_and_scenario()` | Lädt die Fabrikkonfiguration und gibt die Variablen `layout` und `scenario` zurück. Im direkten Modus wird das Modell bei der Vorbereitung geladen, im Pool einmal je Worker bei dessen Start. |
-| `optimizer.optimize_iteratively(...)` | Führt nach der Baseline die Schritte 2 bis 5 aus. Die Methode gehört zu `LocalHeuristicWeightOptimizer`. |
+| `create_optimizer()` | Erstellt Runner, globale Bewertung und Optimierer; startet noch keine Simulation. |
+| `load_layout_and_scenario()` | Liefert `layout` und `scenario`: direkt bei der Vorbereitung, im Pool einmal beim Workerstart. |
+| `optimizer.optimize_iteratively(...)` | Führt die Schritte 2 bis 5 aus. |
 | `_benchmark_policies()` | Führt nach der Suche den Steuerungsvergleich aus Schritt 6 aus. |
 
-Die Zuständigkeiten sind unter
-[Projektstruktur und Zuständigkeiten](#projektstruktur-und-zuständigkeiten)
-zusammengefasst. Die Suche selbst steht in
+Weitere [Zuständigkeiten](#projektstruktur-und-zuständigkeiten) stehen oben.
+Die Suche steht in
 [LocalHeuristicWeightOptimizer.py](sources/SpineML/Control/HeuristicPolicy/WeightOptimization/LocalHeuristicWeightOptimizer.py).
 
 ##### Suchparameter
@@ -2657,27 +2212,18 @@ Aktuelle Einstellungen in [heuristic_optimization_app.py](sources/apps/heuristic
 
 #### 1. Produktion mit dem Standardgewichtssatz simulieren
 
-Ziel dieses Schritts sind feste Referenzwerte für die Bewertung aller
-folgenden Produktionsläufe.
+1. **Baseline simulieren:** `HeuristicWeights()` wird einmal pro Seed aus
+   `SEEDS` simuliert, aktuell mit `1` und `2`. Diese Vergleichsläufe bilden
+   die Baseline. Sie laufen je nach Modus nacheinander oder parallel.
+2. **Feste Referenzen berechnen:** Für jede [Zeitkennzahl](#produktionskennzahlen)
+   wird der Baseline-Mittelwert gespeichert. Ein Referenzwert von `0` führt
+   zum Fehler und wird nicht ersetzt.
+3. **Suche starten:** Erst danach beginnt `optimize_iteratively()`.
 
-1. **Vergleichsläufe ausführen:** Die heuristische Steuerung wird mit dem
-   Standardgewichtssatz `HeuristicWeights()` einmal pro Seed aus `SEEDS`
-   simuliert, aktuell mit Seed `1` und Seed `2`. Der gewählte Modus bestimmt
-   nur, ob sie nacheinander oder parallel laufen. Sie bilden die
-   Baseline (Vergleichsbasis).
-2. **Referenzen berechnen:** Für jede [Zeitkennzahl](#produktionskennzahlen)
-   wird der Mittelwert über die Baseline-Seeds berechnet und gespeichert.
-   Er dient als Vergleichsgröße für dieselbe Zeitkennzahl in anderen Läufen.
-   Ein Referenzwert von `0` führt zu einem Fehler; er wird nicht künstlich ersetzt.
-3. **Gewichtssuche beginnen:** Erst nach der Berechnung der Referenzwerte
-   startet `optimize_iteratively()`.
-
-- **Rechenbeispiel:** Erreicht der Standardgewichtssatz eine Produktionsdauer
-  ([`makespan`](#produktionskennzahlen)) von `9` Stunden mit Seed `1` und
-  `11` Stunden mit Seed `2`, wird `(9 + 11) / 2 = 10` Stunden als Referenz
-  gespeichert. Die Anwendung dieser Referenz zeigt das
+- **Beispiel:** `9` und `11` Stunden Produktionsdauer ergeben die Referenz
+  `(9 + 11) / 2 = 10` Stunden. Ihre Verwendung zeigt das
   [Rechenbeispiel in Schritt 3](#globale-gewichte-in-optimizationpy).
-- **Ergebnis:** Diese einmal berechneten Baseline-Referenzwerte gelten für alle folgenden Läufe,
+- **Gültigkeit:** Die Referenzen bleiben für alle folgenden Läufe fest,
   einschließlich des
   [Abschlussvergleichs](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
 
@@ -2685,57 +2231,40 @@ folgenden Produktionsläufe.
 
 ##### Technische Umsetzung: Seeds
 
-Seeds machen die Zufallseinflüsse eines Simulationslaufs reproduzierbar.
+Ein Seed ist der Startwert für die Zufallszahlengeneratoren. Der Runner setzt
+ihn vor jedem Lauf. Damit werden Zufallsziehungen reproduzierbar.
 
-- **Wiederholter Entscheidungsablauf:**
+Im Lauf wiederholt sich:
 
 `Zustand → Policy entscheidet → Simulation führt Aktion aus → neuer Zustand`
 
-- **Einfluss des Zufalls:** Der neue Zustand entsteht nicht allein durch
-  die Entscheidung. Auch Schwankungen der Robotergeschwindigkeit oder ein
-  Defekt können die Ausführung beeinflussen. Schematisch gilt:
+Auch Geschwindigkeitsschwankungen und Defekte beeinflussen den Zustand:
 
 `Neuer Zustand = bisheriger Zustand + Auswirkungen der gewählten Aktion + gegebenenfalls Zufallseinflüsse`
 
-- **Startwert setzen:** Ein Seed ist ein Startwert für die
-  Zufallszahlengeneratoren. Der Runner setzt ihn vor jedem neuen Lauf.
-  Seed `1` und Seed `2` stehen damit für unterschiedliche, reproduzierbare
-  Zufallsziehungen.
-- **Gleiche Ausgangsziehungen:** Bei demselben Seed werden beispielsweise
-  die anfänglichen Maschinengeschwindigkeiten für zwei Gewichtssätze gleich
-  ausgelost. Der Zufall wird dadurch nicht entfernt.
-- **Unterschiedliche Entscheidungen vergleichen:** Andere Gewichtssätze
-  können andere Aktionen und damit andere Folgezustände erzeugen.
-  Verglichen wird, welche Aktionsfolge insgesamt bessere
-  [Produktionsergebnisse](#produktionskennzahlen) liefert, etwa eine kürzere
-  Produktionsdauer oder weniger Verspätung.
+Mit demselben Seed werden etwa die anfänglichen Maschinengeschwindigkeiten
+für zwei Gewichtssätze gleich ausgelost. Andere Entscheidungen können danach
+andere Zustände erzeugen. Der Zufall bleibt also erhalten; verglichen werden
+die [Produktionsergebnisse](#produktionskennzahlen) unter denselben Seeds.
 
 <a id="2-varianten-der-lokalen-gewichte-erstellen"></a>
 
 #### 2. Varianten des lokalen Gewichtssatzes erstellen
 
-Ziel dieses Schritts ist eine Liste von Gewichtssätzen für die nächste Prüfung.
-
-- **Ausgangspunkt:** In der ersten Iteration ist das der Standardgewichtssatz
-  [HeuristicWeights()](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py).
-- **Vollständige Sätze erstellen:** `optimize_iteratively()` erstellt daraus
-  die zu prüfenden Gewichtssätze. Jeder Satz enthält alle lokalen Gewichte,
-  auch wenn nur eines davon geändert wird.
-
-Die Varianten entstehen auf zwei Arten:
+Ausgangspunkt ist zunächst
+[HeuristicWeights()](sources/SpineML/Control/HeuristicPolicy/HeuristicWeights.py).
+`optimize_iteratively()` erzeugt daraus vollständige Gewichtssätze auf zwei Arten:
 
 1. **Einzelne Gewichte verändern: `neighboring_weights()`**
 
-   Der Ausgangssatz bleibt als Vergleich enthalten. Zusätzlich
-   werden für jedes Gewicht zwei Varianten erstellt: eine mit
-   `Gewicht − Schrittweite` und eine mit `Gewicht + Schrittweite`.
-   Alle anderen Gewichte werden unverändert übernommen. Die veränderten
-   Werte bleiben zwischen `0.000001` und `1.0`.
+   Der Ausgangssatz bleibt enthalten. Für jedes Gewicht entstehen zwei Varianten:
+   eine mit `Gewicht − Schrittweite`, eine mit `Gewicht + Schrittweite`.
+   Alle anderen Gewichte bleiben gleich. Geänderte Werte werden auf
+   `0.000001` bis `1.0` begrenzt.
 
-   **Beispiel mit der anfänglichen Schrittweite `0.4`:** Die Tabelle zeigt
-   das Transportzeitgewicht `pick_short_transport_time_weight` und das
-   Kapazitätsgewicht `target_store_free_capacity_weight`. Die übrigen
-   **23 Gewichte bleiben in diesen Beispielsätzen unverändert**.
+   **Beispiel mit Schrittweite `0.4`:** Gezeigt sind
+   `pick_short_transport_time_weight` und `target_store_free_capacity_weight`.
+   Die übrigen **23 Gewichte bleiben unverändert**.
 
    | Gewichtssatz | Transportzeitgewicht | Kapazitätsgewicht |
    |---|---|---|
@@ -2745,22 +2274,18 @@ Die Varianten entstehen auf zwei Arten:
    | Nur Kapazitätsgewicht verringern | `0.3` | `0.000001` |
    | Nur Kapazitätsgewicht erhöhen | `0.3` | `0.6` |
 
-   - **Untergrenze einhalten:** `0.3 − 0.4` und `0.2 − 0.4` liegen darunter.
-     Deshalb verwendet der Code für diese beiden Varianten `0.000001`.
-     Dasselbe Vorgehen gilt für die übrigen Gewichte.
+   `0.3 − 0.4` und `0.2 − 0.4` liegen unter der Grenze und werden deshalb
+   durch `0.000001` ersetzt.
 
 2. **Weitere Gewichtssätze zufällig zusammenstellen: `random_local_weight_candidates()`**
 
-   Für jeden zusätzlichen Gewichtssatz wird jeder einzelne Gewichtswert neu
-   ausgelost. Anders als bei den Einzelvarianten können somit alle Gewichte
-   gleichzeitig vom Ausgangssatz abweichen. Der Zufallsbereich reicht von
-   `0.000001` bis `1.0`; nur für `wait_action_weight` verwendet diese Methode
-   den kleineren Bereich von `0.000001` bis `0.1`.
+   Hier wird jedes Gewicht neu gezogen. Alle Werte können also gleichzeitig
+   abweichen: zwischen `0.000001` und `1.0`, für `wait_action_weight` nur
+   zwischen `0.000001` und `0.1`.
 
-   **Beispiel aus der ersten Iteration:** `EXPLORATION_CANDIDATES = 3`
-   erzeugt drei zusätzliche Zufallssätze. Gezeigt sind drei ihrer jeweils
-   25 Gewichte, auf vier Nachkommastellen gerundet. Auch die übrigen
-   22 Gewichte werden für jeden Satz neu gezogen.
+   **Erste Iteration:** `EXPLORATION_CANDIDATES = 3` erzeugt drei Zufallssätze.
+   Gezeigt sind drei von jeweils 25 neu gezogenen Werten, auf vier Nachkommastellen
+   gerundet. Auch die übrigen 22 Werte werden neu gezogen.
 
    | Zufallssatz | Transportzeitgewicht | Kapazitätsgewicht | `wait_action_weight` |
    |---|---|---|---|
@@ -2770,68 +2295,42 @@ Die Varianten entstehen auf zwei Arten:
 
 **Wie viele Gewichtssätze entstehen insgesamt?**
 
-- **Sätze erzeugen:** `HeuristicWeights` enthält aktuell 25 Gewichte.
-  Pro Iteration entstehen zunächst:
+Bei aktuell 25 Gewichten entstehen zunächst:
 
 `1 Ausgangssatz + 2 × 25 Einzelvarianten + 3 Zufallssätze = 54 erzeugte Gewichtssätze`
 
-- **Identische Sätze entfernen:** Stimmen innerhalb einer Iteration alle
-  Gewichte zweier Sätze überein, bleibt vor der Simulation nur der erste
-  erhalten. Mit dem aktuellen Standardgewichtssatz bleiben in der ersten
-  Iteration 53 unterschiedliche Gewichtssätze; jeder wird mit allen Seeds geprüft.
-- **Gesamtumfang begrenzen:** Bei den aktuell zwei Iterationen sind höchstens
-  107 Gewichtssatz-Prüfungen möglich: 53 in der ersten und höchstens 54 in der
-  zweiten Iteration. Den Ausgangssatz für die nächste Iteration bestimmt
-  [Schritt 5](#5-weitere-iteration-ausführen).
-  Einschließlich Baseline und Testvergleich sind das höchstens
-  `2 + 107 × 2 + 15 = 231` Produktionssimulationen. Die tatsächliche Zahl
-  hängt von identischen Kandidaten ab und steht im Laufbericht.
-- **Fortschritt zählen:** Die Anzeige zählt nur die nach dem Entfernen
-  identischer Sätze tatsächlich geprüften Gewichtssätze.
-- **Ergebnis:** Die Liste wird anschließend
-  [simuliert und bewertet](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten).
+- **Doppelte entfernen:** Bei vollständig gleichen Sätzen bleibt nur der erste.
+  In Iteration 1 bleiben aktuell 53 unterschiedliche Sätze.
+- **Umfang:** Zwei Iterationen prüfen höchstens `53 + 54 = 107` Sätze,
+  jeweils mit allen Seeds. Mit Baseline und Testvergleich sind das höchstens
+  `2 + 107 × 2 + 15 = 231` Simulationen. Die tatsächliche Zahl steht im Laufbericht.
+- **Fortschritt:** Gezählt werden nur tatsächlich geprüfte, unterschiedliche Sätze.
+  Sie werden in [Schritt 3](#3-produktion-mit-jedem-gewichtssatz-einmal-pro-seed-simulieren-und-bewerten)
+  bewertet. Den nächsten Ausgangssatz bestimmt [Schritt 5](#5-weitere-iteration-ausführen).
 
 <a id="3-produktion-mit-jedem-gewichtssatz-mehrfach-simulieren-und-bewerten"></a>
 
 #### 3. Produktion mit jedem Gewichtssatz einmal pro Seed simulieren und bewerten
 
-Ziel dieses Schritts ist eine mittlere globale Bewertungszahl für jeden
-Gewichtssatz aus [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen).
+Jeder Gewichtssatz aus [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen)
+wird mit jedem Seed aus `SEEDS` vollständig simuliert. Mit `[1, 2]` gilt:
 
-- **Unabhängige Läufe:** Jeder unterschiedliche Gewichtssatz wird mit jedem
-  Seed aus `SEEDS` vollständig simuliert. Im direkten Modus geschieht dies
-  nacheinander; im parallelen Modus bilden alle Paare einer Iteration einen Batch.
-- **Seeds:** Mit `SEEDS = [1, 2]` entstehen pro Gewichtssatz zwei Jobs.
-  Die fachliche Auswertung eines Satzes umfasst:
+1. Mit Seed `1` simulieren und die [globale Bewertungszahl](#globale-bewertungszahl) berechnen.
+2. **Denselben Gewichtssatz** unabhängig mit Seed `2` simulieren und bewerten.
+3. Aus **diesen beiden Bewertungszahlen** den [Mittelwert](#mittelwert-über-die-seeds)
+   bilden: Summe geteilt durch `2`.
 
-1. **Lauf mit Seed `1`:** Die Produktion wird mit diesem Gewichtssatz
-   vollständig simuliert. Aus den Ergebnissen dieses Laufs wird eine
-   [globale Bewertungszahl](#globale-bewertungszahl) berechnet.
-2. **Lauf mit Seed `2`:** Die Produktion wird mit **demselben Gewichtssatz**
-   und Seed `2` unabhängig vollständig simuliert. Für diesen Lauf wird
-   eine eigene globale Bewertungszahl berechnet.
-3. **Ergebnis für diesen Gewichtssatz:** Aus **diesen beiden
-   Bewertungszahlen** wird der [Mittelwert](#mittelwert-über-die-seeds)
-   berechnet, also ihre Summe durch `2` geteilt.
-
-- **Ergebnisse zuordnen:** Unterschiedliche Sätze und Seeds dürfen in anderer
-  Reihenfolge fertig werden. Erst wenn alle Seeds eines Satzes vorliegen,
-  berechnet der Elternprozess dessen globale Bewertungszahlen und Mittelwerte.
-- **Iteration abschließen:** Erst nach allen Kandidaten wird der beste Satz
-  bestimmt und daraus die nächste Iteration vorbereitet.
+Direkt laufen die Simulationen nacheinander. Parallel bilden alle
+Gewichtssatz-Seed-Paare einer Iteration einen Laufstapel. Sie dürfen in anderer
+Reihenfolge fertig werden. Sobald alle Seeds eines Satzes vorliegen, berechnet
+der Elternprozess dessen Bewertungszahlen und Mittelwert. Erst nach allen
+Sätzen wird der beste ausgewählt.
 
 ##### Gewichtssätze mit denselben Seeds vergleichen
 
-Alle Gewichtssätze werden mit derselben Liste von [Seeds](#baseline-technik)
-getestet.
-
-- **Diagrammzeilen:** Jede Zeile zeigt einen anderen Gewichtssatz.
-- **Zweige:** Jeder Zweig steht für einen vollständigen Produktionslauf und
-  dessen [globale Bewertungszahl](#globale-bewertungszahl). Im parallelen Modus
-  können diese Zweige gleichzeitig laufen; im direkten Modus laufen sie nacheinander.
-- **Zusammenfassung:** Der
-  [Mittelwert dieser Bewertungszahlen](#mittelwert-über-die-seeds) fasst das
-  Ergebnis eines Gewichtssatzes zusammen.
+Jede Diagrammzeile zeigt einen Gewichtssatz mit derselben [Seedliste](#baseline-technik).
+Jeder Zweig ist ein vollständiger Lauf. Sein Ergebnis geht nur in den
+[Mittelwert seines Gewichtssatzes](#mittelwert-über-die-seeds) ein.
 
 ```mermaid
 ---
@@ -2855,21 +2354,13 @@ flowchart LR
 
 ##### Simulationslauf und Produktionskennzahlen
 
-Für jeden Lauf erstellt `HeuristicPolicyFactory` eine frische Policy aus
-Gewichtssatz und Seed. `SimulationRunner` führt sie direkt oder innerhalb eines
-Poolprozesses aus:
-
-1. **Steuerung erstellen:** Die Factory erstellt für den übergebenen Seed
-   die heuristische Policy mit ihrem Gewichtssatz.
-2. **Produktion simulieren:** `run_policy()` setzt die Zufallszahlengeneratoren
-   auf den Seed, baut die Simulation mit dem ausgewählten Layout und Szenario
-   neu auf und führt sie aus. Die Steuerung entscheidet während dieses Laufs
-   wiederholt über Aktionen. Der Gewichtssatz bleibt dabei unverändert.
-3. **Produktionsergebnis erfassen:** `collect_global_metrics()` erfasst die
-   Kennzahlen des gesamten Laufs. Der Runner gibt sie als
-   `GlobalSimulationMetrics` an den Optimierer zurück, im parallelen Modus über
-   den Prozesspool. Sind beim Laufende noch Jobs unfertig, meldet der Runner
-   stattdessen einen Fehler.
+1. `HeuristicPolicyFactory` erstellt aus Gewichtssatz und Seed eine frische Policy.
+2. `SimulationRunner.run_policy()` setzt den Seed, baut die Simulation neu auf
+   und führt sie aus, direkt oder im Poolprozess. Die Policy entscheidet über
+   Aktionen; ihr Gewichtssatz bleibt unverändert.
+3. `collect_global_metrics()` sammelt die Kennzahlen als `GlobalSimulationMetrics`.
+   Der Runner gibt sie an den Optimierer zurück. Unfertige Jobs beim Laufende
+   führen stattdessen zu einem Fehler.
 
 ###### Produktionskennzahlen
 
@@ -2883,95 +2374,61 @@ in Stunden erfasst.
 - **Gesamtverspätung (`total_tardiness`):** Summe der positiven Verspätungen
   aller abgeschlossenen **Jobs**. Für jeden Job gilt
   `Jobverspätung = max(0, completed_time − Deadline des zugehörigen Auftrags)`.
-  Mehrere verspätete Jobs desselben Auftrags zählen einzeln. Frühe Abschlüsse
-  verringern die Summe nicht. Beispiel: Bei Deadline `10` und Jobabschlüssen
+  Jobs desselben Auftrags zählen einzeln; frühe Abschlüsse verringern die Summe
+  nicht. Beispiel: Bei Deadline `10` und Jobabschlüssen
   `8`, `12` und `15` ist die Gesamtverspätung `0 + 2 + 5 = 7`.
   Im Interface heißt diese Kennzahl **Total job tardiness**.
 - **Transportzeit (`total_transport_time`):** Summe der Bewegungszeiten für
   X, Y und Z aller Roboter. Ein- und Auslagerungswartezeiten zählen nicht mit.
 - **Werkzeugwechselzeit (`tool_change_time`):** Summe der Zeiten aller
   Maschinen für Werkzeugmontage (`mounting`) und -demontage (`unmounting`).
-- **Nacharbeitsquote (`rework_rate`):** Zahl der abgeschlossenen Jobs mit
-  `rework_count > 0`, bezogen auf alle Jobs. Der Zähler `rework_job_count` zählt jeden solchen Job
-  einmal. Getrennt davon summiert `total_rework_count` alle ausgewählten
-  Nacharbeiten, auch mehrere beim selben Job.
-- **Ausschussquote (`scrap_rate`):** Anteil der abgeschlossenen Jobs mit
-  Endzustand `general_state == "scrap"`. Jeder dieser Jobs erhöht
-  `scrap_job_count` um eins; sein interner Entscheidungszähler wird dafür nicht
-  verwendet.
-- **Herabstufungsquote (`downgrade_rate`):** Anteil der abgeschlossenen Jobs
-  mit `general_state == "intact"` und `downgraded == True`.
-  Ihr Zähler heißt `downgraded_job_count`. Diese Jobs zählen nicht zusätzlich
-  unter `intact_jobs`; dort stehen nur intakte Jobs ohne Herabstufung.
+- **Nacharbeitsquote (`rework_rate`):** `rework_job_count / total_jobs`.
+  Jeder abgeschlossene Job mit `rework_count > 0` zählt einmal.
+  `total_rework_count` zählt dagegen alle gewählten Nacharbeiten, auch mehrere
+  beim selben Job.
+- **Ausschussquote (`scrap_rate`):** `scrap_job_count / total_jobs`.
+  Gezählt werden abgeschlossene Jobs mit `general_state == "scrap"`,
+  nicht ihre internen Entscheidungszähler.
+- **Herabstufungsquote (`downgrade_rate`):** `downgraded_job_count / total_jobs`.
+  Gezählt werden abgeschlossene Jobs mit `general_state == "intact"` und
+  `downgraded == True`. Sie zählen nicht zusätzlich unter `intact_jobs`.
 
-- **Defektfälle getrennt zählen:** `total_defect_count` summiert alle
-  `job.defect_count`: Drei Defekte bei einem Job und zwei bei einem anderen
-  ergeben fünf Defektfälle. Diese Ereigniszahl ist keine zusätzliche
-  Kennzahl der globalen Bewertung.
-- **Bezugsgröße der Quoten:** `total_jobs` ist für alle drei Quoten die
-  Gesamtzahl der Jobs. Ihre [Berechnung](#globale-bewertungszahl) folgt im
-  nächsten Abschnitt.
+`total_jobs` ist jeweils die Gesamtzahl aller Jobs. Davon getrennt summiert
+`total_defect_count` alle `job.defect_count`: drei Defekte bei einem Job und
+zwei bei einem anderen ergeben fünf Fälle. Diese Ereigniszahl wird nicht
+zusätzlich global bewertet.
 
 ##### Globale Bewertungszahl
 
-`GlobalSimulationEvaluation` fasst die Produktionsergebnisse zu einer
-globalen Bewertungszahl pro Lauf zusammen.
+`GlobalSimulationEvaluation` verbindet Zeitaufwand und Qualitätsfolgen zu
+einer Zahl pro Lauf. So lässt sich etwa eine kurze Produktionsdauer gegen
+viel Ausschuss abwägen. Anders als beim Aktionsscore gilt: **Kleiner ist besser.**
 
-- **Zielkonflikte vergleichbar machen:** Ein Lauf kann beispielsweise eine
-  kurze Produktionsdauer, aber viel Ausschuss haben. Die gemeinsame
-  Bewertungszahl berücksichtigt beide Folgen.
-- **Bewertungsrichtung:** Anders als beim Aktionsscore gilt hier: Je kleiner
-  die Bewertungszahl, desto besser wird das Produktionsergebnis bewertet.
-- **Eingangsgrößen:** Vier Zeitkennzahlen sowie Nacharbeits-, Ausschuss-
-  und Herabstufungsquote erfassen Zeitaufwand und Entscheidungsfolgen.
-
-Zuerst werden die Kennzahlen für die gemeinsame Berechnung umgerechnet:
-
-- **Zeitkennzahlen:** Produktionsdauer (`makespan`), Gesamtverspätung der Jobs
-  (`total_tardiness`), Transportzeit (`total_transport_time`) und
-  Werkzeugwechselzeit (`tool_change_time`) werden jeweils durch ihren eigenen
-  [Baseline-Referenzwert aus Schritt 1](#1-produktion-mit-dem-standardgewichtssatz-simulieren)
-  geteilt. Beispielsweise ergeben `8` Stunden Produktionsdauer bei einer
-  Referenz von `10` Stunden den Wert `8 / 10 = 0.8`. Der Wert `1` bedeutet
-  gleich der Referenz, ein kleinerer Wert eine kürzere Zeit.
-
-- **Quoten:** Die drei Quoten werden mit der Gesamtzahl der Jobs
-  (`total_jobs`) als Bezugsgröße berechnet:
-
-  - **Nacharbeitsquote (`rework_rate`):**
-    `rework_job_count / total_jobs`. Jeder Job mit mindestens einer Nacharbeit
-    zählt einmal.
-  - **Ausschussquote (`scrap_rate`):**
-    `scrap_job_count / total_jobs`.
-  - **Herabstufungsquote (`downgrade_rate`):**
-    `downgraded_job_count / total_jobs`.
-
-  - **Beispiel:** `20` abgeschlossene Ausschussjobs bei `100` Jobs ergeben
-    die Ausschussquote `20 / 100 = 0.2`.
-  - **Abgrenzung:** Die Quoten werden nicht durch Baseline-Referenzwerte
-    geteilt. Nacharbeit zählt als zusätzlicher Aufwand neben den Zeitkennzahlen.
-
-- **Beiträge addieren:** Danach wird jeder Wert mit seinem
-  [globalen Gewicht](#globale-gewichte-in-optimizationpy) multipliziert.
-  Die Produkte werden addiert:
+1. **Zeiten umrechnen:** Jede der vier Zeitkennzahlen wird durch ihren eigenen
+   [Baseline-Referenzwert](#1-produktion-mit-dem-standardgewichtssatz-simulieren)
+   geteilt. `8` Stunden bei Referenz `10` ergeben `0.8`. Der Wert `1` bedeutet
+   dieselbe Zeit wie die Referenz; kleiner bedeutet kürzer.
+2. **Quoten übernehmen:** Nacharbeits-, Ausschuss- und Herabstufungsquote
+   werden nicht durch Baseline-Werte geteilt. Zum Beispiel ergeben `20`
+   abgeschlossene Ausschussjobs bei `100` Jobs `20 / 100 = 0.2`.
+   Nacharbeit zählt als zusätzlicher Aufwand neben den Zeiten.
+3. **Beiträge addieren:** Jeden Wert mit seinem
+   [globalen Gewicht](#globale-gewichte-in-optimizationpy) multiplizieren,
+   dann die Produkte addieren:
 
 `Globale Bewertungszahl = Summe(umgerechneter Kennzahlwert × globales Gewicht)`
 
-- **Keine weitere Division:** Es wird nicht durch die Gewichtssumme geteilt.
-- **Einheitlicher Maßstab:** Alle Gewichtssätze werden mit denselben
-  globalen Gewichten und Baseline-Referenzwerten beurteilt.
+Es wird **nicht durch die Gewichtssumme geteilt**. Globale Gewichte und
+Baseline-Referenzen bleiben für alle Gewichtssätze gleich.
 
 <a id="globale-gewichte-in-optimizationpy"></a>
 
 ###### Globale Gewichte in `heuristic_optimization_app.py`
 
-Die Tabelle zeigt die globalen Gewichte aus dem Code und ihre Anwendung
-auf einen beispielhaften Lauf mit Gewichtssatz A und Seed `1`.
-
-- **Beispieldaten:** Laufdaten und Referenzwerte sind für das Rechenbeispiel
-  gewählt, keine gemessenen Optimierungsergebnisse. Alle Zeitangaben sind in Stunden.
-- **Jobergebnisse:** Von `100` abgeschlossenen Jobs wurden `10`
-  nachgearbeitet, `20` als Ausschuss behandelt und `10` herabgestuft.
+Die Tabelle verwendet die globalen Gewichte aus dem Code für Gewichtssatz A
+mit Seed `1`. Laufdaten und Referenzen sind erfundene Beispieldaten, keine
+Messergebnisse. Zeiten stehen in Stunden. Von `100` abgeschlossenen Jobs
+wurden `10` nachgearbeitet, `20` als Ausschuss behandelt und `10` herabgestuft.
 
 | Kennzahl | Umrechnung im Beispiel | Globales Gewicht | Beitrag zur Bewertungszahl |
 | --- | --- | --- | --- |
@@ -2983,175 +2440,121 @@ auf einen beispielhaften Lauf mit Gewichtssatz A und Seed `1`.
 | Ausschussquote | `20 / 100 = 0.2` | `4.0` | `0.8` |
 | Herabstufungsquote | `10 / 100 = 0.1` | `3.0` | `0.3` |
 
-- **Bewertungszahl berechnen:** Die Beiträge der letzten Spalte werden addiert:
+Die letzte Spalte ergibt zusammen:
 
 `4.0 + 2.0 + 0.75 + 0.5 + 0.3 + 0.8 + 0.3 = 8.65`
 
-- **Wirkung eines globalen Gewichts:** Ein höherer Wert lässt die Kennzahl
-  stärker in die Bewertung eingehen. Steigt beispielsweise die Ausschussrate
-  um `0.1`, erhöht sich die Bewertungszahl bei Gewicht `4.0` um `0.4`, wenn
-  die anderen Beiträge gleich bleiben.
+Ein höheres globales Gewicht verstärkt den Einfluss der Kennzahl.
+Steigt nur die Ausschussquote um `0.1`, steigt die Bewertungszahl bei
+Gewicht `4.0` um `0.4`.
 
 ##### Mittelwert über die Seeds
 
-Der Mittelwert fasst alle Seed-Läufe eines Gewichtssatzes zu einem
-Vergleichswert zusammen.
-
-- **Einzelwerte sammeln:** Nach jedem Lauf liegt eine globale Bewertungszahl vor.
-- **Mittelwert berechnen:** Sobald alle Seeds eines Gewichtssatzes vorliegen,
-  berechnet der Optimierer im Elternprozess daraus `mean_global_cost`:
+Aus den Bewertungszahlen aller Seeds **desselben Gewichtssatzes** berechnet
+der Optimierer im Elternprozess den Vergleichswert:
 
 `mean_global_cost = Summe(globale Bewertungszahl je Seed) / Anzahl der Seeds`
 
-- **Beispiel fortsetzen:** Mit Seed `1` erreicht Gewichtssatz A die oben
-  berechnete Bewertungszahl `8.65`. Angenommen, sein Lauf mit Seed `2`
-  erreicht `9.55` und Gewichtssatz B erzielt `8.9` beziehungsweise `8.7`:
+Für A gilt oben bei Seed `1` der Wert `8.65`. Angenommen, A erreicht mit
+Seed `2` den Wert `9.55`, B dagegen `8.9` und `8.7`:
 
 | Gewichtssatz | Bewertungszahl bei Seed `1` | Bewertungszahl bei Seed `2` | Mittelwert `mean_global_cost` |
 | --- | --- | --- | --- |
 | A | `8.65` | `9.55` | `(8.65 + 9.55) / 2 = 9.1` |
 | B | `8.9` | `8.7` | `(8.9 + 8.7) / 2 = 8.8` |
 
-- **Ergebnis des Beispiels:** A ist bei Seed `1` besser, B erreicht aber
-  den kleineren Mittelwert. Deshalb wird B in
-  [Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen)
-  gegenüber A bevorzugt.
+A ist bei Seed `1` besser, B aber im Mittel. Deshalb gewinnt B in
+[Schritt 4](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
 
 ##### Fortschritt und Ergebnisdiagramme
 
-Die Oberfläche zeigt den aktuellen Prüfstand und die Ergebnisse bereits
-abgeschlossener Gewichtssatz-Prüfungen.
-
-- **Fortschritt melden:** `progress` in `heuristic_optimization_app.py` erhält die
-  Iteration und den ursprünglichen Index eines vollständig geprüften
-  Gewichtssatzes. Die Oberfläche zählt fertige Sätze separat.
-- **Anzeige lesen:** `Optimization: iteration 1, 9/53 candidates completed` bedeutet:
-  In Iteration `1` sind neun von `53` Gewichtssätzen vollständig geprüft. Die Anzeige
-  bezieht sich auf die aktuelle Iteration, nicht auf die gesamte Optimierung.
-- **Diagrammachsen unterscheiden:** Die drei folgenden Ergebnisbereiche
-  verwenden die fortlaufende X-Achse `Candidate` (geprüfter Gewichtssatz).
-  Sie nummeriert Kandidaten in ihrer ursprünglichen Eingabereihenfolge über
-  alle Iterationen hinweg, nicht nach Fertigstellungszeit.
-- **Punkte und Linien lesen:** Ein Punkt erscheint nach der Auswertung
-  aller Seeds eines Gewichtssatzes. Bereits fertige spätere Kandidaten werden
-  bis zu ihren Vorgängern gepuffert. Verbindungslinien zeigen die
-  Eingabereihenfolge; Kandidat `1` bleibt die ursprüngliche Vergleichsbasis.
+- **Fortschritt:** `progress` meldet Iteration und ursprünglichen Kandidatenindex;
+  die Oberfläche zählt fertige Sätze separat. `Optimization: iteration 1, 9/53
+  candidates completed` heißt: neun von 53 Sätzen dieser Iteration sind mit
+  allen Seeds geprüft.
+- **X-Achse `Candidate`:** Alle folgenden Diagramme nummerieren Gewichtssätze
+  fortlaufend über alle Iterationen, in Eingabe- statt Fertigstellungsreihenfolge.
+- **Punkte und Linien:** Ein Punkt setzt alle Seed-Ergebnisse voraus.
+  Später eingereichte fertige Sätze warten in der Anzeige auf ihre Vorgänger.
+  Linien verbinden die Eingabereihenfolge; Kandidat `1` bleibt die Vergleichsbasis.
 
 ###### Bedeutung der Kostenkurve
 
-**Mean global cost** zeigt die
-[Gesamtbewertung](#mittelwert-über-die-seeds) jedes geprüften Gewichtssatzes.
+**Mean global cost** zeigt auf der Y-Achse `mean_global_cost`, also die
+[mittlere Bewertungszahl](#mittelwert-über-die-seeds) je Gewichtssatz.
+„Kosten“ sind hier kein Geldbetrag. Kleiner ist besser.
 
-- **Y-Achse:** Jeder Punkt ist der Mittelwert der globalen Bewertungszahlen
-  über alle Seeds aus `SEEDS` für genau einen Gewichtssatz: `mean_global_cost`.
-  Kleiner ist besser.
-- **Begriff „Kosten“:** Gemeint ist die berechnete Bewertungszahl, kein Geldbetrag.
-- **Kurvenverlauf:** Die Kurve zeigt alle geprüften Sätze, nicht nur
-  Verbesserungen. Sie muss daher nicht stetig sinken; ein schlechterer
-  Versuch ersetzt den bisher besten Satz nicht automatisch.
+Die Kurve zeigt alle Versuche, nicht nur Verbesserungen. Sie muss nicht
+stetig sinken; ein schlechterer Versuch ersetzt den besten Satz nicht.
 
 ###### Einzelne Produktionskennzahlen
 
 **Mean metrics per candidate** zeigt für jede der sieben
-[bewerteten Produktionskennzahlen](#globale-bewertungszahl) ein eigenes Diagramm.
-
-- **Y-Achse:** Dargestellt wird der Mittelwert über die Seeds, beispielsweise
-  die mittlere Produktionsdauer oder Ausschussquote. Jedes Diagramm hat eine
-  eigene Y-Skala.
-- **Einheiten:** Die Zeitkennzahlen stehen in Stunden, die drei Quoten in Prozent.
-- **Zielkonflikte erkennen:** Ein Gewichtssatz kann beispielsweise kürzere
-  Produktionszeiten, aber eine höhere Ausschussquote erreichen. Wie diese
-  Ziele gemeinsam bewertet werden, bestimmt die
-  [globale Bewertungszahl](#globale-bewertungszahl).
+[Kennzahlen](#globale-bewertungszahl) den Seed-Mittelwert mit eigener Y-Skala:
+Zeiten in Stunden, Quoten in Prozent. Kürzere Zeiten können etwa mit mehr
+Ausschuss einhergehen. Die globale Bewertungszahl wägt solche Zielkonflikte ab.
 
 ###### Abweichung gegenüber dem ersten Gewichtssatz
 
-**Metric deviation from candidate 1** zeigt die Änderung der einzelnen
-Kennzahlmittelwerte in zwei getrennten Diagrammen: Zeitkennzahlen in relativen
-Prozent und Nacharbeits-, Ausschuss- sowie Herabstufungsquoten in Prozentpunkten.
+**Metric deviation from candidate 1** zeigt Änderungen der Kennzahlmittelwerte:
+Zeiten in relativen Prozent, die drei Quoten getrennt davon in Prozentpunkten.
 
-- **Vergleichsbasis:** Kandidat `1` ist der erste Gewichtssatz der ursprünglichen
-  Eingabereihenfolge der gesamten Optimierung, aktuell der Standardgewichtssatz.
-  Er ist weder der zuerst fertiggestellte Kandidat noch ein neuer Ausgangspunkt
-  pro Iteration.
+- **Vergleichsbasis:** Kandidat `1` ist der erste eingereichte Satz der gesamten
+  Suche, aktuell der Standardgewichtssatz. Er wechselt nicht je Iteration und
+  wird nicht nach Fertigstellungszeit bestimmt.
 - **Zeitkennzahlen:** Für einen Ausgangswert ungleich `0` gilt:
 
 `Abweichung (%) = (Kennzahlmittelwert − Ausgangswert) / |Ausgangswert| × 100`
 
 - **Zeitbeispiel:** Sinkt die mittlere Produktionsdauer von `10` auf `8`
   Stunden, ist die Abweichung `(8 − 10) / 10 × 100 = −20 %`.
-- **Quoten:** Die bereits in Prozent dargestellten Mittelwerte werden direkt
-  voneinander abgezogen. Von `0 %` auf `5 %` ergibt `+5` Prozentpunkte;
+- **Quoten:** Prozentwerte werden direkt voneinander abgezogen.
+  Von `0 %` auf `5 %` ergibt `+5` Prozentpunkte;
   von `10 %` auf `20 %` ergibt `+10` Prozentpunkte, nicht `+100` Prozentpunkte.
-- **Zeit-Ausgangswert `0`:** Die relative Abweichung ist nicht definiert.
-  Für diese Zeitkennzahl wird keine Kurve gezeichnet; ein Hinweis im
-  Diagrammtitel erklärt den fehlenden Vergleich. Es wird kein künstlicher
-  Wert von `0 %` eingesetzt. Quoten mit Ausgangswert `0 %` bleiben dagegen
-  als Prozentpunktdifferenz darstellbar.
-- **Vorzeichen lesen:** Ein negativer Wert bedeutet eine Verringerung, ein
-  positiver Wert eine Erhöhung.
-- **Gesamtergebnis beurteilen:** Eine einzelne verringerte Kennzahl beweist
-  noch keine Verbesserung: Weniger Nacharbeit kann mit mehr Ausschuss
-  einhergehen. Entscheidend ist die
-  [mittlere globale Bewertungszahl](#mittelwert-über-die-seeds).
-- **Unveränderte Rohwerte:** Die tatsächlichen Kennzahlmittelwerte und die
-  Berechnung der Jobquoten bleiben unverändert. Sie stehen weiterhin im
-  [Kennzahlendiagramm](#einzelne-produktionskennzahlen).
-- **Ergebnis dieses Schritts:** Ein `mean_global_cost` pro geprüftem
-  Gewichtssatz bildet die Grundlage für die
-  [Auswahl eines Gewichtssatzes](#4-gewichtssatz-anhand-der-mittleren-produktionsergebnisse-auswählen).
+- **Zeit-Ausgangswert `0`:** Dafür ist keine relative Änderung berechenbar.
+  Statt einer Kurve erscheint ein Hinweis im Diagrammtitel, kein künstlicher
+  Wert `0 %`. Quoten ab `0 %` bleiben als Prozentpunktdifferenz darstellbar.
+- **Vorzeichen:** Negativ bedeutet weniger, positiv mehr.
+- **Beurteilung:** Weniger Nacharbeit kann mehr Ausschuss bedeuten.
+  Entscheidend bleibt die [mittlere globale Bewertungszahl](#mittelwert-über-die-seeds).
+  Die unveränderten Rohmittelwerte stehen im [Kennzahlendiagramm](#einzelne-produktionskennzahlen).
 
 #### 4. Gewichtssatz anhand der mittleren Produktionsergebnisse auswählen
 
-Ziel ist der beste Gewichtssatz der aktuellen Iteration.
-
-- **Auswahlregel:** `select_best_local_weight_set_across_seeds()` wählt aus
-  allen geprüften Sätzen den mit dem kleinsten
-  [Mittelwert über die Seeds](#mittelwert-über-die-seeds).
-- **Gleichstand:** Bei gleichem Mittelwert bleibt der erste Satz in der
-  ursprünglichen Kandidatenreihenfolge ausgewählt, nicht der zuerst fertiggestellte.
-- **Beispiel:** A erreicht `9.1`, B erreicht `8.8`. Deshalb wird B ausgewählt.
-- **Nächste Entscheidung:** Ob B den bisher besten Satz ersetzt und die
-  Suche weiterläuft, entscheidet [Schritt 5](#5-weitere-iteration-ausführen).
+`select_best_local_weight_set_across_seeds()` wählt den kleinsten
+[Seed-Mittelwert](#mittelwert-über-die-seeds) dieser Iteration.
+Bei Gleichstand gewinnt der erste Satz in Eingabereihenfolge, nicht der
+zuerst fertige. Im Beispiel gewinnt B mit `8.8` gegen A mit `9.1`.
+Ob B den bisherigen besten Satz ersetzt, entscheidet [Schritt 5](#5-weitere-iteration-ausführen).
 
 <a id="weitere-iterationen-neustart-vorzeitiges-ende-und-rückgabewerte-im-code"></a>
 
 #### 5. Weitere Iteration ausführen?
 
-**Ziel:** Vom besten Gewichtssatz aus weitersuchen. Ohne Verbesserung werden
-zunächst größere Änderungen ausprobiert; bleibt der Erfolg aus, endet die Suche.
+`optimize_iteratively()` vergleicht den Iterationssieger mit dem bisher besten
+Mittelwert. Nur ein kleinerer Wert verbessert ihn; Gleichstand genügt nicht.
 
-- **Vergleich:** `optimize_iteratively()` vergleicht den besten Mittelwert
-  dieser Iteration mit dem bisher gespeicherten besten Mittelwert. Nur ein
-  kleinerer Wert ist eine Verbesserung; ein gleicher Wert zählt nicht.
-
-- **Erste Iteration oder Verbesserung:** Den ausgewählten Satz und seinen
-  Mittelwert speichern, die Schrittweite halbieren und Neustart-Zähler sowie
-  Abbruch-Zähler auf `0` setzen.
-- **Keine Verbesserung:** Den bisherigen besten Satz behalten. Beide Zähler
-  steigen um `1`.
+- **Erste Iteration oder Verbesserung:** Satz und Mittelwert speichern,
+  Schrittweite halbieren, beide Zähler auf `0` setzen.
+- **Sonst:** Besten Satz behalten, beide Zähler um `1` erhöhen.
 
 Die beiden Zähler steuern die Suche bei ausbleibender Verbesserung:
 
-- **Neustart-Zähler (`iterations_without_improvement`):** Zählt Iterationen ohne
-  Verbesserung seit der letzten Verbesserung oder dem letzten Neustart.
-  Bei `2` (`RESTART_AFTER_NO_IMPROVEMENT`) wird ein Neustart ausgelöst:
-  Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` zurücksetzen, diesen Zähler auf `0` setzen.
-  Die nächste Iteration prüft größere Änderungen am bisherigen besten Satz.
-- **Abbruch-Zähler (`total_iterations_without_improvement`):** Zählt die
-  aufeinanderfolgenden Iterationen ohne Verbesserung. **Ein Neustart setzt
-  ihn nicht zurück.** Bei `4` (`STOP_AFTER_NO_IMPROVEMENT`) endet die Suche;
-  ein weiterer Neustart wird dann nicht mehr ausgeführt.
+- **Neustart-Zähler (`iterations_without_improvement`):** Zählt erfolglose Iterationen
+  seit Verbesserung oder Neustart. Bei `2` (`RESTART_AFTER_NO_IMPROVEMENT`)
+  werden die Schrittweite auf `INITIAL_WEIGHT_STEP = 0.4` und dieser Zähler
+  auf `0` gesetzt. Gesucht wird weiter um denselben besten Satz, nur mit größeren Schritten.
+- **Abbruch-Zähler (`total_iterations_without_improvement`):** Zählt erfolglose
+  Iterationen seit der letzten Verbesserung. **Ein Neustart setzt ihn nicht zurück.**
+  Bei `4` (`STOP_AFTER_NO_IMPROVEMENT`) endet die Suche vor einem weiteren Neustart.
 
-- **Weiterlaufen oder enden:** Eine weitere Iteration beginnt bei
-  [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen), solange der
-  Abbruch-Zähler unter `4` liegt und noch nicht `ITERATIONS` Iterationen
-  ausgeführt wurden. Andernfalls folgt der
+- **Weiter oder Ende:** Zurück zu [Schritt 2](#2-varianten-des-lokalen-gewichtssatzes-erstellen),
+  solange der Abbruch-Zähler unter `4` liegt und `ITERATIONS` nicht erreicht ist.
+  Sonst folgt der
   [Abschlussvergleich in Schritt 6](#6-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen).
-- **Diagrammbeispiel:** Sieben Iterationen zeigen eine Verbesserung in
-  Iteration 3, einen Neustart in Iteration 5 und den Abbruch in Iteration 7.
-- **Aktuelle Begrenzung:** Mit `ITERATIONS = 2` endet die tatsächliche Suche
-  nach zwei Iterationen, bevor Neustart oder Abbruch-Zähler greifen können.
+- **Diagramm:** Verbesserung in Iteration 3, Neustart in 5, Abbruch in 7.
+- **Aktueller Lauf:** `ITERATIONS = 2` beendet die Suche nach zwei Iterationen,
+  bevor die Zählergrenzen greifen können.
 
 ```mermaid
 ---
@@ -3187,23 +2590,16 @@ flowchart TB
     style Grenze fill:transparent,stroke-width:2px
 ```
 
-- **Ergebnis:** Zurückgegeben werden der beste gefundene Gewichtssatz
-  (`best_weights`) und seine mittlere globale Bewertungszahl
-  (`best_mean_global_cost`).
-- **Ergebnisverlauf unterscheiden:** `optimize_iteratively().evaluations`
-  enthält die erste beste Bewertung und spätere Verbesserungen. Die Oberfläche
-  zeigt dagegen alle geprüften Kandidaten, nicht nur diese gespeicherten Verbesserungen.
+Zurückgegeben werden `best_weights` und `best_mean_global_cost`.
+`optimize_iteratively().evaluations` enthält nur die erste beste Bewertung
+und spätere Verbesserungen. Die Oberfläche zeigt dagegen alle geprüften Sätze.
 
 <a id="5-gefundenen-gewichtssatz-mit-standardheuristik-und-zufall-vergleichen"></a>
 
 #### 6. Gefundenen Gewichtssatz mit Standardheuristik und Zufall vergleichen
 
-Ziel des Abschlussvergleichs ist die Prüfung des gefundenen Gewichtssatzes
-auf separaten Test-Seeds.
-
-- **Test-Seeds:** Verwendet werden `TEST_SEEDS = [101, 102, 103, 104, 105]`.
-- **Steuerungen:** Jede der folgenden drei Steuerungen wird einmal pro
-  Test-Seed simuliert:
+Jede dieser Steuerungen wird einmal pro Test-Seed aus
+`TEST_SEEDS = [101, 102, 103, 104, 105]` simuliert:
 
 | Anzeige im Interface | Verwendete Steuerung |
 | --- | --- |
@@ -3211,97 +2607,67 @@ auf separaten Test-Seeds.
 | `Heuristic (default)` | Die heuristische Steuerung mit dem Standardgewichtssatz `HeuristicWeights()`. |
 | `Heuristic (optimized)` | Dieselbe heuristische Steuerung mit dem besten Gewichtssatz aus der Suche. |
 
-- **Gleiche Bedingungen:** Alle drei Steuerungen verwenden dasselbe Layout,
-  dasselbe Szenario, dieselben Test-Seeds sowie dieselben globalen Gewichte
-  und Baseline-Referenzwerte.
-- **Umfang:** Es entstehen 15 Testläufe, fünf pro Steuerung. Im parallelen
-  Modus gehen alle gemeinsam an denselben Prozesspool; im direkten Modus
-  laufen sie nacheinander. Der gefundene Gewichtssatz bleibt unverändert.
-- **Auswertung:** Der Elternprozess ordnet die Ergebnisse Steuerung und Seed
-  zu und berechnet globale Bewertungszahlen sowie Mittelwerte. Diagramme
-  behalten die festgelegte Eingabereihenfolge, nicht die Fertigstellungsreihenfolge.
-- **Tabelle lesen:** Das Interface zeigt je Steuerung die Mittelwerte der
-  sieben bewerteten Produktionskennzahlen und der globalen Bewertungszahl.
-- **Diagramme lesen:** Sie zeigen die Ergebnisse für jeden einzelnen Test-Seed.
-- **Ergebnis beurteilen:** Der kleinere Mittelwert der globalen
-  Bewertungszahl ist besser. Ob `Heuristic (optimized)` die anderen
-  Steuerungen tatsächlich übertrifft, zeigt erst dieser Vergleich.
-- **Aussagegrenze:** Die fünf Test-Seeds prüfen denselben Modellaufbau.
-  Ein besserer Testmittelwert ist kein Nachweis eines globalen Optimums
-  oder eines Vorteils auf beliebigen anderen Produktionsszenarien.
+- **Bedingungen:** Gleiches Layout und Szenario, gleiche Test-Seeds, globale
+  Gewichte und feste Baseline-Referenzen. Der gefundene Gewichtssatz ändert sich nicht.
+- **Ausführung:** 15 Läufe, fünf pro Steuerung. Parallel gehen sie gemeinsam
+  an denselben Pool; direkt laufen sie nacheinander.
+- **Auswertung:** Der Elternprozess berechnet Kosten und Mittelwerte.
+  Die Tabelle zeigt je Steuerung die sieben Kennzahlmittelwerte und die
+  mittlere Bewertungszahl. Diagramme zeigen einzelne Test-Seeds in Eingabereihenfolge.
+- **Urteil:** Der kleinere Kostenmittelwert ist besser. Erst hier zeigt sich,
+  ob `Heuristic (optimized)` die anderen übertrifft. Fünf Seeds desselben Modells
+  belegen weder ein globales Optimum noch einen Vorteil in beliebigen Fabriken.
 
 ## SimulationExecution: Simulationsläufe ausführen
 
-[SimulationExecution](sources/SpineML/SimulationExecution) enthält die
-Werkzeuge zum Laden des Fabrikmodells und zum Ausführen von Simulationsläufen.
-Der Runner startet einen Lauf mit einer übergebenen Policy und einem Seed.
-**Die Policy wählt Aktionen aus; die Simulationskomponenten führen sie aus.**
-Nach dem Lauf liefert der Runner die Produktionskennzahlen zurück.
-
-Derselbe Runner kann verschiedene Policies verwenden, beispielsweise die
-Zufallspolicy, die Standardheuristik, die Heuristik mit einem optimierten
-Gewichtssatz oder ein trainiertes RL-Netz. Der Unterschied liegt in der
-Aktionsauswahl, nicht in einem eigenen Simulationskern je Policy.
+[SimulationExecution](sources/SpineML/SimulationExecution) lädt Modelle und
+führt Läufe aus. Ein Runner erhält Policy und Seed und liefert Kennzahlen.
+**Die Policy wählt Aktionen; die Simulationskomponenten führen sie aus.**
+Zufall, Standardheuristik, optimierte Heuristik und RL nutzen denselben
+Simulationskern. Nur die Aktionsauswahl unterscheidet sich.
 
 ### Modell laden: `ModelLoader.py`
 
-Der Aufruf
 [`load_layout_and_scenario("example-5.py")`](sources/SpineML/SimulationExecution/ModelLoader.py)
-liest die Beispieldatei und liefert zwei Konfigurationsobjekte zurück:
-das `layout` mit dem Fabrikaufbau und das `scenario` mit den Produktionsaufträgen.
+liefert `layout` (Fabrikaufbau) und `scenario` (Produktionsaufträge):
 
-Die Funktion führt diese Schritte aus:
+1. `_resolve_model_path()` findet die Python-Datei.
+2. `_load_model()` führt sie zum Erstellen der Konfiguration aus.
+3. `_find_layout_and_scenario()` gibt `layout` und `scenario` als Tupel zurück.
 
-1. **Datei finden:** `_resolve_model_path()` sucht die angegebene Python-Datei.
-2. **Konfiguration erstellen:** `_load_model()` erstellt die Fabrikkonfiguration aus der Beispieldatei.
-3. **Layout und Szenario zurückgeben:** `_find_layout_and_scenario()` gibt die Variablen `layout` und `scenario` als Tupel zurück.
-
-**Nach dem Laden sind Fabrik und Aufträge konfiguriert. Ein Produktionslauf
-wurde dadurch noch nicht gestartet.**
+Das Laden startet noch keinen Produktionslauf.
 
 ### Einen vollständigen Lauf ausführen: `SimulationRunner.py`
 
 [`SimulationRunner`](sources/SpineML/SimulationExecution/SimulationRunner.py)
-startet eine Simulation ohne 3D-Anzeige und wartet auf deren Ende.
+läuft ohne 3D-Anzeige:
 
-- **Runner erstellen:** `runner = SimulationRunner(layout, scenario)`
-  speichert das gewählte Layout und Szenario. Dieser Aufruf startet noch
-  keine Simulation.
-- **Lauf starten:** `metrics = runner.run_policy(policy, seed)` übergibt
-  die Steuerung und den Startwert für die Zufallszahlen. Die Policy muss
-  bereits erstellt sein.
-- **Ergebnis erhalten:** Wenn der Lauf beendet ist, enthält `metrics` ein
-  `GlobalSimulationMetrics`-Objekt mit den
-  [Produktionskennzahlen](#produktionskennzahlen).
+1. `runner = SimulationRunner(layout, scenario)` speichert die Konfiguration.
+2. `metrics = runner.run_policy(policy, seed)` startet mit einer bereits
+   erstellten Policy und wartet bis zum Ende.
+3. `metrics` enthält dann die [Produktionskennzahlen](#produktionskennzahlen)
+   als `GlobalSimulationMetrics`.
 
-Innerhalb von `run_policy()` passiert Folgendes:
+`run_policy()` führt intern diese Schritte aus:
 
 1. Der Seed setzt den Python-Zufallsgenerator, den Salabim-Zufall und
    den Qualitäts-Seed der Maschinen.
-2. Für diesen Lauf werden eine neue Salabim-Umgebung, eine neue
-   `SimulationBridge`, ein neues `SimLayout` und ein neues
-   `SimScenario` erstellt.
-3. Die Simulation läuft. Die Bridge fordert Entscheidungen von der Policy
-   an; Jobs, Roboter und Maschinen führen die gewählten Aktionen aus.
-4. Nach dem Lauf liest `collect_global_metrics()` die Ergebnisse aus den
-   Jobs, Robotern und Maschinen und gibt sie gebündelt zurück.
+2. Eine neue Salabim-Umgebung, `SimulationBridge`, `SimLayout` und `SimScenario`
+   werden erstellt.
+3. Die Bridge fordert Entscheidungen an; Jobs, Roboter und Maschinen führen sie aus.
+4. `collect_global_metrics()` sammelt deren Ergebnisse.
 
-Mit `SimulationRunner(layout, scenario, till=...)` lässt sich eine maximale
-**Simulationszeit** angeben. Ohne diese Grenze läuft die Simulation bis zum
-regulären Abschluss. Endet sie mit unfertigen Jobs, wirft `run_policy()`
-einen Fehler statt eines gültigen Optimierungsergebnisses.
+`SimulationRunner(layout, scenario, till=...)` begrenzt die **Simulationszeit**.
+Ohne Grenze läuft die Simulation bis zum regulären Abschluss.
+Unfertige Jobs beim Ende führen zum Fehler, nicht zu einem gültigen Ergebnis.
 
 ### Mehrere Läufe beauftragen: `ParallelSimulationRunner.py`
 
 [`ParallelSimulationRunner`](sources/SpineML/SimulationExecution/ParallelSimulationRunner.py)
-kann mehrere voneinander unabhängige Simulationen gleichzeitig ausführen.
-Dazu verwendet er zusätzliche Python-Prozesse. Ein solcher
-**Worker-Prozess** übernimmt jeweils einen vollständigen Simulationslauf.
-Die Gruppe dieser Worker-Prozesse heißt **Prozesspool**.
-
-Das Diagramm zeigt beispielhaft einen Worker-Prozess. Mehrere Worker können
-gleichzeitig arbeiten. Jeder Worker erstellt seinen `SimulationRunner` einmal
-und verwendet ihn für weitere Aufträge erneut.
+verteilt unabhängige vollständige Läufe auf zusätzliche Python-Prozesse.
+Jeder **Worker-Prozess** bearbeitet jeweils einen Lauf; zusammen bilden sie
+den **Prozesspool**. Jeder Worker erstellt seinen `SimulationRunner` einmal
+und verwendet ihn weiter. Das Diagramm zeigt einen solchen Worker.
 
 ```mermaid
 sequenceDiagram
@@ -3327,40 +2693,28 @@ sequenceDiagram
     A->>P: close(): Pool schließen
 ```
 
-Die einzelnen Schritte sind:
-
 1. **Parallelen Runner erstellen:**
    `runner = ParallelSimulationRunner(model_file, max_workers=20)`
-   legt die Modelldatei und die Obergrenze von 20 gleichzeitig arbeitenden
-   Prozessen fest. Dieser Aufruf startet noch keinen Prozesspool.
+   legt Modell und höchstens 20 gleichzeitige Worker fest, startet aber noch keinen Pool.
 
-2. **Eine neue Policy je Lauf ermöglichen:** Der Auftrag enthält keine
-   bereits laufende Policy, sondern eine `policy_factory`.
-   Das ist ein aufrufbares Objekt, das einen Seed erhält und eine neue
-   Policy zurückgibt. Beispielsweise speichert
+2. **Policy-Factory bereitstellen:** `policy_factory(seed)` erstellt eine neue
+   Policy. Beispielsweise speichert
    [`HeuristicPolicyFactory(weights)`](sources/SpineML/Control/HeuristicPolicy/HeuristicPolicyFactory.py)
-   einen Gewichtssatz und erstellt daraus bei `factory(seed)` die
-   heuristische Steuerung für diesen Lauf.
+   einen Gewichtssatz und erzeugt daraus die heuristische Policy.
 
 3. **Laufaufträge zusammenstellen:**
-   `SimulationRunRequest(policy_factory, seed)` beschreibt genau einen
-   Lauf. Für denselben Gewichtssatz mit zwei Seeds werden zwei Aufträge
-   erstellt.
+   `SimulationRunRequest(policy_factory, seed)` beschreibt einen Lauf.
+   Ein Gewichtssatz mit zwei Seeds braucht zwei Aufträge.
 
-4. **Läufe ausführen:** `results = runner.run_many(requests)` übergibt die
-   Aufträge an den Pool. Beim ersten nicht leeren Aufruf werden die
-   zusätzlichen Prozesse gestartet. Jeder Prozess lädt das Modell einmal.
-   Für jeden übernommenen Auftrag erstellt er eine neue Policy und ruft
-   seinen `SimulationRunner.run_policy()` auf.
+4. **Läufe ausführen:** `results = runner.run_many(requests)` startet beim ersten
+   nicht leeren Aufruf den Pool. Jeder Worker lädt das Modell einmal.
+   Je Auftrag erstellt er eine neue Policy und ruft `SimulationRunner.run_policy()` auf.
 
-5. **Ergebnisse zurückgeben:** `run_many()` wartet auf alle Aufträge und
-   gibt die `SimulationRunResult`-Objekte als geordnete Sammlung (`tuple`)
-   zurück. Die Reihenfolge entspricht den ursprünglichen Aufträgen, nicht
-   der Reihenfolge ihrer Fertigstellung.
+5. **Ergebnisse erhalten:** Nach allen Aufträgen liefert `run_many()` ein
+   `tuple` von `SimulationRunResult` in Auftrags- statt Fertigstellungsreihenfolge.
 
-6. **Pool schließen:** `runner.close()` beendet den Pool und wartet noch
-   auf bereits laufende Aufträge. Alternativ wird der Runner in einem
-   `with`-Block verwendet. Nach dem Schließen nimmt er keine neuen Aufträge an.
+6. **Pool schließen:** `runner.close()` wartet auf laufende Aufträge und beendet
+   den Pool. Alternativ einen `with`-Block verwenden. Danach sind keine neuen Aufträge möglich.
 
 Jedes `SimulationRunResult` enthält:
 
@@ -3370,113 +2724,84 @@ Jedes `SimulationRunResult` enthält:
 | `elapsed_seconds` | Die verstrichene Zeit im Worker für Policy-Erstellung, Simulation und Kennzahlensammlung. Das vorherige Modellladen und der Poolstart sind darin nicht enthalten. |
 | `worker_pid` | Die Betriebssystem-ID des ausführenden Prozesses, nicht die Nummer eines CPU-Kerns. |
 
-Wird `run_many(..., on_completed=...)` eine Fortschrittsfunktion übergeben,
-bekommt sie nach jedem fertigen Lauf dessen Auftragsindex und Ergebnis.
-Sie läuft im aufrufenden Programm. So kann dieses den Fortschritt
-aktualisieren, ohne auf den gesamten Stapel zu warten.
+`run_many(..., on_completed=...)` meldet nach jedem fertigen Lauf Auftragsindex
+und Ergebnis an die Fortschrittsfunktion im aufrufenden Programm.
 
-Eine `policy_factory` muss zwischen den Prozessen übertragen werden können.
-Dafür eignen sich beispielsweise die vorhandenen Factory-Klassen, aber
-keine Lambda-Funktionen oder innerhalb anderer Funktionen definierten
-Funktionen.
+Die Factory muss zwischen Prozessen übertragbar sein. Die vorhandenen
+Factory-Klassen eignen sich dafür, Lambdas und lokal definierte Funktionen nicht.
 
 ### Produktionskennzahlen weiterverwenden
 
-Der Runner sammelt Ergebnisse; er entscheidet nicht, welches
-Produktionsergebnis besser ist. Die weiteren Aufgaben sind getrennt:
+Der Runner sammelt Kennzahlen, bewertet sie aber nicht:
 
 - **Einen Lauf bewerten:**
   [`GlobalSimulationEvaluation`](#globale-bewertungszahl) berechnet aus
   den Kennzahlen eine globale Bewertungszahl.
-- **Gewichtssätze vergleichen:** Der
-  [`LocalHeuristicWeightOptimizer`](#optimierungsvorgang) lässt jeden
-  Gewichtssatz mit den vorgesehenen Seeds simulieren, bildet dessen
-  [mittlere globale Bewertungszahl](#mittelwert-über-die-seeds) und
-  steuert die nächsten Suchiterationen.
+- **Gewichtssätze vergleichen:** [`LocalHeuristicWeightOptimizer`](#optimierungsvorgang)
+  beauftragt Läufe pro Satz und Seed, bildet den [Kostenmittelwert](#mittelwert-über-die-seeds)
+  und steuert weitere Iterationen.
 - **RL schrittweise ausführen:** [`SpineRLEnv`](#rlpolicy-erste-rl-umgebung)
-  wartet während eines Laufs an Auswahlpunkten auf `step()`. Dafür
-  steuert die RL-Umgebung den Simulationslauf selbst. Sie verwendet
-  denselben Modelllader und dieselbe `collect_global_metrics()`-Methode,
-  ruft aber für eine schrittweise Episode nicht `run_policy()` oder
-  `run_many()` auf.
+  steuert den Lauf selbst und wartet an Auswahlpunkten auf `step()`.
+  Sie nutzt denselben Modelllader und `collect_global_metrics()`, für diese
+  schrittweisen Episoden aber weder `run_policy()` noch `run_many()`.
 
 ### Parallele Optimierung mit mehreren CPU-Prozessen
 
-Im Webinterface verwendet **Parallel (process pool)** den oben beschriebenen
-Prozesspool. Die Einstellung `MAX_WORKERS` in
+**Parallel (process pool)** verwendet `MAX_WORKERS` aus
 [heuristic_optimization_app.py](sources/apps/heuristic_optimization_app.py)
-verwendet die Anzahl verfügbarer logischer Prozessoren, begrenzt auf 20.
-Damit können höchstens 20 Worker gleichzeitig arbeiten.
+– die Zahl logischer Prozessoren, begrenzt auf 20 gleichzeitige Worker.
 
-Der [Hintergrundthread der Oberfläche](#modell-und-hintergrundlauf-vorbereiten)
-und die Poolprozesse haben verschiedene Aufgaben:
+Dabei sind [Hintergrundthread](#modell-und-hintergrundlauf-vorbereiten)
+und Poolprozesse getrennt:
 
-- **Worker-Thread:** Er koordiniert im selben Python-Programm wie die
-  Oberfläche die Baseline, die Suchiterationen und den Abschlussvergleich.
-- **Worker-Prozesse:** Sie führen die einzelnen Produktionsläufe in
-  getrennten Python-Prozessen aus.
+- **Hintergrundthread:** Koordiniert im Oberflächenprozess Baseline, Suche und Test.
+- **Worker-Prozesse:** Führen die einzelnen Produktionsläufe aus.
 
-**Beispiel:** Werden in einer Iteration 53 verschiedene Gewichtssätze mit
-je zwei Seeds geprüft, entstehen `53 × 2 = 106` Laufaufträge. Bei 20 Workern
-können höchstens 20 davon gleichzeitig laufen. Ein freier Worker
-übernimmt anschließend einen weiteren Auftrag.
+**Beispiel:** 53 Gewichtssätze mit zwei Seeds ergeben `53 × 2 = 106` Aufträge.
+Bei 20 Workern laufen höchstens 20 gleichzeitig. Freie Worker übernehmen weitere Aufträge.
 
-Der Pool bleibt während der Baseline, der Gewichtssuche und des
-Steuerungsvergleichs erhalten. Die Phasen selbst bleiben geordnet:
-Erst muss die Baseline fertig sein, dann folgen die Suchiterationen und
-schließlich die Testläufe. Die nächste Iteration beginnt erst nach der
-Auswertung der aktuellen. Deshalb arbeiten nicht jederzeit 20 Prozesse:
-Mit zwei Baseline-Seeds gibt es zunächst nur zwei Laufaufträge; gegen Ende
-eines Stapels können ebenfalls weniger Läufe übrig sein.
+Der Pool bleibt für Baseline, Suche und Test erhalten. Die Phasen warten
+aufeinander; ebenso jede Iteration auf die vorherige Auswertung.
+20 Worker sind daher nicht ständig beschäftigt: Die Baseline hat nur zwei
+Aufträge, und am Stapelende können weniger als 20 übrig sein.
 
-Auf dem verwendeten Intel Core i7-13700H stehen 14 physische Kerne und
-20 logische Prozessoren zur Verfügung. Windows verteilt die Prozesse auf
-diese Rechenressourcen. Ein Worker ist nicht fest einem bestimmten
-logischen Prozessor zugeordnet.
+Der verwendete Intel Core i7-13700H hat 14 physische Kerne und 20 logische
+Prozessoren. Windows verteilt die Prozesse darauf; Worker sind keinem
+bestimmten logischen Prozessor fest zugeordnet.
 
-**Ziel der Parallelisierung ist eine kürzere Gesamtzeit für viele Läufe.**
-Ein einzelner Lauf muss dadurch nicht schneller werden und kann unter
-hoher Last länger dauern. Die simulierte Produktionszeit wird in Stunden
-gemessen; die tatsächlich verstrichene Zeit auf dem Rechner in Sekunden.
+Parallelisierung soll die **Gesamtzeit vieler Läufe** verkürzen.
+Ein einzelner Lauf kann unter Last sogar länger dauern.
+Simulierte Produktionszeit wird in Stunden gemessen, reale Rechenzeit in Sekunden.
 
 <a id="rechenzeit-eines-simulationslaufs-messen"></a>
 
 #### Laufstapel mit verschiedenen Workerzahlen messen
 
 [measure_simulation_runtime.py](sources/tools/measure_simulation_runtime.py)
-misst, wie lange derselbe Stapel vollständiger Example-5-Läufe mit
-unterschiedlich vielen Poolprozessen dauert. Alle Läufe verwenden den
-Standardgewichtssatz; das Werkzeug führt keine Gewichtssuche aus.
+misst denselben Stapel vollständiger Example-5-Läufe mit verschiedenen
+Workerzahlen. Es verwendet Standardgewichte, keine Gewichtssuche.
 
 ```console
 .\.venv\Scripts\python.exe sources/tools/measure_simulation_runtime.py --seeds 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 --workers 1 14 20 --output simulation_times.json
 ```
 
-Dieser Befehl führt denselben Stapel von 20 Seed-Läufen zunächst mit einem,
-danach mit 14 und anschließend mit 20 Poolprozessen aus.
+Der Befehl prüft dieselben 20 Seed-Läufe mit einem, dann 14, dann 20 Poolprozessen.
 
-- **Gesamtzeit je Stapel:** Die Messung umfasst Poolstart, Modellladen,
-  Simulationen und Poolende. Auch `--workers 1` verwendet einen separaten
-  Poolprozess; das ist nicht der direkte sequenzielle Runner.
-- **Wiederholungen:** `--repeats 2` fügt die Seedliste innerhalb jedes
-  Stapels ein zweites Mal hinzu. Es werden dadurch doppelt so viele Läufe
-  ausgeführt, nicht zwei unabhängige Gesamtzeitmessungen je Workerzahl.
-- **Kennzahlen prüfen:** Für jeden Auftrag müssen alle Produktionskennzahlen
-  exakt mit der Referenzausführung übereinstimmen. Referenz ist ein
-  Poolprozess, falls angefordert, andernfalls die erste angeforderte
-  Workerzahl.
-- **Bericht:** `--output` speichert die Lauf- und Gesamtzeiten,
-  Produktionskennzahlen und verwendeten Prozesse als JSON.
-  `--profile` misst zusätzlich einen einzelnen direkten Lauf und zeigt,
-  in welchen Funktionen Zeit verbraucht wurde. Dieser zusätzliche Lauf
-  gehört nicht zu den gemessenen Stapelzeiten.
+- **Gesamtzeit:** Einschließlich Poolstart, Modellladen, Läufen und Poolende.
+  Auch `--workers 1` nutzt einen Poolprozess, nicht den direkten Runner.
+- **Wiederholungen:** `--repeats 2` verdoppelt die Seedliste innerhalb jedes
+  Stapels, nicht die Zahl unabhängiger Gesamtzeitmessungen.
+- **Prüfung:** Alle Kennzahlen je Auftrag müssen exakt zur Referenz passen:
+  ein Poolprozess, falls angefordert, sonst die erste angeforderte Workerzahl.
+- **Bericht:** `--output` speichert Zeiten, Kennzahlen und Prozesse als JSON.
+  `--profile` untersucht zusätzlich den Zeitverbrauch eines direkten Laufs.
+  Dieser zählt nicht zur Stapelzeit.
 
 <a id="gemessener-vergleich-für-example-5"></a>
 
 #### Gemessener Vergleich für Example 5: 20 Läufe
 
-Für den beschriebenen Stapel mit Seeds `1` bis `20` und
-Standardgewichtssatz wurden auf diesem Rechner früher diese Zeiten erfasst:
+Frühere Messung auf diesem Rechner mit Seeds `1` bis `20` und Standardgewichtssatz:
 
 | Poolprozesse | Gesamtzeit inklusive Poolstart und -ende | Beschleunigung gegenüber einem Poolprozess |
 | --- | ---: | ---: |
@@ -3484,10 +2809,8 @@ Standardgewichtssatz wurden auf diesem Rechner früher diese Zeiten erfasst:
 | `14` | `42.4 s` | `4.99×` |
 | `20` | `39.2 s` | `5.40×` |
 
-Beim damaligen Messlauf wurden die Produktionskennzahlen je Seed auf
-Gleichheit geprüft. Der Rohbericht gehört nicht zum veröffentlichten
-Repository. Die Tabelle dokumentiert diese früheren Messwerte; sie ist
-keine neue Messung des aktuellen Codes.
+Damals wurden die Kennzahlen je Seed auf Gleichheit geprüft.
+Der Rohbericht liegt nicht im Repository. Dies ist keine neue Messung des aktuellen Codes.
 
 **Die `39.2 s` betreffen nur diesen Stapel von 20 Läufen, nicht die
 vollständige Optimierung.**
@@ -3497,110 +2820,90 @@ vollständige Optimierung.**
 #### Vollständige Optimierung: vorher und jetzt vergleichen
 
 [compare_optimization_runtime.py](sources/tools/compare_optimization_runtime.py)
-führt den gesamten Optimierungsablauf einmal sequenziell und einmal
-parallel aus. Beide Ausführungen verwenden frische Python-Programme
-und laufen nacheinander, standardmäßig zuerst sequenziell.
+führt die gesamte Optimierung sequenziell und parallel aus, nacheinander
+in frischen Python-Programmen. Standardmäßig beginnt der sequenzielle Lauf.
 
 ```console
 .\.venv\Scripts\python.exe sources/tools/compare_optimization_runtime.py
 ```
 
-Beide Ausführungen übernehmen Modell und Parameter aus der
-Optimierungsanwendung. Sie enthalten die Baseline, sämtliche
-Suchiterationen und den Testvergleich der drei Steuerungen.
+Beide übernehmen Modell und Parameter der App: Baseline, alle Suchiterationen
+und Testvergleich der drei Steuerungen.
 
 - **Sequenziell:** Der direkte Runner führt einen Lauf nach dem anderen aus.
 - **Parallel:** Der Prozesspool bearbeitet unabhängige Läufe gleichzeitig.
-- **Vergleich prüfen:** Das Werkzeug vergleicht Konfiguration, Quellstand,
-  Produktions- und Optimierungsergebnisse sowie die Anzahl der Läufe.
-  Nur bei Übereinstimmung berechnet es den Zeitvorteil.
-- **Zeitmessung:** Gemessen wird ab dem Start des Optimierungs-Hintergrundlaufs
-  bis nach dem Schließen des Pools. Python-Programmstart und Modulimporte
-  davor sowie abschließende Berichterstellung und JSON-Ausgabe gehören
-  nicht zu diesem Zeitwert.
-- **Bericht:** `optimization_timing_comparison.json` enthält beide
-  Ablaufberichte und das Vergleichsergebnis. Bereits fertige Teilberichte
-  bleiben erhalten, wenn eine spätere Ausführung fehlschlägt.
+- **Prüfung:** Konfiguration, Quellstand, Produktions-/Optimierungsergebnisse
+  und Laufanzahl müssen übereinstimmen. Nur dann wird der Zeitvorteil berechnet.
+- **Zeit:** Vom Start des Hintergrundlaufs bis zum geschlossenen Pool.
+  Vorheriger Programmstart und Importe sowie spätere Berichterstellung und
+  JSON-Ausgabe zählen nicht mit.
+- **Bericht:** `optimization_timing_comparison.json` enthält beide Ablaufberichte
+  und den Vergleich. Fertige Teilberichte bleiben bei späteren Fehlern erhalten.
 
-Derselbe Vergleich lässt sich im Webinterface durchführen: Einen
-`Execution mode` wählen, **Start optimization** drücken und danach den
-anderen Modus mit unveränderten Einstellungen ausführen. Die Historientabelle
-zeigt Phasen- und Gesamtzeiten; der JSON-Download enthält die Berichte.
+Im Webinterface: `Execution mode` wählen, **Start optimization** drücken,
+danach den anderen Modus unverändert ausführen. Die Historie zeigt Phasen-
+und Gesamtzeiten; der JSON-Download enthält die Berichte.
 
-Während dieser Messung keine weiteren Simulationen oder Optimierungen
-gleichzeitig starten, da sie die Zeitmessung beeinflussen. Mit
-`--order parallel-first` lässt sich die CLI-Reihenfolge umkehren.
+Während der Messung keine anderen Simulationen oder Optimierungen starten.
+`--order parallel-first` kehrt die CLI-Reihenfolge um.
 
 <a id="gemessene-gesamtzeit-der-vollständigen-optimierung"></a>
 
 #### Gemeldete Gesamtzeit der vollständigen Optimierung
 
-Für `example-5.py` wurden aus dem Webinterface folgende Zeiten gemeldet.
-Sie betreffen den vollständigen Ablauf mit Baseline, Gewichtssuche,
-Steuerungsvergleich und Poolende:
+Für `example-5.py` wurden im Webinterface diese Gesamtzeiten gemeldet,
+einschließlich Baseline, Suche, Testvergleich und Poolende:
 
 | Ausführungsart | Gesamtzeit | Ungefähr in Minuten |
 | --- | ---: | ---: |
 | `Sequential (previous execution)` – ohne Prozesspool | `4291.7 s` | `71.5 min` |
 | `Parallel (process pool)` – bis zu 20 Prozesse | `1399.5 s` | `23.3 min` |
 
-Aus diesen gemeldeten Zeiten ergibt sich
-`4291.7 / 1399.5 ≈ 3.07`: Die parallele Ausführung dauerte in diesem
-Vergleich ungefähr ein Drittel so lange.
+`4291.7 / 1399.5 ≈ 3.07`: Parallel dauerte dieser Vergleich ungefähr ein Drittel so lange.
 
-Für diese beiden Läufe wurde kein Rohbericht exportiert. Ihre identischen
-Aufgaben und Ergebnisse konnten daher nicht nachträglich anhand solcher
-Berichte überprüft werden. Neue Läufe lassen sich mit dem obigen
-Vergleichsbefehl dokumentieren und prüfen.
+Ohne exportierte Rohberichte ließ sich nachträglich nicht prüfen, ob Aufgaben
+und Ergebnisse identisch waren. Der obige Vergleichsbefehl dokumentiert und
+prüft neue Läufe.
 
-**Die Tabellen zeigen frühere Einzelmessungen, keine garantierte
-Beschleunigung.** Modell, Arbeitsumfang und Rechnerauslastung beeinflussen
-die Laufzeit. Der Zeitvorteil des 20-Läufe-Stapels darf nicht auf die
-vollständige Optimierung übertragen werden.
+**Frühere Einzelmessungen garantieren keine Beschleunigung.** Modell, Umfang
+und Rechnerlast beeinflussen die Zeit. Der Vorteil des 20-Läufe-Stapels gilt
+nicht automatisch für die vollständige Optimierung.
 
 <a id="rlcontrol-erste-rl-umgebung"></a>
 <a id="rlpolicy-erste-rl-umgebung"></a>
 
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
-Die RL-Policy soll durch wiederholte Simulationsläufe lernen, welche der
-angebotenen Aktionen zu einem guten Produktionsergebnis führt. RL steht für
-Reinforcement Learning: Das Netz erhält am Ende eines Laufs eine Belohnung
-und wird anhand der gesammelten Entscheidungen angepasst.
+Die RL-Policy lernt durch Simulationsläufe. RL steht für
+Reinforcement Learning: Am Laufende erhält das Netz eine Belohnung.
+Anhand der gesammelten Entscheidungen wird es angepasst.
 
-Der Unterschied zur [heuristischen Optimierung](#optimierungsvorgang) ist:
-Die Optimierung sucht einen lokalen Gewichtssatz für die vorhandenen
-Heuristikregeln. Die RL-Policy wählt dagegen unmittelbar eine konkrete Aktion
-aus den Kandidaten des [ActionGenerator](#actiongenerator). Sie verwendet
-weder den heuristischen Evaluator noch dessen Aktionsscores. Die Heuristik
-und `RandomPolicy` bleiben unveränderte, eigenständig ausführbare Policies.
+Die [heuristische Optimierung](#optimierungsvorgang) sucht einen lokalen
+Gewichtssatz für feste Regeln. Die RL-Policy wählt dagegen direkt einen
+Kandidaten des [ActionGenerator](#actiongenerator), ohne heuristischen
+Evaluator oder Aktionsscores. Heuristik und `RandomPolicy` bleiben
+eigenständig nutzbar.
 
-Ein Simulationslauf heißt hier **Episode**. Beim Training läuft er so ab:
+Ein Simulationslauf heißt **Episode**. Das Training läuft so:
 
 1. [`SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py) startet mit
-   `reset(seed=...)` eine frische Simulation und hält sie an der ersten
-   Auswahl zwischen mehreren Kandidaten an.
-2. Das Netz erhält Zahlen zum aktuellen Zustand und zu den angebotenen
-   Aktionen. Es wählt einen Kandidatenindex; `step(index)` übergibt die Wahl.
-3. Die Policy sammelt die Aktionen für den aktuellen Bridge-Aufruf. Danach
-   stellt die [SimulationBridge](#simulationbridge) sie den Jobs, Robotern
-   und Maschinen zu. Diese führen die Aktionen aus; die Simulation läuft
-   bis zur nächsten Auswahl weiter.
-4. Die Umgebung liefert den neuen Zustand zurück. Auswahl und Simulation
-   wiederholen sich bis zum Abschluss oder bis zu einem Limit. Dann werden
-   die Produktionskennzahlen ausgewertet und in eine Belohnung umgerechnet.
+   `reset(seed=...)` eine neue Simulation bis zur ersten Kandidatenauswahl.
+2. Das Netz erhält Zustand und Aktionen als Zahlen. `step(index)` übergibt
+   seine Wahl.
+3. Die Policy sammelt alle Aktionen des Bridge-Aufrufs. Die
+   [SimulationBridge](#simulationbridge) stellt sie den Objekten zur Ausführung zu.
+4. Auswahl und Simulation wechseln sich bis zum Abschluss oder Limit ab.
+   Dann ergeben die Produktionskennzahlen eine Belohnung.
 
-Gymnasium stellt dafür die Schnittstelle `reset()`/`step()` bereit. Der
-mitgelieferte Trainer nutzt sie mit dem Lernverfahren **MaskablePPO** aus
-`sb3-contrib`. Ein gespeichertes Netz lässt sich später auch direkt im
-normalen Runner einsetzen. Ein kurzer technischer Probelauf belegt noch
-keine gelernte Produktionsstrategie oder Verbesserung.
+Der Trainer nutzt die Gymnasium-Schnittstelle `reset()`/`step()` mit
+**MaskablePPO** aus `sb3-contrib`. Ein gespeichertes Netz läuft auch im
+normalen Runner. Ein kurzer Probelauf belegt noch keine Verbesserung.
 
 ### Was wählt die RL-Policy aus?
 
-Ein defekter Job ohne laufende Nacharbeit hat beispielsweise den Schweregrad
-`0.2`. Seine [Defektmaschine ist für Nacharbeit verfügbar](#nacharbeitskandidaten);
-eine Alternativroute wurde nicht gefunden. Dann enthält seine Kandidatenliste:
+Beispiel: Ein defekter Job hat Schweregrad `0.2` und keine laufende Nacharbeit.
+Seine [Defektmaschine ist verfügbar](#nacharbeitskandidaten), eine Alternativroute
+fehlt. Die Kandidatenliste lautet:
 
 | Index für `step(index)` | Angebotene Aktion |
 | --- | --- |
@@ -3608,58 +2911,45 @@ eine Alternativroute wurde nicht gefunden. Dann enthält seine Kandidatenliste:
 | `1` | `downgrade_product`: Produkt herabstufen. |
 | `2` | `wait_job`: Zunächst warten. |
 
-`step(0)` wählt in diesem Beispiel die Nacharbeit aus.
-Die Nummer bezeichnet nur den Eintrag der aktuellen Kandidatenliste;
-bei einer anderen Entscheidung kann Index `0` für eine andere Aktion stehen.
-Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske) kennzeichnet die
-gerade gültigen Indizes. Wie daraus Aktionen für die Bridge werden, zeigt
-der [folgende Ablauf](#vom-bridge-aufruf-zur-kandidatenentscheidung).
+`step(0)` wählt hier Nacharbeit. Der Index gilt nur für diese Liste;
+bei der nächsten Entscheidung kann `0` eine andere Aktion bedeuten.
+Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske) markiert gültige
+Indizes. Der [folgende Ablauf](#vom-bridge-aufruf-zur-kandidatenentscheidung)
+zeigt die Übergabe an die Bridge.
 
 ### Vom Bridge-Aufruf zur Kandidatenentscheidung
 
-[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py)
-verbindet den gemeinsamen ActionGenerator mit der Auswahl des Netzes. Ihre
-Methode `make_decision()` wird wie bei den anderen Policies von der Bridge
-aufgerufen:
+Die Bridge ruft `make_decision()` der
+[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) auf:
 
-1. Die Policy erhält einen Snapshot, also eine Kopie der gemeldeten
-   Simulationsdaten. Sie betrachtet alle wartenden Objekte in dessen
-   Einfügereihenfolge.
-2. Der `SpineActionGenerator` erzeugt für jedes Objekt die möglichen Aktionen
-   mit vollständigen Ausführungsdaten. Bei Picks ist die EDD-basierte
-   `queue_priority` bereits enthalten. Ein Job, der in diesem Bridge-Aufruf
-   schon für einen Pick ausgewählt wurde, wird nicht nochmals angeboten.
-3. Gibt es genau einen Kandidaten, übernimmt die Policy ihn direkt. Erst
-   bei mindestens zwei Kandidaten ruft sie ihre Auswahlfunktion auf. Diese
-   erhält einen `DecisionRequest`: Zustand, Kandidaten und die bereits für
-   andere Objekte vorgemerkten Aktionen. Die Daten sind kopiert; Änderungen
-   daran ändern nicht die später ausgeführte Aktion.
-4. `SpineRLEnv` liefert diesen Auswahlpunkt an das Netz weiter und wartet auf
-   dessen Kandidatenindex. Die Policy merkt die gewählte Aktion vor und
-   betrachtet anschließend die übrigen wartenden Objekte.
-5. Erst die vollständige `PolicyDecision` geht an die Bridge zurück. Dann
-   stellt die Bridge die gesammelten Aktionen zu.
+1. Die Policy liest den Snapshot, eine Kopie der Simulationsdaten, und
+   betrachtet wartende Objekte in Einfügereihenfolge.
+2. Der `SpineActionGenerator` erzeugt ausführbare Kandidaten. Picks enthalten
+   bereits die EDD-basierte `queue_priority`. Schon vorgemerkte Pick-Jobs
+   werden im selben Bridge-Aufruf nicht erneut angeboten.
+3. Einzelkandidaten übernimmt die Policy direkt. Sonst erhält die
+   Auswahlfunktion einen `DecisionRequest` mit kopiertem Zustand,
+   Kandidaten und bisher vorgemerkten Aktionen. Änderungen an diesen Kopien
+   beeinflussen die Ausführung nicht.
+4. `SpineRLEnv` wartet auf den Kandidatenindex des Netzes. Die Policy merkt
+   die Aktion vor und fährt mit den übrigen Objekten fort.
+5. Die Bridge erhält erst die vollständige `PolicyDecision` und stellt
+   dann alle Aktionen zu.
 
-Zwischen den Auswahlen desselben Bridge-Aufrufs verstreicht keine
-Simulationszeit. Ein `step()` kann deshalb bereits die nächste Auswahl
-liefern, obwohl die gerade gewählte Aktion noch nicht ausgeführt wurde.
-Mehrere Schritte können dieselbe Zeit haben. Die vorgemerkten Aktionen und
-Pick-Reservierungen sind in der Beobachtung enthalten; außerdem stehen die
-Aktionen in `info["pending_actions"]`.
+Innerhalb eines Bridge-Aufrufs vergeht keine Simulationszeit. Daher kann
+`step()` schon die nächste Auswahl liefern, bevor Aktionen ausgeführt sind.
+Vorgemerkte Aktionen und Pick-Reservierungen stehen in der Beobachtung;
+die Aktionen zusätzlich in `info["pending_actions"]`.
 
-Nur bei direkter Verwendung der `RLCandidatePolicy` kann
-`expose_forced_actions=True` auch Einzelkandidaten an die Auswahlfunktion
-weitergeben. `SpineRLEnv` überspringt diese zusätzlichen Schritte.
+`expose_forced_actions=True` gibt bei direkter `RLCandidatePolicy`-Nutzung
+auch Einzelkandidaten an die Auswahlfunktion weiter. `SpineRLEnv` überspringt sie.
 
 ### Numerische Beobachtung und Aktionsmaske
 
-Der Snapshot enthält ID- und Zustandsdaten in Python-Dictionaries.
-Damit das Netz sie verarbeiten kann, übersetzt
 [`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py)
-diese Daten in Zahlenfelder mit fester Größe. Je eine Zeile
-beschreibt ein Objekt oder einen Kandidaten. Nicht benötigte Zeilen werden
-mit Nullen aufgefüllt; dieses Auffüllen heißt **Padding**. Die zugehörigen
-Masken markieren, welche Zeilen echte Daten enthalten.
+übersetzt die Snapshot-Dictionaries in Zahlenfelder fester Größe.
+Eine Zeile beschreibt ein Objekt oder einen Kandidaten. Freie Zeilen
+werden mit Nullen gefüllt (**Padding**); Masken markieren echte Daten.
 
 Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
 
@@ -3671,63 +2961,54 @@ Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
 | `candidates` | `(A, 58)` | Aktionsart, beteiligte IDs sowie Job-, Routen-, Maschinen-, Werkzeug- und Puffermerkmale je Kandidat. |
 | `action_mask` | `(A,)` | `1` für einen aktuell angebotenen Kandidaten, `0` für Padding. |
 
-Standard sind `A = E = 256`. Die Merkmalsfelder enthalten `float32`-Werte in
-`[-1, 1]`, die Masken `int8`-Werte mit `0` oder `1`. `action_masks()` liefert
-eine boolesche Kopie der Aktionsmaske. Nur ein mit `True` markierter Index
-darf gewählt werden. Die Maske kennzeichnet die erzeugten Kandidaten; sie
-führt keine zusätzliche unabhängige Routenprüfung durch.
+Standard sind `A = E = 256`: Merkmale als `float32` in `[-1, 1]`, Masken als
+`int8` mit `0` oder `1`. `action_masks()` liefert eine boolesche Kopie.
+Nur `True`-Indizes sind wählbar. Die Maske markiert erzeugte Kandidaten;
+sie prüft Routen nicht nochmals unabhängig.
 
-Die genaue Merkmalsreihenfolge steht im Encoder in `CONTEXT_FEATURE_NAMES`,
-`ENTITY_FEATURE_NAMES` und `CANDIDATE_FEATURE_NAMES`. Enthalten sind etwa
-Termindruck, Produktdaten, Basisdauer einer Operation, Maschinenbelegung,
-aufgelöste Defektwahrscheinlichkeit und Werkzeugzustand. Objektzeilen sind
-nach ID sortiert, Kandidaten behalten ihre angebotene Reihenfolge.
+Die Reihenfolge steht in `CONTEXT_FEATURE_NAMES`, `ENTITY_FEATURE_NAMES`
+und `CANDIDATE_FEATURE_NAMES`. Merkmale sind etwa Termindruck, Produktdaten,
+Operationsbasisdauer, Maschinenbelegung, aufgelöste Defektwahrscheinlichkeit
+und Werkzeugzustand. Objektzeilen sind nach ID sortiert; Kandidaten bleiben
+in der angebotenen Reihenfolge.
 
-Für IDs legt der Encoder beim ersten vollständigen Snapshot sortierte
-Kataloge an. Ihre Zuordnung zu Zahlen bleibt bei Resets desselben Schemas
-erhalten; fehlende Werte sind von echten IDs getrennt. IDs werden nicht
-gehasht. Zu viele Zeilen oder ein geändertes ID-Schema führen zu einem
-Fehler, nicht zum Abschneiden von Kandidaten. Ein anderes Modell- oder
-Objektschema benötigt eine neue Umgebung beziehungsweise einen neuen Encoder.
+Der erste vollständige Snapshot legt sortierte ID-Kataloge an. Ihre
+Zahlenzuordnung bleibt bei Resets erhalten; fehlende Werte sind getrennt,
+IDs werden nicht gehasht. Zu viele Zeilen oder ein geändertes ID-Schema
+lösen Fehler aus. Kandidaten werden nicht abgeschnitten. Ein anderes
+Modell-/Objektschema braucht eine neue Umgebung beziehungsweise einen neuen Encoder.
 
-Die Beobachtung enthält nicht alle internen Simulations- und
-Qualitätszustände. Sie ist eine Teilbeobachtung: Es ist nicht nachgewiesen,
-dass alle für die weitere Entwicklung relevanten Zustandsinformationen
-enthalten sind. Das Netz hebt diese Grenze nicht auf.
-Die Dictionaries in `info`, etwa `candidates` und `policy_observation`, sind
-Diagnoseinformationen und keine zusätzlichen Netzeingaben.
+Die Beobachtung enthält nicht alle internen Simulations- und Qualitätszustände.
+Ob sie alle entscheidungsrelevanten Informationen enthält, ist nicht
+nachgewiesen. `info`-Dictionaries wie `candidates` und `policy_observation`
+dienen nur der Diagnose, nicht als zusätzliche Netzeingaben.
 
 ### Gymnasium-API und Reward
 
 `SpineRLEnv(model_file, global_evaluation, ...)` benötigt eine
-`GlobalSimulationEvaluation` mit festen positiven Referenzwerten für
-Makespan, Verspätungs-, Transport- und Werkzeugwechselzeit. Sie werden vorab
-aus [vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration)
-berechnet. [`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py)
-übernimmt eigene Kopien dieser Referenzen und der nichtnegativen globalen
-Zielgewichte. Sie bleiben während der Episode unverändert.
+`GlobalSimulationEvaluation` mit festen positiven Zeitreferenzen aus
+[vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration).
+[`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py) kopiert diese
+Referenzen und die nichtnegativen globalen Zielgewichte. Sie bleiben
+während der Episode fest.
 
-- `reset(seed=...)` beendet gegebenenfalls die bisherige Episode, startet
-  eine frische Simulation und liefert `(observation, info)` am ersten
-  Auswahlpunkt.
-- `step(index)` akzeptiert einen gültigen ganzzahligen Kandidatenindex und
-  liefert `(observation, reward, terminated, truncated, info)` am nächsten
-  Auswahlpunkt oder am Episodenende. `terminated` kennzeichnet den regulären
-  Abschluss, `truncated` einen Abbruch an einer konfigurierten Grenze.
-- Während einer Auswahl enthält `info` unter anderem `candidates`,
-  `current_object_id`, `simulation_time`, `policy_observation` und
-  `pending_actions`. Am Ende kommen `metrics`, `global_cost` und
-  `reward_reason` hinzu.
+- `reset(seed=...)` beendet eine laufende Episode und liefert
+  `(observation, info)` bei der ersten Auswahl einer neuen Simulation.
+- `step(index)` nimmt einen gültigen ganzzahligen Index und liefert
+  `(observation, reward, terminated, truncated, info)`: bei der nächsten
+  Auswahl oder am Ende. `terminated` bedeutet regulärer Abschluss,
+  `truncated` Limitabbruch.
+- `info` enthält bei Auswahlen unter anderem `candidates`, `current_object_id`,
+  `simulation_time`, `policy_observation` und `pending_actions`; am Ende
+  zusätzlich `metrics`, `global_cost` und `reward_reason`.
 
 #### Reward und Episodenende
 
-Reward bezeichnet den Belohnungswert für das Lernen. Zwischenschritte
-erhalten `0`; erst das Episodenende wird bewertet. Bei regulärem Abschluss
-gilt `reward = 1 / (1 + global_cost)`. Die globalen Kosten werden aus denselben
-Produktionskennzahlen, Referenzen und Zielgewichten wie bei der
-heuristischen Optimierung berechnet. Kleinere Kosten ergeben eine höhere
-positive Belohnung; ihre Rangfolge bleibt erhalten. Ein Limitabbruch
-erhält immer `-1`.
+Der Reward ist die Lernbelohnung. Zwischenschritte erhalten `0`, reguläre
+Abschlüsse `reward = 1 / (1 + global_cost)`. Die Kosten verwenden dieselben
+Kennzahlen, Referenzen und Zielgewichte wie die heuristische Optimierung.
+Kleinere Kosten ergeben mehr Belohnung; die Rangfolge bleibt erhalten.
+Ein Limitabbruch erhält immer `-1`.
 
 | Ende | Rückgabe und Beobachtung |
 | --- | --- |
@@ -3735,87 +3016,71 @@ erhält immer `-1`.
 | Nach `max_decisions` beantworteten Entscheidungen tritt ein weiterer Auswahlpunkt auf | `truncated=True`; die Beobachtung dieses unbeantworteten Auswahlpunkts bleibt erhalten. Alle noch nicht zugestellten Aktionen des Bridge-Aufrufs werden verworfen (`pending_batch_discarded=True`). |
 | `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; die globalen Zustandsmerkmale bleiben erhalten, aber ohne aktuell entscheidendes Objekt oder angebotene Aktionen. Kandidatenfeld und Aktionsmaske sind null. |
 
-Das gilt für die direkte `SpineRLEnv`-Schnittstelle, die auch die Evaluation
-verwendet. Nach einem Abbruch ist kein weiterer `step()` erlaubt, selbst wenn
-die erhaltene Beobachtung noch Kandidaten enthält. Andere Lernverfahren
-könnten diese Beobachtung nutzen, um einen erwarteten Folgewert zu schätzen
-(Value-Bootstrapping); sie dient nicht zur Fortsetzung der Episode.
+Diese Rückgaben gelten für die direkte Umgebung und die Evaluation.
+Nach einem Abbruch ist kein weiterer `step()` erlaubt, auch bei erhaltenen
+Kandidaten. Andere Lernverfahren könnten den Zustand zur Schätzung eines
+Folgewerts nutzen (Value-Bootstrapping), nicht zur Fortsetzung.
 
-Im mitgelieferten Training behandelt der `EpisodeSeedWrapper` aus
+Im Training behandelt `EpisodeSeedWrapper` aus
 [`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
-beide Limits ausdrücklich als endgültigen Fehlschlag: Für das
-Trainingspaket Stable-Baselines3 (SB3) setzt er
-`terminated=True` und `truncated=False`. In `info` ergänzt er
-`training_limit_terminated=True`; der Abbruchgrund bleibt dort erhalten.
-Dadurch addiert SB3 keinen geschätzten
-Folgewert zum Fehlerreward `-1`. Die direkte Umgebung behält dagegen die
-oben beschriebene Rückgabe. Timeouts und Simulationsfehler werden als
-Exceptions gemeldet, nicht als gewöhnliche Limitabbrüche.
+beide Limits als endgültigen Fehlschlag. Für Stable-Baselines3 (SB3) setzt
+er `terminated=True`, `truncated=False` und in `info`
+`training_limit_terminated=True`. Der Abbruchgrund bleibt erhalten.
+So addiert SB3 keinen geschätzten Folgewert zum Reward `-1`.
+Timeouts und Simulationsfehler sind Exceptions, keine Limitabbrüche.
 
 ### Neuronales Netz und MaskablePPO
 
 [CandidateActorCriticPolicy](sources/SpineML/Control/RLPolicy/CandidateActorCriticPolicy.py)
-enthält zwei Aufgaben: Der **Actor** berechnet für jeden angebotenen
-Kandidaten einen Score und daraus seine Auswahlwahrscheinlichkeit. Der
-**Critic** schätzt, welche Belohnung vom aktuellen Zustand aus noch zu
-erwarten ist. Seine Schätzung hilft beim Training; sie ist nicht der Score
-eines einzelnen Kandidaten.
+hat zwei Teile: Der **Actor** berechnet Kandidatenscores und daraus
+Auswahlwahrscheinlichkeiten. Der **Critic** schätzt die noch zu erwartende
+Belohnung des Zustands. Er hilft beim Training, bewertet aber keine
+einzelnen Kandidaten.
 
-Das Netz verarbeitet die oben beschriebenen Zahlenfelder so:
+Das Netz verarbeitet die Zahlenfelder so:
 
-1. Drei kleine Teilnetze, die Encoder, wandeln Kontext, Objektzeilen und
-   Kandidatenzeilen in jeweils 32 gelernte Merkmalswerte um. Für alle
-   Objektzeilen wird dasselbe Teilnetz benutzt; ebenso für alle Kandidaten.
-2. Für jeden dieser Merkmalswerte werden der Mittelwert und der größte
-   Wert über die echten Objektzeilen berechnet; dasselbe geschieht für die
-   Kandidatenzeilen. Padding-Zeilen werden dabei ausgelassen. Zusammen mit
-   dem verarbeiteten Kontext ergibt das eine Zusammenfassung des Zustands.
-3. Der Actor erhält für jeden Kandidaten dessen eigene Merkmale und diese
-   Zustandszusammenfassung. Dasselbe kleine Netz berechnet für jede Zeile
-   einen Score. Es gibt also keine dauerhaft einem Index zugeordnete
-   Aktionsbedeutung. Padding kann nicht gewählt werden.
-4. Der Critic erhält nur die Zustandszusammenfassung und liefert einen
-   geschätzten Zustandswert, auch bei einer Endbeobachtung ohne Kandidaten.
+1. Drei Teilnetze (Encoder) erzeugen je 32 gelernte Merkmalswerte für
+   Kontext, Objektzeilen und Kandidatenzeilen. Alle Objektzeilen teilen
+   ein Teilnetz, alle Kandidaten ein weiteres.
+2. Mittelwert und Maximum der echten Objekt- und Kandidatenzeilen bilden
+   zusammen mit dem Kontext die Zustandszusammenfassung. Padding zählt nicht mit.
+3. Dasselbe Actor-Netz bewertet jeden Kandidaten anhand seiner Merkmale
+   und der Zusammenfassung. Indizes haben keine feste Aktionsbedeutung;
+   Padding ist nicht wählbar.
+4. Der Critic schätzt aus der Zusammenfassung den Zustandswert, auch am
+   Ende ohne Kandidaten.
 
-Standard sind `embedding_dim=32`, `hidden_dim=64` und 30.242 trainierbare
-Parameter. `embedding_dim` ist die Zahl der gelernten Merkmalswerte je
-Encoder; `hidden_dim` die Größe der versteckten Schichten von Actor und Critic.
-Die Parameterzahl hängt nicht von der maximalen Zeilenzahl ab. Wird die
-Kandidatenliste umgeordnet, werden nur die zugehörigen Scores umgeordnet.
-Zusätzlich übergebene Aktionsmasken können die Beobachtungsmaske nur weiter
-einschränken. Ohne gültigen Kandidaten wird keine Aktion ausgewählt.
+Standard sind `embedding_dim=32` (Merkmalswerte je Encoder), `hidden_dim=64`
+(versteckte Schichten) und 30.242 trainierbare Parameter. Die Parameterzahl
+hängt nicht von der Zeilenkapazität ab. Eine umgeordnete Kandidatenliste
+ordnet nur die Scores um. Zusätzliche Aktionsmasken können die vorhandene
+Maske nur einschränken. Ohne gültigen Kandidaten erfolgt keine Auswahl.
 
 Die Klasse erbt von `MaskableMultiInputActorCriticPolicy`. MaskablePPO
-sammelt die Entscheidungen und Ergebnisse mehrerer Schritte und passt das
-Netz anschließend mit PPO an. Es übernimmt auch die Auswahl aus den
-Kandidatenwahrscheinlichkeiten und berücksichtigt dabei die Aktionsmaske.
+sammelt mehrere Schritte, wählt unter Beachtung der Maske aus den
+Wahrscheinlichkeiten und passt das Netz anschließend mit PPO an.
 
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
-Vor dem ersten Lernschritt führt
 [`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
-vollständige Standardheuristik-Läufe aus. Aus deren mittleren Kennzahlen
-entstehen die festen Referenzen für Makespan, Verspätungs-, Transport- und
-Werkzeugwechselzeit. Diese Vorbereitung heißt Kalibrierung; die verwendeten
-Vergleichsläufe heißen Baseline. Dabei wird noch kein Netz trainiert, und
-die benötigte Zeit wird separat ausgewiesen. Alle vier Referenzen müssen
-positiv sein. Eine Referenz von null führt zu einem Fehler und wird nicht
-durch einen Ersatzwert ausgetauscht.
+führt vor dem Lernen vollständige Standardheuristik-Läufe aus (Baseline).
+Ihre Mittelwerte liefern feste Referenzen für Makespan, Verspätungs-,
+Transport- und Werkzeugwechselzeit. Diese Kalibrierung trainiert kein Netz;
+ihre Zeit wird separat erfasst. Alle Referenzen müssen positiv sein.
+Null führt zum Fehler, nicht zu einem Ersatzwert.
 
-Globale Zielgewichte sowie die Standard-Baseline- und Test-Seeds stammen
-aus der Optimierungsanwendung. Die Seed-Listen erfüllen verschiedene Aufgaben:
+Globale Zielgewichte sowie Standard-Baseline- und Test-Seeds stammen aus
+der Optimierungsanwendung:
 
 - Baseline: standardmäßig `SEEDS = [1, 2]`; änderbar über
   `--baseline-seeds`.
-- Training: standardmäßig Seeds `1` bis `10`; änderbar über
-  `--train-seeds`. Jeder Simulationsprozess durchläuft sie wiederholt mit
-  versetztem Startpunkt. `--seed` (Standard `0`) steuert unabhängig davon
-  die anfänglichen Netzparameter und den Zufall des Lernverfahrens.
-- Reservierter Test: standardmäßig `TEST_SEEDS = [101, 102, 103, 104, 105]`;
-  änderbar über `--evaluation-seeds`. Diese Seeds dürfen weder in der
-  Trainings- noch in der Baseline-Liste stehen. Doppelte Einträge innerhalb
-  jeder Liste werden ebenfalls abgewiesen. Baseline und Training dürfen
-  dagegen dieselben Seeds verwenden.
+- Training: Seeds `1` bis `10`, änderbar über `--train-seeds`.
+  Jeder Prozess wiederholt sie mit versetztem Startpunkt. `--seed`
+  (Standard `0`) steuert separat Netzinitialisierung und Lernzufall.
+- Reservierter Test: `TEST_SEEDS = [101, 102, 103, 104, 105]`, änderbar über
+  `--evaluation-seeds`. Diese Seeds müssen von Training und Baseline
+  getrennt bleiben. Jede Liste muss eindeutige Einträge haben. Baseline
+  und Training dürfen sich überschneiden.
 
 Das Training speichert im Ausgabeordner:
 
@@ -3828,39 +3093,32 @@ Das Training speichert im Ausgabeordner:
 | `progress.csv` | Protokollierte PPO-Trainingswerte. |
 | `training_report.json` | Trainingsstatus, tatsächliche Entscheidungszahl, Episodenanzahl sowie Baseline-, Trainings- und Gesamtzeit. |
 
-Das Manifest enthält den aufgelösten Modelldateipfad und SHA-256 als
-Prüfsumme ihres Inhalts, die Merkmalsnamen samt Reihenfolge, Objekt- und
-Aktionsarten, globale Zielgewichte, feste Referenzen und alle
-Umgebungsgrenzen. Beim Laden werden diese Vorgaben und die Größen der
-Beobachtungs- und Aktionsfelder geprüft. Aktuelle App-Einstellungen ersetzen
-die gespeicherte Bewertung nicht. Mit `--model` darf eine Dateikopie an
-einem anderen Ort angegeben werden; sie muss dieselbe Prüfsumme haben.
-Das Netz ist damit nicht automatisch auf andere Fabrikmodelle übertragbar.
-Gespeicherte Zwischenstände heißen Checkpoints. Nur eigene oder
-vertrauenswürdige SB3-Checkpoints laden, da sie Python-Objekte enthalten.
+Das Manifest speichert Modellpfad und SHA-256-Prüfsumme, Merkmalsreihenfolge,
+Objekt-/Aktionsarten, Zielgewichte, Referenzen und Umgebungsgrenzen.
+Beim Laden werden diese Angaben und die Feldgrößen geprüft. Aktuelle
+App-Einstellungen ersetzen die gespeicherte Bewertung nicht.
+`--model` erlaubt eine Dateikopie mit gleicher Prüfsumme an einem anderen Ort,
+aber kein anderes Fabrikmodell. Nur eigene oder vertrauenswürdige
+SB3-Zwischenstände (Checkpoints) laden: Sie enthalten Python-Objekte.
 
 ### Training starten
 
-Die normale Installation benötigt kein PyTorch. Das Extra `rl-training`
-installiert zusätzlich Gymnasium, PyTorch, Stable-Baselines3 und
-`sb3-contrib`:
+Das Extra `rl-training` ergänzt die normale Installation um Gymnasium,
+PyTorch, Stable-Baselines3 und `sb3-contrib`:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
 .\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/ppo --steps 100000 --workers 4
 ```
 
-[`train_rl_policy.py`](sources/tools/train_rl_policy.py) verwendet ohne
-`--model` das `EXAMPLE_FILE` der Optimierungsanwendung, derzeit
+[`train_rl_policy.py`](sources/tools/train_rl_policy.py) nutzt ohne `--model`
+das `EXAMPLE_FILE` der Optimierungsanwendung, derzeit
 [example-5.py](sources/examples/normal/example-5.py). Der Ausgabeordner muss
-neu oder leer sein; vorhandene Trainingsläufe werden nicht überschrieben.
-`--help` zeigt alle Optionen, ohne Simulation oder Training zu starten.
+neu oder leer sein. `--help` zeigt Optionen, ohne einen Lauf zu starten.
 
-Die Simulationsprozesse heißen Worker. Jeder sammelt zunächst eine feste
-Zahl von Entscheidungen mit den zugehörigen Zuständen und Belohnungen.
-Diese gesammelten Daten heißen Rollout. Anschließend passt PPO das Netz
-anhand dieser Daten an; das ist ein PPO-Update. Dazu werden die Daten in
-kleinere Gruppen (Minibatches) zerlegt und mehrfach durchlaufen.
+Jeder Simulationsprozess (Worker) sammelt Entscheidungen, Zustände und
+Belohnungen zu einem Rollout. Danach passt PPO das Netz an (PPO-Update).
+Dazu durchläuft es die Daten mehrfach in kleinen Gruppen (Minibatches).
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
@@ -3875,24 +3133,21 @@ kleinere Gruppen (Minibatches) zerlegt und mehrfach durchlaufen.
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
 | `--device` | `cpu` | Rechengerät für das Netz, nicht für die Simulation. |
 
-Vier Worker sammeln so `4 × 256 = 1024` Entscheidungen pro Update.
+Vier Worker sammeln `4 × 256 = 1024` Entscheidungen pro Update.
 `--batch-size` muss mindestens `2` sein und `workers × rollout-steps` ohne
-Rest teilen. Mehr Worker vergrößern bei gleicher Rolloutlänge auch den
-Datenumfang je Update. Sie ändern damit die Trainingskonfiguration, nicht
-nur die Laufzeit.
+Rest teilen. Mehr Worker ändern somit auch die Datenmenge je Update,
+nicht nur die Laufzeit.
 
-Bei ausreichendem Arbeitsspeicher ist beispielsweise mit
-`--workers 20 --output rl_runs/ppo_20` ein separater Lauf möglich; er sammelt
-`5120` Entscheidungen pro Update. Jeder Prozess braucht ein eigenes Modell
-und eine eigene Simulation. Der Speicher für die Rolloutdaten wächst mit
-Workerzahl, Rolloutlänge und den aufgefüllten Beobachtungsfeldern. Kleinere
-Minibatches verkleinern diesen gesamten Speicher nicht. 20 Worker sind
-daher keine allgemeine Empfehlung oder Zusage einer kürzeren Laufzeit.
+`--workers 20 --output rl_runs/ppo_20` startet beispielsweise einen separaten
+Lauf mit `5120` Entscheidungen pro Update. Jeder Worker braucht ein eigenes
+Modell und eine Simulation. Der Rolloutspeicher wächst mit Workerzahl,
+Rolloutlänge und aufgefüllten Beobachtungsfeldern; kleinere Minibatches
+senken diesen Gesamtspeicher nicht. 20 Worker sind keine allgemeine
+Empfehlung oder Laufzeitzusage.
 
-Salabim läuft immer auf der CPU. `--device cuda` beziehungsweise `auto`
-kann nur Netzberechnung und PPO-Updates auf eine passende GPU verlagern;
-`cuda` wird ohne verfügbare CUDA-GPU abgewiesen. Für dieses kleine Netz ist
-`cpu` der Standard. Auch mit GPU laufen die getrennten Simulationen auf der CPU.
+Salabim bleibt auf der CPU. `--device cuda` oder `auto` verlagert nur das
+Netz und PPO-Updates auf eine passende GPU. `cuda` ohne CUDA-GPU wird
+abgewiesen. Für das kleine Netz ist `cpu` Standard.
 
 ### Auf getrennten Test-Seeds vergleichen
 
@@ -3901,43 +3156,33 @@ kann nur Netzberechnung und PPO-Updates auf eine passende GPU verlagern;
 ```
 
 [`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt
-`manifest.json` und `model.zip`, verwendet die gespeicherte Bewertung und
-führt standardmäßig drei Steuerungen mit denselben reservierten Test-Seeds
-aus: das trainierte RL-Netz, `RandomPolicy` und die Standardheuristik.
-Das Netz wählt dabei immer den wahrscheinlichsten gültigen Kandidaten
-(deterministische Auswahl). `--stochastic` zieht stattdessen zufällig nach
-den gelernten Auswahlwahrscheinlichkeiten;
-`--skip-comparisons` führt nur RL aus. `--seeds` darf ausschließlich Seeds
-außerhalb von Training und Baseline enthalten. Die Vergleichspolicies
-verwenden dasselbe gespeicherte Simulationszeitlimit.
+`manifest.json` und `model.zip`. Mit gespeicherter Bewertung und denselben
+reservierten Test-Seeds vergleicht es RL, `RandomPolicy` und Standardheuristik.
+RL wählt standardmäßig den wahrscheinlichsten gültigen Kandidaten
+(deterministisch). `--stochastic` zieht nach den gelernten Wahrscheinlichkeiten,
+`--skip-comparisons` prüft nur RL. `--seeds` muss von Training und Baseline
+getrennt bleiben. Alle Policies verwenden das gespeicherte Simulationszeitlimit.
 
-Der Bericht `evaluation.json` enthält jeden Lauf, Abschluss-/Limitstatus,
-globale Kosten, Produktionskennzahlen und reale Laufzeit. Mittelwerte der
-Kosten und Kennzahlen werden je Policy nur ausgewiesen, wenn sämtliche
-angeforderten Seed-Läufe abgeschlossen sind. Sobald ein Lauf am Limit
-abbricht, stehen diese Mittelwerte für die Policy auf `null`. So können
-unfertige Produktionen den Vergleich nicht durch scheinbar geringe Kosten
-verbessern. Bei einem späteren Fehler bleiben bereits erfasste Läufe als
-Teilbericht erhalten. Weder ein Teilbericht noch ein kurzer Trainingslauf
-oder ein vorhandener Checkpoint allein belegt eine Verbesserung.
+`evaluation.json` enthält Läufe, Abschluss-/Limitstatus, Kosten, Kennzahlen
+und reale Laufzeit. Mittelwerte erscheinen je Policy nur, wenn alle
+angeforderten Läufe abgeschlossen sind; sonst stehen sie auf `null`.
+So zählen unfertige Läufe nicht als scheinbar günstig.
+Bei Fehlern bleiben erfasste Läufe als Teilbericht erhalten.
+Teilberichte, kurze Trainingsläufe oder Checkpoints allein belegen keine Verbesserung.
 
-Mit `--checkpoint checkpoint_10000.zip` lässt sich ein gespeicherter
-Zwischenstand prüfen; `--output` ändert den Berichtspfad. Optional ergänzt
-`--optimized-weights gewichte.json` eine vierte Steuerung mit bereits
-optimierten lokalen Heuristikgewichten. Unterstützt sind ein direktes
-`HeuristicWeights`-Dictionary, `best_weights` oder
-`optimization_result.best_weights`. Ein vollständiger Zeitvergleichsbericht
-mit verschachtelten `measurements` hat nicht automatisch dieses Format;
-die passenden Gewichte müssen daraus separat exportiert werden.
+`--checkpoint checkpoint_10000.zip` prüft einen Zwischenstand; `--output`
+ändert den Berichtspfad. `--optimized-weights gewichte.json` ergänzt eine
+vierte Policy mit optimiertem lokalem Gewichtssatz. Unterstützt sind
+`HeuristicWeights`-Dictionaries, `best_weights` und
+`optimization_result.best_weights`. Aus Zeitvergleichsberichten mit
+verschachtelten `measurements` müssen die Gewichte separat exportiert werden.
 
 ### Trainiertes Netz im normalen Runner einsetzen
 
 [TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
-implementiert dieselbe `make_decision()`-Schnittstelle wie die anderen
-Policies. Der Runner startet die Simulation mit dieser Policy und einem
-Seed; die Policy lässt das geladene Netz wählen, die Simulationsobjekte
-führen die Aktionen aus und der Runner liefert die Kennzahlen zurück.
-Eine eigene Schleife mit `reset()` und `step()` ist dafür nicht nötig:
+nutzt dieselbe `make_decision()`-Schnittstelle wie andere Policies.
+Der Runner nutzt die Policy und startet die Simulation mit einem Seed.
+Eine eigene `reset()`-/`step()`-Schleife ist nicht nötig:
 
 ```python
 from SpineML.Control.RLPolicy.TrainedPolicy import TrainedCandidatePolicy
@@ -3953,83 +3198,67 @@ runner = SimulationRunner(
 metrics = runner.run_policy(policy, seed=101)
 ```
 
-Der Runner muss die geprüfte Modelldatei `policy.model_path` verwenden.
-`model_file=...` erlaubt beim Laden eine Kopie mit derselben Prüfsumme.
-Standard ist die deterministische Auswahl auf der CPU. Mit
-`deterministic=False, seed=101` wird zufällig nach den gelernten
-Wahrscheinlichkeiten gewählt. Dafür hat die Policy einen eigenen
-Torch-Zufallszustand; die Python-/NumPy-Zufallsfolgen der Simulation werden
-nicht neu gesetzt. Einzelkandidaten werden weiterhin direkt übernommen.
+Der Runner muss `policy.model_path` verwenden. `model_file=...` erlaubt eine
+Kopie mit gleicher Prüfsumme. Standard ist deterministische Auswahl auf der
+CPU. `deterministic=False, seed=101` wählt zufällig nach den gelernten
+Wahrscheinlichkeiten. Der eigene Torch-Zufallszustand setzt die
+Python-/NumPy-Zufallsfolgen der Simulation nicht neu. Einzelkandidaten
+werden direkt übernommen.
 
-Für mehrere Läufe stellt
+Für Laufserien erzeugt
 [`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
-frische Policies her: `factory = TrainedPolicyFactory("rl_runs/ppo")`, dann
-`factory(seed)` je Lauf. Sie kann als `policy_factory` eines
-`SimulationRunRequest` im Prozesspool verwendet werden. Auch dort muss der
-Runner das passende Modell verwenden.
+frische Policies: `factory = TrainedPolicyFactory("rl_runs/ppo")`, dann
+`factory(seed)` je Lauf. Sie ist als `policy_factory` eines
+`SimulationRunRequest` im Prozesspool nutzbar, ebenfalls mit passendem Modell.
 
-Die geladene Policy überwacht ihre gespeicherten Entscheidungs- und
-Zeitlimits auch außerhalb des Trainings. Erreicht sie ein Limit, meldet sie
-einen Fehler, statt unbegrenzt weiterzuwarten. Unfertige Jobs führen beim
-normalen Runner ebenfalls zu einem Fehler und nicht zu einem gültigen
-Optimierungsergebnis.
+Die Policy überwacht auch im Runner ihre gespeicherten Entscheidungs- und
+Zeitlimits. Limits oder unfertige Jobs führen zu Fehlern, nicht zu gültigen
+Optimierungsergebnissen.
 
 <a id="optionale-installation-und-cli-test"></a>
 
 ### Umgebung ohne Training prüfen
 
-Für einen Test der schrittweisen Schnittstelle genügt das kleinere Extra
-`rl`, ohne PyTorch oder PPO. Der folgende Debug-Befehl trainiert und lädt
-kein Netz:
+Zum Schnittstellentest genügt das Extra `rl`, ohne PyTorch oder
+PPO. Dieser Debug-Befehl trainiert und lädt kein Netz:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl]"
 .\.venv\Scripts\python.exe sources/tools/run_rl_episode.py --seed 1 --output rl_environment_result.json
 ```
 
-- Vor der Episode übernimmt
-  [`run_rl_episode.py`](sources/tools/run_rl_episode.py) globale Zielgewichte
-  und `SEEDS` aus `heuristic_optimization_app.py`. Je Seed führt es zuerst
-  einen vollständigen Standardheuristik-Lauf aus und berechnet die festen
-  positiven Zeitreferenzen für den Reward. Die Zeit dieser Baseline wird
-  separat ausgewiesen.
-- `--policy random` wählt zufällig eine gültige Nicht-Warteaktion; nur wenn
-  keine vorhanden ist, wird Warten gewählt. `--policy heuristic` verwendet
-  den vorhandenen `LocalHeuristicActionEvaluator` und
-  `HeuristicActionSelector` zur Auswahl aus den RL-Kandidaten. Beide Optionen
-  testen die Schnittstelle, nicht ein neuronales Netz.
-- `--model` wählt die Konfiguration; ohne Angabe gilt
-  `EXAMPLE_FILE` aus `heuristic_optimization_app.py`. `--seed` ist nichtnegativ.
-  `--max-decisions` begrenzt externe Auswahlentscheidungen, nicht die direkt
-  übernommenen Einzelkandidaten. Der Standard ist hier `100000`, wie bei
-  direkter Verwendung von `SpineRLEnv`; beim Trainingsbefehl sind es `10000`.
-  `--max-simulation-time` begrenzt die simulierte Zeit auf standardmäßig
-  `10000.0` Stunden. Ungültige CLI-Werte werden vor der Baseline abgewiesen.
-- Ausgabe und optionaler JSON-Bericht enthalten Status, Reward,
-  globale Kosten, Produktionskennzahlen sowie getrennte Baseline- und
-  Episodenzeiten. Das Modell wird durch Dateiname und SHA-256 identifiziert.
-  `--help` startet keinen Lauf und benötigt Gymnasium nicht.
+- [`run_rl_episode.py`](sources/tools/run_rl_episode.py) übernimmt Zielgewichte
+  und `SEEDS` aus `heuristic_optimization_app.py`. Vollständige
+  Standardheuristik-Läufe liefern die positiven Reward-Zeitreferenzen.
+  Diese Baselinezeit wird separat erfasst.
+- `--policy random` wählt eine zufällige gültige Nicht-Warteaktion, sonst
+  Warten. `--policy heuristic` nutzt `LocalHeuristicActionEvaluator` und
+  `HeuristicActionSelector` für die RL-Kandidaten. Beide testen die
+  Schnittstelle, kein neuronales Netz.
+- `--model` wählt die Konfiguration, sonst gilt `EXAMPLE_FILE` aus
+  `heuristic_optimization_app.py`. `--seed` ist nichtnegativ.
+  `--max-decisions` zählt externe Entscheidungen, keine Einzelkandidaten:
+  Standard `100000` wie bei direkter `SpineRLEnv`-Nutzung, im Training `10000`.
+  `--max-simulation-time` begrenzt die Zeit auf standardmäßig `10000.0`
+  Stunden. Ungültige CLI-Werte werden vor der Baseline abgewiesen.
+- Ausgabe und optionales JSON enthalten Status, Reward, Kosten, Kennzahlen,
+  Baseline-/Episodenzeiten sowie Modellname und SHA-256. `--help` startet
+  keinen Lauf und benötigt Gymnasium nicht.
 
-Die CLI-Auswahl `random` ist nicht das Einsetzen der Klasse `RandomPolicy`:
-Sie arbeitet mit den RL-Kandidaten und den direkt übernommenen
-Einzelkandidaten. Insbesondere bleibt die vom Generator eingetragene
-EDD-Priorität erhalten. Deshalb liefert der CLI-Test nicht zugesichert
-denselben Ablauf wie ein direkter Lauf der jeweiligen Vergleichspolicy.
+CLI-`random` ist nicht die Klasse `RandomPolicy`: Es nutzt RL-Kandidaten,
+direkte Einzelkandidaten und die EDD-Priorität des Generators. Daher ist
+kein identischer Ablauf zur jeweiligen direkten Vergleichspolicy zugesichert.
 
 ### Ressourcen und Parallelität
 
-Bei eigener Verwendung gehört `close()` in einen `finally`-Block, damit es
-auch bei Fehlern ausgeführt wird. Es bricht eine aktive Episode ab und wartet
-auf den Simulationsthread. Ungültige Indizes, überschrittene Zeilenlimits,
-geänderte Schemas, Timeouts und Simulationsfehler werden als Fehler gemeldet.
-Endet eine Episode schon vor der ersten Auswahl, meldet auch `reset()` einen
-Fehler, statt einen gewöhnlichen Auswahlzustand vorzutäuschen.
+`close()` gehört in einen `finally`-Block. Es beendet aktive Episoden und
+wartet auf den Simulationsthread. Ungültige Indizes, Zeilenüberschreitungen,
+Schemaänderungen, Timeouts und Simulationsfehler lösen Fehler aus.
+Endet die Episode vor der ersten Auswahl, schlägt auch `reset()` fehl.
 
-Pro Prozess darf nur eine RL-Umgebung gleichzeitig aktiv sein. Auch ein
-anderer direkter Simulationslauf darf dort nicht parallel laufen: Salabim
-und Python-Zufall verwenden prozessweite Zustände. Mehrere Umgebungen
-benötigen daher getrennte Prozesse. Der Trainer nutzt `SubprocVecEnv` mit
-`spawn`, auch bei nur einem Worker, und räumt seine Prozessumgebungen auch
-bei Fehlern auf. Aus `info` entfernt der Trainingswrapper die großen
-Diagnose-Dictionaries; Abschlusskennzahlen und Abbruchgründe bleiben für
-die Protokolle erhalten.
+Pro Prozess darf nur eine RL-Umgebung laufen. Andere Simulationsläufe dürfen
+dort nicht parallel laufen: Salabim und Python-Zufall nutzen prozessweite
+Zustände. Parallelität braucht getrennte Prozesse. Der Trainer nutzt
+`SubprocVecEnv` mit `spawn`, auch für einen Worker, und räumt bei Fehlern auf.
+Der Trainingswrapper entfernt große Diagnose-Dictionaries aus `info`;
+Abschlusskennzahlen und Abbruchgründe bleiben erhalten.

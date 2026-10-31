@@ -20,7 +20,10 @@ class HeuristicActionSelector(ActionSelector):
 
     def __init__(self, rng: random.Random | None = None):
         # Ein eigener Generator trennt Policy-Zufall von Simulationszufall.
-        self.random = rng if rng is not None else random
+        if rng is None:
+            self.random = random
+        else:
+            self.random = rng
 
     # Bewertet die erzeugten Kandidaten und gibt die ausgewählte Aktion zurück.
     def select_action(
@@ -83,7 +86,10 @@ class HeuristicActionSelector(ActionSelector):
             if productive_alternatives:
                 exploratory_actions = productive_alternatives
             # Wählt eine erkundete Alternative; falls keine existiert, eine exakt beste Aktion.
-            selected_action = self.random.choice(exploratory_actions or best_actions)
+            if exploratory_actions:
+                selected_action = self.random.choice(exploratory_actions)
+            else:
+                selected_action = self.random.choice(best_actions)
         else:
             # Wenn keine Exploration stattfindet, wird zufällig eine exakt beste Aktion gewählt.
             selected_action = self.random.choice(best_actions)

@@ -30,7 +30,12 @@ class SpineActionGenerator(ActionGenerator):
         seen = set()
         for action in actions:
             # Vergleichsschlüssel aus Aktionstyp und Payload zum Erkennen von Duplikaten.
-            key = (action.get("action_type"), repr(sorted(action.get("payload", {}).items())))
+            action_type = action.get("action_type")
+            payload = action.get("payload", {})
+            payload_items = payload.items()
+            sorted_payload_items = sorted(payload_items)
+            payload_key = repr(sorted_payload_items)
+            key = (action_type, payload_key)
             if key not in seen:
                 seen.add(key)
                 unique_actions.append(action)
@@ -88,11 +93,11 @@ class SpineActionGenerator(ActionGenerator):
     # Beispiel: object_type="machine" liefert nur Maschinenzustände.
     def states_of_type(self, snapshot: dict, object_type: str) -> list[dict]:
         states_by_id = snapshot.get("simulation_object_states_by_id", {})
-        return [
-            state
-            for state in states_by_id.values()
-            if state.get("object_type") == object_type
-        ]
+        matching_states = []
+        for state in states_by_id.values():
+            if state.get("object_type") == object_type:
+                matching_states.append(state)
+        return matching_states
 
     # Gibt das Konfigurationsmodell aus der Beobachtung zurück.
     # Beispiel: model(observation) liefert snapshot["configuration_model"].
@@ -148,7 +153,8 @@ class SpineActionGenerator(ActionGenerator):
         current_time: float,
     ) -> list[dict]:
         actions = []
-        extra_payload = {} if extra_payload is None else extra_payload
+        if extra_payload is None:
+            extra_payload = {}
         for job in self.store_jobs(target_store):
             payload = {
                 "target_type": target_type,
@@ -194,7 +200,7 @@ class SpineActionGenerator(ActionGenerator):
 
         return machine_observations_by_id[defect_machine_id]
 
-    # Find rework routes that use a machine other than the defect machine.
+    # Findet Nacharbeitsrouten mit einer anderen Maschine.
     # Beispiel: Defect auf m1 lässt nur Routen zu, die mit einer anderen Maschine beginnen.
     def find_rework_routes_with_alternative_machine(self, observation: PolicyObservation) -> list[dict]:
         current_state = self.current_state(observation)
@@ -242,7 +248,8 @@ class SpineActionGenerator(ActionGenerator):
         route_options = []
         for remaining_operation_sequence in remaining_operation_sequences:
             # Setzt die defect operation vor die Restfolge; die Liste enthält nur Operations-IDs.
-            operation_sequence = [defect_operation_id, *remaining_operation_sequence]
+            operation_sequence = [defect_operation_id]
+            operation_sequence.extend(remaining_operation_sequence)
             machine_sequences = self.calculate_machine_sequences_from_operation_sequence(
                 list(operation_sequence),
                 layout_id,
@@ -558,15 +565,13 @@ class SpineActionGenerator(ActionGenerator):
 
         if job["general_state"] == "defect":
             # Sammelt für einen defective Job die defect machine und mögliche alternative rework machinen.
-            defect_machine_id = (
-                job.get("defect_machine_id")
-                or current_state.get("current_job_defect_machine_id")
-            )
+            defect_machine_id = job.get("defect_machine_id")
+            if not defect_machine_id:
+                defect_machine_id = current_state.get("current_job_defect_machine_id")
             # Historische ID der Operation, in der der Defect entstanden wurde.
-            defect_operation_id = (
-                job.get("defect_operation_id")
-                or current_state.get("current_job_defect_operation_id")
-            )
+            defect_operation_id = job.get("defect_operation_id")
+            if not defect_operation_id:
+                defect_operation_id = current_state.get("current_job_defect_operation_id")
             # Liest die zuvor festgelegte rework strategy und die ausgewählten IDs.
             recovery_strategy = job.get("defect_recovery_strategy")
             # ID der als Nächstes ausgewählten Operation; sie kann bei Rework der defect operation entsprechen.
@@ -589,11 +594,10 @@ class SpineActionGenerator(ActionGenerator):
                 
                 # Prüft, ob die gespeicherte Strategie eine erlaubte rework strategy ist.
                 if recovery_strategy not in recovery_strategies:
-                    recovery_strategy = (
-                        "rework_on_defect_machine"
-                        if selected_machine_id == defect_machine_id
-                        else "rework_on_alternative_machine"
-                    )
+                    if selected_machine_id == defect_machine_id:
+                        recovery_strategy = "rework_on_defect_machine"
+                    else:
+                        recovery_strategy = "rework_on_alternative_machine"
                 # Verwendet die bereits durch die Policy festgelegte rework operation und -maschine.
                 repair_targets.append((
                     selected_operation_id,
@@ -637,11 +641,10 @@ class SpineActionGenerator(ActionGenerator):
                     continue
                 corridor_index = corridor_ids.index(target_machine["corridor_id"])
                 corridor_storage = current_state["corridor_storages"][corridor_index]
-                target_store = (
-                    corridor_storage["left"]
-                    if target_machine["left"]
-                    else corridor_storage["right"]
-                )
+                if target_machine["left"]:
+                    target_store = corridor_storage["left"]
+                else:
+                    target_store = corridor_storage["right"]
                 if self.store_has_free_capacity(target_store):
                     actions.append({
                         "action_type": "place_main_robot",
@@ -673,8 +676,7 @@ class SpineActionGenerator(ActionGenerator):
             actions.extend(self.create_main_robot_wait_actions(observation))
             return actions
 
-        # For a normal job (intact, not downgraded, not scrapped, and not finished)
-        # werden hier alle technisch möglichen nächsten Operations- und Maschinenrouten durchlaufen.
+        # Prüft für intakte Jobs alle möglichen nächsten Routen.
         for route_option in self.selectable_routes_for_job(job, layout_id, model):
             next_operation_id = route_option["next_operation_id"]
             next_machine_id = route_option["next_machine_id"]
@@ -686,7 +688,10 @@ class SpineActionGenerator(ActionGenerator):
 
             corridor_storage = current_state["corridor_storages"][corridor_index]
 
-            target_store = corridor_storage["left"] if next_machine["left"] else corridor_storage["right"]
+            if next_machine["left"]:
+                target_store = corridor_storage["left"]
+            else:
+                target_store = corridor_storage["right"]
 
             if self.store_has_free_capacity(target_store):
                 actions.append({
@@ -833,7 +838,7 @@ class SpineActionGenerator(ActionGenerator):
                         "action_type": "place_corridor_arm_robot",
                         "payload": payload,
                     })
-        # Scrapped, downgraded, or already finished jobs need no further machine.
+        # Ausschuss, herabgestufte und fertige Jobs brauchen keine weitere Maschine.
         # Der Korridorarm legt sie deshalb in den Main-Store für den Weitertransport.
         else:
             target_store = current_state["sim_corridor_store_main"]
@@ -963,12 +968,10 @@ class SpineActionGenerator(ActionGenerator):
                 if required_tool_type_id not in machine_tool_type_ids:
                     continue
 
-            machine_routes = (
-                self.calculate_machine_sequences_from_operation_sequence(
-                    remaining_operation_sequence,
-                    layout_id,
-                    model,
-                )
+            machine_routes = self.calculate_machine_sequences_from_operation_sequence(
+                remaining_operation_sequence,
+                layout_id,
+                model,
             )
             for machine_route in machine_routes:
                 machine_route.insert(0, machine_id)
@@ -986,7 +989,12 @@ class SpineActionGenerator(ActionGenerator):
             for machine_route in machine_routes:
                 exists = False
                 for other_machine_route in result:
-                    if all(x == y for x, y in zip(machine_route, other_machine_route)):
+                    same_route = True
+                    for machine_id, other_machine_id in zip(machine_route, other_machine_route):
+                        if machine_id != other_machine_id:
+                            same_route = False
+                            break
+                    if same_route:
                         exists = True
                         break
                 if not exists:
@@ -1026,11 +1034,10 @@ class SpineActionGenerator(ActionGenerator):
         model: dict,
         visited_product_types: set[str] | None = None,
     ) -> list[list[str]]:
-        visited = (
-            set()
-            if visited_product_types is None
-            else set(visited_product_types)
-        )
+        if visited_product_types is None:
+            visited = set()
+        else:
+            visited = set(visited_product_types)
         if product_type_id in visited:
             return []
         visited.add(product_type_id)

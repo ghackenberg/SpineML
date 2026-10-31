@@ -79,11 +79,10 @@ def compare_metrics(
         expected_metrics = asdict(expected.metrics)
         actual_metrics = asdict(result.metrics)
         if actual_metrics != expected_metrics:
-            differences = {
-                name: {"reference": expected_metrics[name], "actual": value}
-                for name, value in actual_metrics.items()
-                if value != expected_metrics[name]
-            }
+            differences = {}
+            for name, value in actual_metrics.items():
+                if value != expected_metrics[name]:
+                    differences[name] = {"reference": expected_metrics[name], "actual": value}
             raise RuntimeError(
                 f"Kennzahlen weichen bei {workers} Workern ab: "
                 f"Input {index + 1}, Seed {requests[index].seed}: {differences}"
@@ -135,13 +134,18 @@ def main() -> None:
 
     weights = HeuristicWeights()
     policy_factory = HeuristicPolicyFactory(weights)
-    requests = tuple(
-        SimulationRunRequest(policy_factory, seed)
-        for _ in range(args.repeats)
-        for seed in args.seeds
-    )
+    requests = []
+    for _ in range(args.repeats):
+        for seed in args.seeds:
+            requests.append(SimulationRunRequest(policy_factory, seed))
+    requests = tuple(requests)
     # Nur angeforderte Modi messen. Falls enthalten, dient ein Worker als Referenz.
-    worker_counts = list(dict.fromkeys(args.workers))
+    worker_counts = []
+    seen_worker_counts = set()
+    for worker_count in args.workers:
+        if worker_count not in seen_worker_counts:
+            seen_worker_counts.add(worker_count)
+            worker_counts.append(worker_count)
     if 1 in worker_counts:
         worker_counts.remove(1)
         worker_counts.insert(0, 1)
@@ -160,7 +164,20 @@ def main() -> None:
         if reference is None:
             reference = results
         compare_metrics(requests, reference, results, workers)
-        durations = [result.elapsed_seconds for result in results]
+        durations = []
+        for result in results:
+            durations.append(result.elapsed_seconds)
+        result_reports = []
+        for index, result in enumerate(results):
+            result_reports.append({
+                "input_index": index,
+                "repeat": index // len(args.seeds) + 1,
+                "seed": requests[index].seed,
+                "policy_kind": "heuristic",
+                "elapsed_seconds": result.elapsed_seconds,
+                "worker_pid": result.worker_pid,
+                "metrics": asdict(result.metrics),
+            })
         measurements.append({
             "workers": workers,
             "total_seconds": total_seconds,
@@ -168,18 +185,7 @@ def main() -> None:
                 "mean": mean(durations), "min": min(durations), "max": max(durations),
             },
             "metrics_match_reference": True,
-            "results": [
-                {
-                    "input_index": index,
-                    "repeat": index // len(args.seeds) + 1,
-                    "seed": requests[index].seed,
-                    "policy_kind": "heuristic",
-                    "elapsed_seconds": result.elapsed_seconds,
-                    "worker_pid": result.worker_pid,
-                    "metrics": asdict(result.metrics),
-                }
-                for index, result in enumerate(results)
-            ],
+            "results": result_reports,
         })
         print(
             f"Batch gesamt: {total_seconds:.3f} s; alle Kennzahlen exakt gleich.",
@@ -189,7 +195,10 @@ def main() -> None:
     reference_seconds = measurements[0]["total_seconds"]
     for measurement in measurements:
         measurement["speedup"] = reference_seconds / measurement["total_seconds"]
-    fastest = min(measurements, key=lambda item: item["total_seconds"])
+    fastest = measurements[0]
+    for measurement in measurements[1:]:
+        if measurement["total_seconds"] < fastest["total_seconds"]:
+            fastest = measurement
     report = {
         "model_file": MODEL_FILE.name,
         "seeds": args.seeds,

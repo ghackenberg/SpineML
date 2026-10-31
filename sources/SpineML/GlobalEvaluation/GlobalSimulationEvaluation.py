@@ -23,38 +23,40 @@ class GlobalSimulationMetrics:
     downgraded_job_count: int = 0
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def completion_rate(self) -> float:
-        return self.completed_jobs / self.total_jobs if self.total_jobs else 0.0
+        if not self.total_jobs:
+            return 0.0
+        return self.completed_jobs / self.total_jobs
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def intact_rate(self) -> float:
-        return self.intact_jobs / self.total_jobs if self.total_jobs else 0.0
+        if not self.total_jobs:
+            return 0.0
+        return self.intact_jobs / self.total_jobs
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def unfinished_rate(self) -> float:
-        return self.unfinished_jobs / self.total_jobs if self.total_jobs else 0.0
+        if not self.total_jobs:
+            return 0.0
+        return self.unfinished_jobs / self.total_jobs
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def rework_rate(self) -> float:
-        return self.rework_job_count / self.total_jobs if self.total_jobs else 0.0
+        if not self.total_jobs:
+            return 0.0
+        return self.rework_job_count / self.total_jobs
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def scrap_rate(self) -> float:
-        return self.scrap_job_count / self.total_jobs if self.total_jobs else 0.0
+        if not self.total_jobs:
+            return 0.0
+        return self.scrap_job_count / self.total_jobs
 
     @property
-    # Führt die Funktion mit den übergebenen Werten aus.
     def downgrade_rate(self) -> float:
-        return (
-            self.downgraded_job_count / self.total_jobs
-            if self.total_jobs
-            else 0.0
-        )
+        if not self.total_jobs:
+            return 0.0
+        return self.downgraded_job_count / self.total_jobs
 
 
 @dataclass(frozen=True)
@@ -73,18 +75,16 @@ class GlobalSimulationWeights:
 class GlobalSimulationEvaluation:
     """Calculate global cost from the metrics of a simulation run."""
 
-    # Initialisiert das Objekt mit seinen Eingabewerten.
     def __init__(
         self,
         weights: GlobalSimulationWeights,
         baseline_reference_values: dict[str, float] | None = None,
     ):
         self.weights = weights
-        self.baseline_reference_values = (
-            dict(baseline_reference_values)
-            if baseline_reference_values is not None
-            else None
-        )
+        if baseline_reference_values is None:
+            self.baseline_reference_values = None
+        else:
+            self.baseline_reference_values = dict(baseline_reference_values)
 
     # Berechnet aus den Baseline-Kennzahlen Referenzwerte für die spätere
     # relative Skalierung.
@@ -157,17 +157,12 @@ class GlobalSimulationEvaluation:
 
             # Speichert den relativen Wert unter demselben Kennzahlnamen.
             relative_metrics[name] = relative_value
-        relative_metrics.update(
-            {
-                "rework_rate": max(0.0, metrics.rework_rate),
-                "scrap_rate": max(0.0, metrics.scrap_rate),
-                "downgrade_rate": max(0.0, metrics.downgrade_rate),
-            }
-        )
+        relative_metrics["rework_rate"] = max(0.0, metrics.rework_rate)
+        relative_metrics["scrap_rate"] = max(0.0, metrics.scrap_rate)
+        relative_metrics["downgrade_rate"] = max(0.0, metrics.downgrade_rate)
         return relative_metrics
 
-    # Berechnet eine vergleichbare weighted Summe der relativ zur Baseline
-    # skalierten Kennzahlen für den Vergleich verschiedener weight sets.
+    # Berechnet die globale Bewertungszahl aus den skalierten Kennzahlen und Quoten.
     def calculate_weighted_sum_of_metrics_relative_to_baseline(
         self,
         metrics: GlobalSimulationMetrics,

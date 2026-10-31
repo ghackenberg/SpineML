@@ -91,7 +91,9 @@ def _run_child_mode(args) -> int:
         while state.get("running", False):
             now = time.monotonic()
             if now >= next_progress_at:
-                phase = state.get("phase") or "Workflow wird vorbereitet ..."
+                phase = state.get("phase")
+                if not phase:
+                    phase = "Workflow wird vorbereitet ..."
                 print(f"[{args._mode}] {phase}", flush=True)
                 next_progress_at = now + PROGRESS_INTERVAL_SECONDS
             time.sleep(0.2)
@@ -109,12 +111,16 @@ def _run_child_mode(args) -> int:
         )
         return 0
     except (Exception, KeyboardInterrupt) as error:
-        message = "Vergleich unterbrochen." if isinstance(error, KeyboardInterrupt) else str(error)
+        message = str(error)
+        if isinstance(error, KeyboardInterrupt):
+            message = "Vergleich unterbrochen."
         _write_json(args._report, {
             "status": "failed", "execution_mode": args._mode, "error": message,
         })
         print(f"[{args._mode}] Fehler: {message}", file=sys.stderr, flush=True)
-        return 130 if isinstance(error, KeyboardInterrupt) else 1
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        return 1
 
 
 def _first_difference(expected, actual, path: str) -> str | None:
@@ -149,36 +155,40 @@ def compare_reports(sequential: dict, parallel: dict) -> dict:
         "sequential_seconds": sequential["elapsed_seconds"],
         "parallel_seconds": parallel["elapsed_seconds"],
     }
-    comparison["equal"] = all(comparison[key] for key in (
-        "configuration_equal", "results_equal", "simulation_count_equal",
-    ))
+    comparison["equal"] = True
+    for key in ("configuration_equal", "results_equal", "simulation_count_equal"):
+        if not comparison[key]:
+            comparison["equal"] = False
+            break
     if comparison["equal"]:
         sequential_seconds = sequential["elapsed_seconds"]
         parallel_seconds = parallel["elapsed_seconds"]
         comparison["speedup"] = sequential_seconds / parallel_seconds
         comparison["time_saved_percent"] = (1.0 - parallel_seconds / sequential_seconds) * 100.0
     else:
-        comparison["first_difference"] = next(
-            difference
-            for key in ("configuration", "results", "simulation_count")
-            if (difference := _first_difference(sequential[key], parallel[key], key)) is not None
-        )
+        for key in ("configuration", "results", "simulation_count"):
+            difference = _first_difference(sequential[key], parallel[key], key)
+            if difference is not None:
+                comparison["first_difference"] = difference
+                break
     return comparison
 
 
 def _compare_modes(args) -> int:
     """Startet frische Koordinatoren nacheinander und sichert jeden fertigen Modus sofort."""
-    execution_order = (
-        ("parallel", "sequential")
-        if args.order == "parallel-first"
-        else ("sequential", "parallel")
-    )
+    if args.order == "parallel-first":
+        execution_order = ("parallel", "sequential")
+    else:
+        execution_order = ("sequential", "parallel")
     output_path = args.output.resolve()
+    requested_model = None
+    if args.model is not None:
+        requested_model = str(args.model)
     payload = {
         "schema_version": 1,
         "status": "running",
         "execution_order": list(execution_order),
-        "requested_model": str(args.model) if args.model is not None else None,
+        "requested_model": requested_model,
         "reports": {},
     }
     try:
@@ -196,10 +206,9 @@ def _compare_modes(args) -> int:
                 print(f"Starte frischen {mode}-Koordinator ...", flush=True)
                 # Vererbte Standardausgabe zeigt Fortschritt, ohne weitere UI zu starten.
                 completed = subprocess.run(command, check=False)
-                child_payload = (
-                    json.loads(child_report_path.read_text(encoding="utf-8"))
-                    if child_report_path.is_file() else {}
-                )
+                child_payload = {}
+                if child_report_path.is_file():
+                    child_payload = json.loads(child_report_path.read_text(encoding="utf-8"))
                 if completed.returncode != 0 or child_payload.get("status") != "complete":
                     raise RuntimeError(
                         f"{mode} ist fehlgeschlagen: "
@@ -215,7 +224,9 @@ def _compare_modes(args) -> int:
             payload["reports"]["sequential"], payload["reports"]["parallel"],
         )
         payload["comparison"] = comparison
-        payload["status"] = "complete" if comparison["equal"] else "mismatch"
+        payload["status"] = "mismatch"
+        if comparison["equal"]:
+            payload["status"] = "complete"
         _write_json(output_path, payload)
         print(f"\nBericht: {output_path}")
         if not comparison["equal"]:
@@ -234,13 +245,17 @@ def _compare_modes(args) -> int:
         return 0
     except (Exception, KeyboardInterrupt) as error:
         payload["status"] = "failed"
-        payload["error"] = "Vergleich unterbrochen." if isinstance(error, KeyboardInterrupt) else str(error)
+        payload["error"] = str(error)
+        if isinstance(error, KeyboardInterrupt):
+            payload["error"] = "Vergleich unterbrochen."
         try:
             _write_json(output_path, payload)
         except OSError as write_error:
             print(f"Bericht konnte nicht aktualisiert werden: {write_error}", file=sys.stderr)
         print(f"Fehler: {payload['error']}", file=sys.stderr, flush=True)
-        return 130 if isinstance(error, KeyboardInterrupt) else 1
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        return 1
 
 
 def main() -> int:
@@ -261,7 +276,9 @@ def main() -> int:
     args = parser.parse_args()
     if (args._mode is None) != (args._report is None):
         parser.error("Die internen Argumente --_mode und --_report müssen zusammen stehen.")
-    return _run_child_mode(args) if args._mode is not None else _compare_modes(args)
+    if args._mode is not None:
+        return _run_child_mode(args)
+    return _compare_modes(args)
 
 
 if __name__ == "__main__":

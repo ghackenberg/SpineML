@@ -37,14 +37,17 @@ class SimulationRunResult:
 _worker_runner: SimulationRunner | None = None
 
 
+# Lädt einmal pro Worker-Prozess Layout und Szenario
+# und erstellt dessen eigenen Runner.
 def _initialize_simulation_worker(model_file: str) -> None:
-    """Lädt die Fabrikkonfiguration einmal pro Prozess."""
     global _worker_runner
 
     layout, scenario = load_layout_and_scenario(model_file)
     _worker_runner = SimulationRunner(layout, scenario)
 
 
+# Erstellt die Policy und führt einen Simulationslauf mit dem Runner dieses Workers aus.
+# Gibt Produktionskennzahlen, Laufzeit und die PID des Worker-Prozesses zurück.
 def _execute_simulation_request(request: SimulationRunRequest) -> SimulationRunResult:
     if _worker_runner is None:
         raise RuntimeError("Der Simulationsworker wurde noch nicht initialisiert.")
@@ -70,7 +73,9 @@ class ParallelSimulationRunner:
     ) -> None:
         self.model_path = _resolve_model_path(model_file)
         if max_workers is None:
-            max_workers = os.cpu_count() or 1
+            max_workers = os.cpu_count()
+            if not max_workers:
+                max_workers = 1
             if os.name == "nt":
                 max_workers = min(max_workers, 61)
         self.max_workers = max_workers
@@ -85,6 +90,8 @@ class ParallelSimulationRunner:
         """Meldet fertige Läufe sofort und gibt Ergebnisse in Eingabereihenfolge zurück."""
         if self._closed:
             raise RuntimeError("Der ParallelSimulationRunner wurde bereits geschlossen.")
+
+        # Sammelt die Simulationsaufträge; jeder enthält eine Policy-Factory und einen Seed.
         batch = tuple(requests)
         if not batch:
             return ()
@@ -101,7 +108,10 @@ class ParallelSimulationRunner:
         futures = {}
         results = {}
         try:
+            # Übergibt jeden Simulationsauftrag an den Pool.
             for index, request in enumerate(batch):
+                # Beauftragt einen Worker mit diesem Lauf;
+                # der Future macht das Ergebnis nach Abschluss abrufbar.
                 future = self._executor.submit(_execute_simulation_request, request)
                 futures[future] = index
 
@@ -119,7 +129,10 @@ class ParallelSimulationRunner:
             raise
 
         # Die Rückgabe folgt der Auftragsreihenfolge, nicht der Fertigstellung.
-        return tuple(results[index] for index in range(len(batch)))
+        ordered_results = []
+        for index in range(len(batch)):
+            ordered_results.append(results[index])
+        return tuple(ordered_results)
 
     def close(self) -> None:
         """Beendet den Pool und wartet auf bereits laufende Simulationen."""

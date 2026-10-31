@@ -179,7 +179,13 @@ class LocalHeuristicWeightOptimizer:
         if not seed_values:
             raise ValueError("Mindestens ein Seed ist erforderlich.")
         # Entfernt doppelte Gewichtssätze und behält die Reihenfolge bei.
-        candidate_list = tuple(dict.fromkeys(local_weight_candidates))
+        unique_candidates = []
+        seen_candidates = set()
+        for candidate in local_weight_candidates:
+            if candidate not in seen_candidates:
+                seen_candidates.add(candidate)
+                unique_candidates.append(candidate)
+        candidate_list = tuple(unique_candidates)
         total_candidates = len(candidate_list)
         if not total_candidates:
             raise ValueError("Mindestens ein Gewichtssatz ist erforderlich.")
@@ -220,7 +226,8 @@ class LocalHeuristicWeightOptimizer:
             evaluations=tuple(evaluations),
         )
 
-    # Ordnet parallele Ergebnisse ihrem Gewichtssatz und ihrer Seedposition zu.
+    # Führt für jeden Gewichtssatz einen Simulationslauf pro Seed über run_many() aus.
+    # Berechnet pro Gewichtssatz die globalen Bewertungszahlen und deren Mittelwert.
     def _evaluate_candidates_with_run_many(
         self,
         candidates: tuple[HeuristicWeights, ...],
@@ -231,34 +238,41 @@ class LocalHeuristicWeightOptimizer:
     ) -> list[WeightEvaluation]:
         seed_count = len(seeds)
         total_candidates = len(candidates)
-        requests = tuple(
-            SimulationRunRequest(HeuristicPolicyFactory(weights), seed)
-            for weights in candidates
-            for seed in seeds
-        )
+        # Erstellt für jede Kombination aus Gewichtssatz und Seed einen Auftrag mit Policy-Factory und Seed.
+        request_list = []
+        for weights in candidates:
+            for seed in seeds:
+                request_list.append(SimulationRunRequest(HeuristicPolicyFactory(weights), seed))
+        requests = tuple(request_list)
         # Seedpositionen statt Seedwerte als Schlüssel erhalten auch doppelte Seeds.
-        metrics_by_candidate: list[dict[int, GlobalSimulationMetrics]] = [
-            {} for _ in candidates
-        ]
-        evaluations: list[WeightEvaluation | None] = [None] * total_candidates
+        metrics_by_candidate = []
+        evaluations = []
+        for _ in candidates:
+            metrics_by_candidate.append({})
+            evaluations.append(None)
 
         if progress_callback is not None:
             progress_callback(iteration_number, None, 0, total_candidates)
 
         def record_completed_run(request_index, result):
             # run_many ruft diese Funktion im Elternprozess auf, nicht im Worker.
-            candidate_index, seed_index = divmod(request_index, seed_count)
+            candidate_index = request_index // seed_count
+            seed_index = request_index % seed_count
             candidate_metrics = metrics_by_candidate[candidate_index]
             if seed_index in candidate_metrics:
                 return
+            # Speichert die Produktionskennzahlen dieses Seed-Laufs für den zugehörigen Gewichtssatz.
             candidate_metrics[seed_index] = result.metrics
             if len(candidate_metrics) != seed_count:
                 return
 
             # Mittelwerte immer in der ursprünglichen Seedreihenfolge berechnen.
+            ordered_metrics = []
+            for index in range(seed_count):
+                ordered_metrics.append(candidate_metrics[index])
             evaluation = self._evaluate_metrics_by_seed(
                 candidates[candidate_index],
-                tuple(candidate_metrics[index] for index in range(seed_count)),
+                tuple(ordered_metrics),
             )
             evaluations[candidate_index] = evaluation
             if progress_callback is not None:
@@ -275,7 +289,11 @@ class LocalHeuristicWeightOptimizer:
         # Auch Runner ohne Abschlussmeldungen unterstützen; keine Ergebnisse doppelt zählen.
         for request_index, result in enumerate(results):
             record_completed_run(request_index, result)
-        return [evaluation for evaluation in evaluations if evaluation is not None]
+        completed_evaluations = []
+        for evaluation in evaluations:
+            if evaluation is not None:
+                completed_evaluations.append(evaluation)
+        return completed_evaluations
 
     # Führt für einen Gewichtssatz einen Produktionslauf pro Seed aus.
     # Berechnet je Lauf eine globale Bewertungszahl und danach deren Mittelwert.
@@ -289,22 +307,27 @@ class LocalHeuristicWeightOptimizer:
             raise ValueError("Mindestens ein Seed ist erforderlich.")
         run_many = getattr(self.simulation_runner, "run_many", None)
         if callable(run_many):
-            requests = tuple(
-                SimulationRunRequest(HeuristicPolicyFactory(local_weights), seed)
-                for seed in seed_values
-            )
+            request_list = []
+            for seed in seed_values:
+                request_list.append(SimulationRunRequest(HeuristicPolicyFactory(local_weights), seed))
+            requests = tuple(request_list)
             results = tuple(run_many(requests))
             if len(results) != len(requests):
                 raise ValueError("Der Runner muss genau ein Ergebnis je Simulationsanfrage liefern.")
-            metrics_by_seed = tuple(result.metrics for result in results)
+            collected_metrics = []
+            for result in results:
+                collected_metrics.append(result.metrics)
+            metrics_by_seed = tuple(collected_metrics)
         else:
             # Jeweils einen Lauf simulieren und bewerten, bevor der nächste startet.
-            metrics_by_seed = (
-                self.simulation_runner.run_policy(
-                    HeuristicPolicyFactory(local_weights)(seed), seed
-                )
-                for seed in seed_values
-            )
+            def simulate_metrics_by_seed():
+                for seed in seed_values:
+                    metrics = self.simulation_runner.run_policy(
+                        HeuristicPolicyFactory(local_weights)(seed), seed
+                    )
+                    yield metrics
+
+            metrics_by_seed = simulate_metrics_by_seed()
         return self._evaluate_metrics_by_seed(local_weights, metrics_by_seed)
 
     # Bewertet die Kennzahlen je Seed und bildet den Mittelwert der Bewertungszahlen.

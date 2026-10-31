@@ -19,7 +19,8 @@ ACTION_TYPES = (
     "pick_machine_job", "process_machine_job", "wait_machine",
 )
 CONTEXT_FEATURE_NAMES = (
-    "time", "current_object_index", *(f"object_type_{name}" for name in OBJECT_TYPES),
+    "time", "current_object_index", "object_type_order_job", "object_type_main_robot",
+    "object_type_corridor_arm_robot", "object_type_machine",
     "candidate_count", "entity_count", "waiting_fraction", "pending_action_count",
     "reserved_job_count", "released_job_fraction", "completed_job_fraction",
     "defect_job_fraction", "scrap_job_fraction", "downgraded_job_fraction",
@@ -27,7 +28,8 @@ CONTEXT_FEATURE_NAMES = (
     "defect_severity", "recovery_in_progress",
 )
 ENTITY_FEATURE_NAMES = (
-    *(f"object_type_{name}" for name in OBJECT_TYPES),
+    "object_type_order_job", "object_type_main_robot",
+    "object_type_corridor_arm_robot", "object_type_machine",
     "object_index", "job_index", "processing_product_index", "target_product_index",
     "operation_index", "machine_index", "mounted_tool_index", "is_current_object",
     "is_waiting_for_action", "action_already_selected", "job_reserved_by_pick",
@@ -41,7 +43,12 @@ ENTITY_FEATURE_NAMES = (
     "remaining_tool_life", "consumed_life_units", "store_job_count", "store_available_capacity",
 )
 CANDIDATE_FEATURE_NAMES = (
-    *(f"action_type_{name}" for name in ACTION_TYPES),
+    "action_type_release_job", "action_type_wait_job", "action_type_complete_job",
+    "action_type_job_rework_on_alternative_machine", "action_type_job_rework_on_defect_machine",
+    "action_type_job_scrap", "action_type_downgrade_product", "action_type_pick_main_robot",
+    "action_type_place_main_robot", "action_type_wait_main_robot", "action_type_pick_corridor_arm_robot",
+    "action_type_place_corridor_arm_robot", "action_type_wait_corridor_arm_robot",
+    "action_type_pick_machine_job", "action_type_process_machine_job", "action_type_wait_machine",
     "job_index", "operation_index", "machine_index", "product_index", "tool_index",
     "target_store_index", "processing_product_index", "target_product_index",
     "deadline_remaining", "queue_priority", "defect_severity", "job_released",
@@ -115,13 +122,13 @@ class RLObservationEncoder:
     def _catalog_values(self, snapshot: dict, stores: dict) -> dict[str, set[str]]:
         model = snapshot["configuration_model"]
         states = snapshot["simulation_object_states_by_id"]
+        job_ids = set()
+        for key, state in states.items():
+            if state["object_type"] == "order_job":
+                job_ids.add(str(state.get("job_id", key)))
         return {
             "object": set(states),
-            "job": {
-                str(state.get("job_id", key))
-                for key, state in states.items()
-                if state["object_type"] == "order_job"
-            },
+            "job": job_ids,
             "operation": set(model.get("operations_by_id", {})),
             "machine": set(model.get("machines_by_id", {})),
             "product": set(model.get("product_types_by_id", {})),
@@ -134,10 +141,10 @@ class RLObservationEncoder:
         if self._catalogs is None:
             self._catalogs = {}
             for kind, names in values.items():
-                self._catalogs[kind] = {
-                    name: (index + 1) / (len(names) + 1)
-                    for index, name in enumerate(sorted(names))
-                }
+                catalog = {}
+                for index, name in enumerate(sorted(names)):
+                    catalog[name] = (index + 1) / (len(names) + 1)
+                self._catalogs[kind] = catalog
         else:
             for kind, names in values.items():
                 if names != set(self._catalogs[kind]):
@@ -162,12 +169,19 @@ class RLObservationEncoder:
     def _job_for_state(state: dict, jobs: dict) -> dict:
         if state["object_type"] == "order_job":
             return state
-        summary = state.get("current_job_summary") or {}
-        return {**summary, **jobs.get(state.get("current_job_id"), {})}
+        summary = state.get("current_job_summary")
+        if not summary:
+            summary = {}
+        job = dict(summary)
+        job.update(jobs.get(state.get("current_job_id"), {}))
+        return job
 
     @staticmethod
     def _row(names: tuple[str, ...], values: dict) -> np.ndarray:
-        return np.asarray([values.get(name, 0.0) for name in names], dtype=np.float32)
+        row = []
+        for name in names:
+            row.append(values.get(name, 0.0))
+        return np.asarray(row, dtype=np.float32)
 
     def encode(self, request: DecisionRequest) -> dict[str, np.ndarray]:
         return self._encode(request, allow_empty_candidates=False)
@@ -189,57 +203,83 @@ class RLObservationEncoder:
         if len(request.candidates) > self.max_actions:
             raise ValueError(f"RL candidate count {len(request.candidates)} exceeds max_actions={self.max_actions}")
         current_id = request.observation.current_object_id
-        current = states[current_id] if current_id is not None else {"object_type": None}
+        current = {"object_type": None}
+        if current_id is not None:
+            current = states[current_id]
         model = snapshot["configuration_model"]
-        stores = {
-            node["store_id"]: node
-            for node in _walk(states)
-            if "store_id" in node and "count" in node
-        }
+        stores = {}
+        for node in _walk(states):
+            if "store_id" in node and "count" in node:
+                stores[node["store_id"]] = node
         self._initialize_or_validate_catalogs(snapshot, stores)
-        jobs = {
-            str(state.get("job_id", key)): state
-            for key, state in states.items()
-            if state["object_type"] == "order_job"
-        }
-        machines = {
-            state["machine_name"]: state
-            for state in states.values()
-            if state["object_type"] == "machine"
-        }
-        reserved = {
-            str(action.payload["selected_job_id"])
-            for action in request.selected_actions
-            if action.action_type.startswith("pick_")
-        }
-        assigned = {action.target_id for action in request.selected_actions}
+        jobs = {}
+        for key, state in states.items():
+            if state["object_type"] == "order_job":
+                jobs[str(state.get("job_id", key))] = state
+        machines = {}
+        for state in states.values():
+            if state["object_type"] == "machine":
+                machines[state["machine_name"]] = state
+        reserved = set()
+        for action in request.selected_actions:
+            if action.action_type.startswith("pick_"):
+                reserved.add(str(action.payload["selected_job_id"]))
+        assigned = set()
+        for action in request.selected_actions:
+            assigned.add(action.target_id)
         time = float(snapshot["time"])
         result = self.empty_observation()
         current_job = self._job_for_state(current, jobs)
         context = {
             "time": _bounded(time),
             "current_object_index": self._id("object", current_id),
-            **{f"object_type_{kind}": float(current["object_type"] == kind) for kind in OBJECT_TYPES},
+        }
+        for kind in OBJECT_TYPES:
+            context[f"object_type_{kind}"] = float(current["object_type"] == kind)
+        waiting_count = 0
+        for state in states.values():
+            if state.get("is_waiting_for_action"):
+                waiting_count += 1
+        deadline_remaining = 0.0
+        if current_job:
+            deadline_remaining = _bounded(float(current_job["latest_end_time"]) - time)
+        context.update({
             "candidate_count": _bounded(len(request.candidates)),
             "entity_count": _bounded(len(states)),
-            "waiting_fraction": sum(bool(state.get("is_waiting_for_action")) for state in states.values()) / max(1, len(states)),
+            "waiting_fraction": waiting_count / max(1, len(states)),
             "pending_action_count": _bounded(len(request.selected_actions)),
             "reserved_job_count": _bounded(len(reserved)),
             "current_job_index": self._id("job", current_job.get("job_id")),
             "x": _bounded(current.get("x")),
             "y": _bounded(current.get("y")),
             "z": _bounded(current.get("z")),
-            "deadline_remaining": _bounded(float(current_job["latest_end_time"]) - time) if current_job else 0.0,
+            "deadline_remaining": deadline_remaining,
             "queue_priority": _bounded(current_job.get("queue_priority")),
             "defect_severity": _bounded(current_job.get("defect_severity")),
             "recovery_in_progress": float(bool(current_job.get("recovery_in_progress"))),
-        }
+        })
         job_count = max(1, len(jobs))
-        context["released_job_fraction"] = sum(bool(job.get("released")) for job in jobs.values()) / job_count
-        context["completed_job_fraction"] = sum(job.get("completed_time") is not None for job in jobs.values()) / job_count
-        context["defect_job_fraction"] = sum(job.get("general_state") == "defect" for job in jobs.values()) / job_count
-        context["scrap_job_fraction"] = sum(job.get("general_state") == "scrap" for job in jobs.values()) / job_count
-        context["downgraded_job_fraction"] = sum(bool(job.get("downgraded")) for job in jobs.values()) / job_count
+        released_count = 0
+        completed_count = 0
+        defect_count = 0
+        scrap_count = 0
+        downgraded_count = 0
+        for job in jobs.values():
+            if job.get("released"):
+                released_count += 1
+            if job.get("completed_time") is not None:
+                completed_count += 1
+            if job.get("general_state") == "defect":
+                defect_count += 1
+            if job.get("general_state") == "scrap":
+                scrap_count += 1
+            if job.get("downgraded"):
+                downgraded_count += 1
+        context["released_job_fraction"] = released_count / job_count
+        context["completed_job_fraction"] = completed_count / job_count
+        context["defect_job_fraction"] = defect_count / job_count
+        context["scrap_job_fraction"] = scrap_count / job_count
+        context["downgraded_job_fraction"] = downgraded_count / job_count
         result["context"] = self._row(CONTEXT_FEATURE_NAMES, context)
 
         # Entitätszeilen sind reproduzierbar sortiert; die Aktionsreihenfolge bleibt unverändert.
@@ -249,15 +289,33 @@ class RLObservationEncoder:
                 raise ValueError(f"Unknown RL object type {state['object_type']!r}")
             job = self._job_for_state(state, jobs)
             processing = job.get("processing_state")
-            operation_id = job.get("selected_operation_id") or state.get("next_operation_id")
-            machine_id = state.get("machine_name") or job.get("selected_machine_id") or state.get("next_machine_id")
-            owned_stores = {
-                node["store_id"]: node
-                for node in _walk(state)
-                if "store_id" in node and "count" in node
-            }
-            values = {
-                **{f"object_type_{kind}": float(state["object_type"] == kind) for kind in OBJECT_TYPES},
+            operation_id = job.get("selected_operation_id")
+            if not operation_id:
+                operation_id = state.get("next_operation_id")
+            machine_id = state.get("machine_name")
+            if not machine_id:
+                machine_id = job.get("selected_machine_id")
+                if not machine_id:
+                    machine_id = state.get("next_machine_id")
+            owned_stores = {}
+            for node in _walk(state):
+                if "store_id" in node and "count" in node:
+                    owned_stores[node["store_id"]] = node
+            store_job_counts = []
+            for store in owned_stores.values():
+                store_job_counts.append(float(store["count"]))
+            store_capacities = []
+            for store in owned_stores.values():
+                store_capacities.append(float(store["available_capacity"]))
+            deadline_remaining = 0.0
+            release_remaining = 0.0
+            if job:
+                deadline_remaining = _bounded(float(job["latest_end_time"]) - time)
+                release_remaining = _bounded(float(job["earliest_start_time"]) - time)
+            values = {}
+            for kind in OBJECT_TYPES:
+                values[f"object_type_{kind}"] = float(state["object_type"] == kind)
+            values.update({
                 "object_index": self._id("object", object_id),
                 "job_index": self._id("job", job.get("job_id")),
                 "processing_product_index": self._product_id(processing),
@@ -270,14 +328,14 @@ class RLObservationEncoder:
                 "action_already_selected": float(object_id in assigned),
                 "job_reserved_by_pick": float(str(job.get("job_id")) in reserved),
                 "completed": float(bool(job) and job.get("completed_time") is not None),
-                "deadline_remaining": _bounded(float(job["latest_end_time"]) - time) if job else 0.0,
-                "release_remaining": _bounded(float(job["earliest_start_time"]) - time) if job else 0.0,
+                "deadline_remaining": deadline_remaining,
+                "release_remaining": release_remaining,
                 "processing_unconfigured": float(processing == "unconfigured"),
                 "processing_defect": float(processing == "defect"),
-                "store_job_count": _bounded(sum(float(store["count"]) for store in owned_stores.values())),
-                "store_available_capacity": _bounded(sum(float(store["available_capacity"]) for store in owned_stores.values())),
+                "store_job_count": _bounded(sum(store_job_counts)),
+                "store_available_capacity": _bounded(sum(store_capacities)),
                 "remaining_tool_life": _bounded(state.get("remaining_life_units_before_operation")),
-            }
+            })
             for name in ("released", "downgraded", "recovery_in_progress"):
                 values[name] = float(bool(job.get(name)))
             for name in ("is_moving", "is_idle", "has_enough_tool_life", "needs_tool_change"):
@@ -293,7 +351,9 @@ class RLObservationEncoder:
             values["due_on_time"] = float(job.get("due_state") == "on-time")
             values["due_late"] = float(job.get("due_state") == "late")
             for prefix in ("input", "output"):
-                store = state.get(f"{prefix}_storage") or {}
+                store = state.get(f"{prefix}_storage")
+                if not store:
+                    store = {}
                 values[f"{prefix}_count"] = _bounded(store.get("count"))
                 values[f"{prefix}_available_capacity"] = _bounded(store.get("available_capacity"))
             result["entities"][index] = self._row(ENTITY_FEATURE_NAMES, values)
@@ -314,28 +374,35 @@ class RLObservationEncoder:
             raise ValueError(f"Unknown RL action type {action_type!r}")
         payload = action["payload"]
         job = jobs.get(payload.get("selected_job_id"), current_job)
-        operation_id = (
-            payload.get("selected_operation_id")
-            or payload.get("operation_id")
-            or job.get("selected_operation_id")
-            or current.get("next_operation_id")
-        )
-        machine_id = (
-            payload.get("selected_machine_id")
-            or payload.get("planned_machine_id")
-            or job.get("selected_machine_id")
-            or current.get("machine_name")
-            or current.get("next_machine_id")
-        )
+        operation_id = payload.get("selected_operation_id")
+        if not operation_id:
+            operation_id = payload.get("operation_id")
+            if not operation_id:
+                operation_id = job.get("selected_operation_id")
+                if not operation_id:
+                    operation_id = current.get("next_operation_id")
+        machine_id = payload.get("selected_machine_id")
+        if not machine_id:
+            machine_id = payload.get("planned_machine_id")
+            if not machine_id:
+                machine_id = job.get("selected_machine_id")
+                if not machine_id:
+                    machine_id = current.get("machine_name")
+                    if not machine_id:
+                        machine_id = current.get("next_machine_id")
         if machine_id is None and payload.get("sim_machine_id") is not None:
             machine_id = states[payload["sim_machine_id"]]["machine_name"]
         operation = model.get("operations_by_id", {}).get(operation_id, {})
         machine = machines.get(machine_id, {})
         # Die aufgelöste Laufzeitwahrscheinlichkeit hat Vorrang vor der Konfiguration.
         machine_config = model.get("machines_by_id", {}).get(machine_id, {})
-        tool_id = payload.get("tool_type_id") or operation.get("tool_type_id")
+        tool_id = payload.get("tool_type_id")
+        if not tool_id:
+            tool_id = operation.get("tool_type_id")
         tool = model.get("tools_by_id", {}).get(tool_id, {})
-        product_id = payload.get("downgrade_product_type_id") or operation.get("consumes_product_type_id")
+        product_id = payload.get("downgrade_product_type_id")
+        if not product_id:
+            product_id = operation.get("consumes_product_type_id")
         if product_id is None:
             processing = payload.get("processing_state", job.get("processing_state"))
             if processing not in (None, "unconfigured", "defect"):
@@ -348,12 +415,17 @@ class RLObservationEncoder:
         position = current.get("store_positions_by_id", {}).get(store_id)
         distance = 0.0
         if position:
-            distance = math.sqrt(sum(
-                (float(position[axis]) - float(current[axis])) ** 2
-                for axis in ("x", "y", "z")
-            ))
-        values = {
-            **{f"action_type_{kind}": float(action_type == kind) for kind in ACTION_TYPES},
+            squared_distances = []
+            for axis in ("x", "y", "z"):
+                squared_distances.append((float(position[axis]) - float(current[axis])) ** 2)
+            distance = math.sqrt(sum(squared_distances))
+        deadline_remaining = 0.0
+        if job:
+            deadline_remaining = _bounded(float(job["latest_end_time"]) - time)
+        values = {}
+        for kind in ACTION_TYPES:
+            values[f"action_type_{kind}"] = float(action_type == kind)
+        values.update({
             "job_index": self._id("job", job.get("job_id")),
             "operation_index": self._id("operation", operation_id),
             "machine_index": self._id("machine", machine_id),
@@ -362,14 +434,20 @@ class RLObservationEncoder:
             "target_store_index": self._id("store", store_id),
             "processing_product_index": self._product_id(job.get("processing_state")),
             "target_product_index": self._product_id(job.get("target_product_type_id", job.get("target_product_type_name"))),
-            "deadline_remaining": _bounded(float(job["latest_end_time"]) - time) if job else 0.0,
+            "deadline_remaining": deadline_remaining,
             "queue_priority": _bounded(payload.get("queue_priority", job.get("queue_priority"))),
             "defect_severity": _bounded(job.get("defect_severity")),
             "job_released": float(bool(job.get("released"))),
             "job_downgraded": float(bool(job.get("downgraded"))),
             "job_recovery_in_progress": float(bool(job.get("recovery_in_progress"))),
             "job_completed": float(bool(job) and job.get("completed_time") is not None),
-            **{f"general_{general}": float(job.get("general_state") == general) for general in ("intact", "defect", "scrap")},
+        })
+        for general in ("intact", "defect", "scrap"):
+            values[f"general_{general}"] = float(job.get("general_state") == general)
+        release_time_remaining = 0.0
+        if payload.get("release_time") is not None:
+            release_time_remaining = _bounded(float(payload["release_time"]) - time)
+        values.update({
             "product_weight": _bounded(product.get("weight")),
             "product_volume": _bounded(float(product.get("length", 0)) * float(product.get("width", 0)) * float(product.get("depth", 0))),
             "operation_duration": _bounded(operation.get("duration")),
@@ -388,11 +466,13 @@ class RLObservationEncoder:
             "storage_in_time": _bounded(payload.get("storage_in_time")),
             "storage_out_time": _bounded(payload.get("storage_out_time")),
             "target_distance": _bounded(distance),
-            "release_time_remaining": _bounded(float(payload["release_time"]) - time) if payload.get("release_time") is not None else 0.0,
+            "release_time_remaining": release_time_remaining,
             "job_reserved_by_pick": float(str(job.get("job_id")) in reserved),
-        }
+        })
         for prefix in ("input", "output"):
-            machine_store = machine.get(f"{prefix}_storage") or {}
+            machine_store = machine.get(f"{prefix}_storage")
+            if not machine_store:
+                machine_store = {}
             values[f"machine_{prefix}_count"] = _bounded(machine_store.get("count"))
             values[f"machine_{prefix}_available_capacity"] = _bounded(machine_store.get("available_capacity"))
         return values

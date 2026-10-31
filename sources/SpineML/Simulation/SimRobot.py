@@ -54,11 +54,9 @@ class SimRobot(sim.Component):
         if selected_job not in current_items:
             return None
 
-        # Prüft die angegebene Bedingung.
+        # Wählt nur genau dieses Jobobjekt.
         def is_selected_job(item):
-            if item is selected_job:
-                return True
-            return False
+            return item is selected_job
 
         job = yield self.from_store(
             target_store,

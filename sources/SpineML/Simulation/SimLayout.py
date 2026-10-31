@@ -18,24 +18,26 @@ class SimLayout(sim.Component):
 
         # Erfasst die Auftragsziele und alle vorgeschalteten Roh- und Zwischenprodukte.
         products = set()
-        pending_products = [order.product_type for order in scenario.orders]
+        pending_products = []
+        for order in scenario.orders:
+            pending_products.append(order.product_type)
         while pending_products:
             product = pending_products.pop()
             if product in products:
                 continue
             products.add(product)
-            pending_products.extend(
-                operation.consumes_product_type
-                for operation in product.producing_operations
-            )
+            for operation in product.producing_operations:
+                pending_products.append(operation.consumes_product_type)
 
-        self.max_product_weight = max(
-            float(product.weight) for product in products
-        )
-        self.max_product_volume = max(
-            float(product.length * product.width * product.depth)
-            for product in products
-        )
+        product_weights = []
+        for product in products:
+            product_weights.append(float(product.weight))
+        self.max_product_weight = max(product_weights)
+
+        product_volumes = []
+        for product in products:
+            product_volumes.append(float(product.length * product.width * product.depth))
+        self.max_product_volume = max(product_volumes)
 
         sim.Animate3dGrid(x_range=range(-20, 20), y_range=range(-20, 20))
 
@@ -198,7 +200,10 @@ class SimLayout(sim.Component):
                     plt.subplot(rows, columns, row * columns + col)
                     sim_machine.plot(legend)
                     col = col + 1
-            col = 1 if left == 0 else left + 2
+            if left == 0:
+                col = 1
+            else:
+                col = left + 2
             if len(sim_corridor.sim_arm_right.sim_machines) > 0:
                 plt.subplot(rows, columns, row * columns + col)
                 sim_corridor.sim_arm_right.sim_arm_robot.plot(legend)

@@ -107,8 +107,9 @@ class SimulationBridge(sim.Component):
             env=self.env,
         )
 
-        for store in stores or []:
-            self.register_store(store)
+        if stores is not None:
+            for store in stores:
+                self.register_store(store)
 
     # Registriert einen Korridor und seine Stores nur für die ID-Auflösung.
     def register_corridor(
@@ -127,8 +128,9 @@ class SimulationBridge(sim.Component):
         self.policy_object_id_to_simulation_object[
             policy_object_id
         ] = simulation_corridor
-        for store in stores or []:
-            self.register_store(store)
+        if stores is not None:
+            for store in stores:
+                self.register_store(store)
 
     # Ordnet den Namen eines Salabim-Stores seiner sichtbaren Store-ID zu.
     def register_store(self, store: sim.Store):
@@ -155,10 +157,9 @@ class SimulationBridge(sim.Component):
 
         if policy_object_id_is_registered:
             return False
-        elif simulation_object_is_registered:
+        if simulation_object_is_registered:
             return False
-        else:
-            return True
+        return True
 
 
     # Markiert ein Objekt als auf eine Aktion wartend und erzeugt einen Policy-Trigger.
@@ -186,13 +187,21 @@ class SimulationBridge(sim.Component):
     # Erstellt das ID-basierte Konfigurationsmodell der Fabrik für die Policy.
     def build_policy_configuration_model(self) -> dict[str, object]:
         """Erstellt eine ID-basierte Beschreibung der konfigurierten Fabrik."""
-        self.product_types_by_id = {obj.name: obj for obj in PRODUCT_TYPES}
-        self.operations_by_id = {obj.name: obj for obj in OPERATION_TYPES}
-        self.machines_by_id = {obj.name: obj for obj in MACHINES}
-        #"tool_1": <ToolType-Objekt>,
-        #"tool_1": sichtbare ID
-        #<ToolType-Objekt>: echtes internes Python-Objekt
-        self.tool_types_by_id = {obj.name: obj for obj in TOOL_TYPES}
+        self.product_types_by_id = {}
+        for product_type in PRODUCT_TYPES:
+            self.product_types_by_id[product_type.name] = product_type
+
+        self.operations_by_id = {}
+        for operation in OPERATION_TYPES:
+            self.operations_by_id[operation.name] = operation
+
+        self.machines_by_id = {}
+        for machine in MACHINES:
+            self.machines_by_id[machine.name] = machine
+
+        self.tool_types_by_id = {}
+        for tool_type in TOOL_TYPES:
+            self.tool_types_by_id[tool_type.name] = tool_type
         return ConfigurationObjectObserver.build_policy_configuration_model(
             PRODUCT_TYPES,
             OPERATION_TYPES,
@@ -236,16 +245,13 @@ class SimulationBridge(sim.Component):
     ) -> PolicyObservation:
         snapshot = self.build_policy_simulation_snapshot()
         if policy_triggers is not None:
-            # Sammelt die IDs aller Trigger, die diese Observation ausgelöst haben.
-            # policy_trigger_17 
-            snapshot["policy_trigger_event_ids"] = [
-                trigger.event_id for trigger in policy_triggers
-            ]
-            # Sammelt die IDs der Simulationsobjekte, die diese Trigger gesendet haben.
-            # Main robot
-            snapshot["policy_trigger_sender_ids"] = [
-                trigger.sender_id for trigger in policy_triggers
-            ]
+            # Sammelt die IDs der auslösenden Trigger und ihrer Absender.
+            snapshot["policy_trigger_event_ids"] = []
+            for trigger in policy_triggers:
+                snapshot["policy_trigger_event_ids"].append(trigger.event_id)
+            snapshot["policy_trigger_sender_ids"] = []
+            for trigger in policy_triggers:
+                snapshot["policy_trigger_sender_ids"].append(trigger.sender_id)
         return PolicyObservation(
             simulation_configuration_snapshot=snapshot,
         )

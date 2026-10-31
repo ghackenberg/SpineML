@@ -50,12 +50,10 @@ class SimCorridorArm(sim.Component):
         if len(machines) != 0:
             self.sim_arm_robot = SimRobotCorridorArm(corridor, machines, direction, store_in, store_out_arm, store_out_main, self.sim_machines, bridge, dx, y, env=self.env)
 
-        if len(machines) != 0:
             x_len = len(machines) * 2 + 0.26
             x = (0.86 + x_len / 2) * dx
             sim.Animate3dBox(x_len=x_len, y_len=0.25, z_len=0.25, color="green", x=x, y=y, z=2.5)
 
-        if len(machines) != 0:
             sim.Animate3dBox(x_len=0.25, y_len=0.25, z_len=1.5, color="green", x=dx, y=y, z=1.625)
     
     # Führt die Funktion mit den übergebenen Werten aus.

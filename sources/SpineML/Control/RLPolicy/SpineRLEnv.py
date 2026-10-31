@@ -109,7 +109,10 @@ class SpineRLEnv(gym.Env):
         self._stop_episode("reset")
         if not _ACTIVE_SIMULATION.acquire(blocking=False):
             raise RuntimeError("Nur eine aktive Salabim-RL-Umgebung pro Prozess; für Parallelität getrennte Prozesse nutzen.")
-        episode_seed = int(seed) if seed is not None else int(self.np_random.integers(0, 2**31 - 1))
+        if seed is None:
+            episode_seed = int(self.np_random.integers(0, 2**31 - 1))
+        else:
+            episode_seed = int(seed)
         episode = _Episode(episode_seed)
         self._episode = episode
         self._steps = 0
@@ -223,14 +226,20 @@ class SpineRLEnv(gym.Env):
             raise
 
     def _observation_copy(self):
-        return {name: value.copy() for name, value in self._observation.items()}
+        observation_copy = {}
+        for name, value in self._observation.items():
+            observation_copy[name] = value.copy()
+        return observation_copy
 
     def _simulate(self, episode):
         try:
             if self._model is None:
                 self._model = load_layout_and_scenario(self.model_file)
             layout, scenario = self._model
-            if sum(order.quantity for order in scenario.orders) < 1:
+            quantities = []
+            for order in scenario.orders:
+                quantities.append(order.quantity)
+            if sum(quantities) < 1:
                 raise ValueError("Eine RL-Episode benötigt mindestens einen Job.")
 
             def check_cancelled():
@@ -263,8 +272,15 @@ class SpineRLEnv(gym.Env):
                 if str(abort) != "max_decisions":
                     return
                 truncation_reason = str(abort)
-            jobs = [job for order in sim_scenario.sim_orders for job in order.sim_jobs]
-            terminated = all(job.process_finished for job in jobs)
+            jobs = []
+            for order in sim_scenario.sim_orders:
+                for job in order.sim_jobs:
+                    jobs.append(job)
+            terminated = True
+            for job in jobs:
+                if not job.process_finished:
+                    terminated = False
+                    break
             truncated = not terminated
             if truncated and truncation_reason is None:
                 truncation_reason = "max_simulation_time"
@@ -272,15 +288,20 @@ class SpineRLEnv(gym.Env):
                 sim_layout, sim_scenario, env.now(),
             )
             reward, reward_info = self.reward_model.evaluate(metrics, terminated=terminated, truncated=truncated)
+            snapshot = None
+            if truncated:
+                snapshot = bridge.build_policy_simulation_snapshot()
+            info = dict(reward_info)
+            info.update({
+                "metrics": asdict(metrics), "simulation_time": float(env.now()),
+                "truncation_reason": truncation_reason,
+                "pending_batch_discarded": truncation_reason == "max_decisions",
+                "candidates": [], "current_object_id": None,
+            })
             episode.messages.put(("done", {
                 "reward": reward, "terminated": terminated, "truncated": truncated,
-                "snapshot": bridge.build_policy_simulation_snapshot() if truncated else None,
-                "info": {
-                    **reward_info, "metrics": asdict(metrics), "simulation_time": float(env.now()),
-                    "truncation_reason": truncation_reason,
-                    "pending_batch_discarded": truncation_reason == "max_decisions",
-                    "candidates": [], "current_object_id": None,
-                },
+                "snapshot": snapshot,
+                "info": info,
             }))
         except BaseException as error:
             episode.messages.put(("error", f"{type(error).__name__}: {error}"))

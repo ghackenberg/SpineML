@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import random
 
 from .HeuristicActionSelector import HeuristicActionSelector
@@ -13,11 +13,7 @@ from .LocalHeuristicActionEvaluator import LocalHeuristicActionEvaluator
 class HeuristicPolicyFactory:
     """Erstellt je Seed eine frische heuristische Policy mit diesem Gewichtssatz."""
 
-    weights: HeuristicWeights = field(default_factory=HeuristicWeights)
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.weights, HeuristicWeights):
-            raise TypeError("weights muss ein HeuristicWeights-Satz sein.")
+    weights: HeuristicWeights = HeuristicWeights()
 
     def __call__(self, seed: int) -> HeuristicPolicy:
         return HeuristicPolicy(

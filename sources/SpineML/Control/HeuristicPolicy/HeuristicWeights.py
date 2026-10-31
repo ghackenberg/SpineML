@@ -13,7 +13,7 @@ DEFAULT_DEADLINE_DOWNGRADE_SCORE_MIN = DEFAULT_DEADLINE_REWORK_SCORE_MAX
 
 @dataclass(frozen=True)
 class HeuristicWeights:
-    """Weights used by the local heuristic action evaluation."""
+    # Gewichte für die lokale Bewertung der Aktionen.
 
     complete_job_weight: float = 1.0
 

@@ -93,7 +93,9 @@ def main() -> None:
     from SpineML.SimulationInterface.InterfaceTypes import is_wait_action
 
     started_at = perf_counter()
-    model_file = args.model if args.model is not None else optimization_config.EXAMPLE_FILE
+    model_file = optimization_config.EXAMPLE_FILE
+    if args.model is not None:
+        model_file = args.model
     model_path = optimization_config._resolve_model_path(model_file)
     model_sha256 = hashlib.sha256(model_path.read_bytes()).hexdigest()
     baseline_seeds = tuple(optimization_config.SEEDS)
@@ -141,30 +143,37 @@ def main() -> None:
     )
     try:
         observation, info = environment.reset(seed=args.seed)
-        observation_shapes = {
-            name: list(value.shape) for name, value in observation.items()
-        }
+        observation_shapes = {}
+        for name, value in observation.items():
+            observation_shapes[name] = list(value.shape)
         print(f"Numerische Beobachtungsformen: {observation_shapes}", flush=True)
         while not terminated and not truncated:
             candidates = info["candidates"]
-            valid_indices = [
-                index for index, allowed in enumerate(environment.action_masks())
-                if bool(allowed)
-            ]
+            valid_indices = []
+            for index, allowed in enumerate(environment.action_masks()):
+                if bool(allowed):
+                    valid_indices.append(index)
             if not valid_indices:
                 raise RuntimeError("Die laufende RL-Episode bietet keine gültige Aktion an.")
 
             if args.policy == "random":
-                productive_indices = [
-                    index for index in valid_indices
-                    if not is_wait_action(candidates[index]["action_type"])
-                ]
-                selected_index = selection_rng.choice(productive_indices or valid_indices)
+                productive_indices = []
+                for index in valid_indices:
+                    if not is_wait_action(candidates[index]["action_type"]):
+                        productive_indices.append(index)
+                choose_index = selection_rng.choice
+                selection_indices = productive_indices
+                if not selection_indices:
+                    selection_indices = valid_indices
+                selected_index = choose_index(selection_indices)
             else:
                 # Nur Debug-Vergleich: Der Selector nutzt die bestehende Heuristik,
                 # nicht die numerische Beobachtung eines noch untrainierten Netzes.
+                valid_candidates = []
+                for index in valid_indices:
+                    valid_candidates.append(candidates[index])
                 decision = selector.select_action(
-                    [candidates[index] for index in valid_indices],
+                    valid_candidates,
                     evaluator=evaluator,
                     observation=info["policy_observation"],
                     target_id=info["current_object_id"],
@@ -172,14 +181,13 @@ def main() -> None:
                 if len(decision.actions) != 1:
                     raise RuntimeError("Die Debug-Heuristik muss genau eine Aktion auswählen.")
                 selected_action = decision.actions[0]
-                selected_index = next(
-                    (
-                        index for index in valid_indices
-                        if candidates[index]["action_type"] == selected_action.action_type
-                        and candidates[index]["payload"] == selected_action.payload
-                    ),
-                    None,
-                )
+                selected_index = None
+                for index in valid_indices:
+                    candidate = candidates[index]
+                    if (candidate["action_type"] == selected_action.action_type
+                            and candidate["payload"] == selected_action.payload):
+                        selected_index = index
+                        break
                 if selected_index is None:
                     raise RuntimeError("Die Debug-Heuristik hat keinen angebotenen Kandidaten gewählt.")
 
@@ -198,6 +206,9 @@ def main() -> None:
         environment.close()
 
     episode_seconds = perf_counter() - episode_started_at
+    baseline_metric_reports = []
+    for seed, metrics in zip(baseline_seeds, baseline_metrics):
+        baseline_metric_reports.append({"seed": seed, "metrics": asdict(metrics)})
     report = {
         "purpose": "RL environment smoke/debug run; no trained neural network",
         "model_file": model_path.name,
@@ -211,10 +222,7 @@ def main() -> None:
             "seeds": list(baseline_seeds),
             "reference_values": references,
             "elapsed_seconds": baseline_seconds,
-            "metrics_by_seed": [
-                {"seed": seed, "metrics": asdict(metrics)}
-                for seed, metrics in zip(baseline_seeds, baseline_metrics)
-            ],
+            "metrics_by_seed": baseline_metric_reports,
         },
         "episode": {
             "decisions": decisions,

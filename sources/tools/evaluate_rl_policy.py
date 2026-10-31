@@ -42,9 +42,14 @@ def main() -> None:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         parser.error(f"Trainingskonfiguration nicht lesbar: {error}")
-    seeds = args.seeds or manifest.get("evaluation_seeds", [])
-    if not isinstance(seeds, list) or not seeds or any(isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**64 for seed in seeds):
+    seeds = args.seeds
+    if not seeds:
+        seeds = manifest.get("evaluation_seeds", [])
+    if not isinstance(seeds, list) or not seeds:
         parser.error("Test-Seeds müssen ganze Zahlen zwischen 0 und 2**64-1 sein.")
+    for seed in seeds:
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**64:
+            parser.error("Test-Seeds müssen ganze Zahlen zwischen 0 und 2**64-1 sein.")
     if len(set(seeds)) != len(seeds):
         parser.error("Mindestens ein Test-Seed ist erforderlich; keine Duplikate verwenden.")
     training_seeds = set(manifest["train_seeds"]) | set(manifest["baseline"]["seeds"])
@@ -89,7 +94,9 @@ def main() -> None:
                                 "weights": asdict(optimized_weights)}
         except (OSError, ValueError, TypeError, KeyError) as error:
             parser.error(f"Optimierter Gewichtssatz nicht lesbar: {error}")
-    output = args.output.resolve() if args.output else directory / "evaluation.json"
+    output = directory / "evaluation.json"
+    if args.output:
+        output = args.output.resolve()
     if output == directory / "manifest.json" or output.suffix == ".zip":
         parser.error("Ein Auswertungsbericht darf weder Manifest noch Modell-Checkpoint ersetzen.")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -117,7 +124,8 @@ def main() -> None:
             torch.manual_seed(seed)
             run_started_at = perf_counter()
             observation, info = environment.reset(seed=seed)
-            terminated = truncated = False
+            terminated = False
+            truncated = False
             reward_total = 0.0
             while not terminated and not truncated:
                 action, _ = network.predict(observation, action_masks=environment.action_masks(), deterministic=not args.stochastic)
@@ -164,24 +172,52 @@ def main() -> None:
                     metrics = runner.last_metrics
                 completed = metrics.unfinished_jobs == 0
                 cost = evaluation.calculate_weighted_sum_of_metrics_relative_to_baseline(metrics)
+                limit_reason = None
+                if not completed:
+                    limit_reason = "max_simulation_time"
                 results.append({"policy": name, "seed": seed, "terminated": completed, "truncated": not completed,
-                                "limit_reason": None if completed else "max_simulation_time",
+                                "limit_reason": limit_reason,
                                 "global_cost": cost, "metrics": asdict(metrics), "elapsed_seconds": perf_counter() - run_started_at})
                 save_progress()
                 print(f"{name}, Seed {seed}: abgeschlossen={completed}, Kosten={cost:.5f}", flush=True)
 
     summary = []
     metric_names = ("makespan", "total_tardiness", "total_transport_time", "tool_change_time", "rework_rate", "scrap_rate", "downgrade_rate")
-    for name in dict.fromkeys(item["policy"] for item in results):
-        runs = [item for item in results if item["policy"] == name]
-        complete = [item for item in runs if item["terminated"]]
-        metrics = [GlobalSimulationMetrics(**item["metrics"]) for item in complete]
+    policy_names = []
+    for item in results:
+        if item["policy"] not in policy_names:
+            policy_names.append(item["policy"])
+    for name in policy_names:
+        runs = []
+        for item in results:
+            if item["policy"] == name:
+                runs.append(item)
+        complete = []
+        for item in runs:
+            if item["terminated"]:
+                complete.append(item)
+        metrics = []
+        for item in complete:
+            metrics.append(GlobalSimulationMetrics(**item["metrics"]))
+        mean_global_cost = None
+        mean_metrics = None
+        # Teilweise abgebrochene Testreihen dürfen keinen günstigen Mittelwert vortäuschen.
+        if len(complete) == len(runs):
+            costs = []
+            for item in complete:
+                costs.append(item["global_cost"])
+            mean_global_cost = mean(costs)
+            mean_metrics = {}
+            for key in metric_names:
+                values = []
+                for item in metrics:
+                    values.append(getattr(item, key))
+                mean_metrics[key] = mean(values)
         summary.append({
             "policy": name, "runs": len(runs), "completed_runs": len(complete),
             "truncated_runs": len(runs) - len(complete),
-            # Teilweise abgebrochene Testreihen dürfen keinen günstigen Mittelwert vortäuschen.
-            "mean_global_cost": mean(item["global_cost"] for item in complete) if len(complete) == len(runs) else None,
-            "mean_metrics": {key: mean(getattr(item, key) for item in metrics) for key in metric_names} if len(complete) == len(runs) else None,
+            "mean_global_cost": mean_global_cost,
+            "mean_metrics": mean_metrics,
         })
     report = {"status": "finished", "checkpoint": str(checkpoint), "model_sha256": context["model_sha256"],
               "test_seeds": seeds, "deterministic": not args.stochastic,
@@ -191,7 +227,9 @@ def main() -> None:
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print("\nVergleich (Mittelwerte nur, wenn sämtliche Test-Seeds abgeschlossen wurden):")
     for item in summary:
-        cost = f"{item['mean_global_cost']:.6f}" if item["mean_global_cost"] is not None else "nicht verfügbar"
+        cost = "nicht verfügbar"
+        if item["mean_global_cost"] is not None:
+            cost = f"{item['mean_global_cost']:.6f}"
         print(f"{item['policy']}: {item['completed_runs']}/{item['runs']} abgeschlossen, mittlere Kosten={cost}")
     print(f"Bericht: {output}")
 

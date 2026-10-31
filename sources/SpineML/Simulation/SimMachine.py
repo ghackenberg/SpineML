@@ -2,7 +2,6 @@ import hashlib
 import random
 import salabim as sim
 import matplotlib.pyplot as plt
-import salabim as sim
 
 from ..Configuration import Machine, OperationType, ToolType
 from ..SimulationInterface import SimulationBridge
@@ -37,7 +36,10 @@ class SimMachine(sim.Component):
 
 
         self.bridge = bridge
-        machine_side = "left" if self.machine.left else "right"
+        if self.machine.left:
+            machine_side = "left"
+        else:
+            machine_side = "right"
         self.policy_id = f"SimMachine:{self.machine.name}:{machine_side}"
 
         self.state = sim.State("State", value='waiting', env=self.env)
@@ -183,11 +185,9 @@ class SimMachine(sim.Component):
         if selected_job not in current_items:
             return None
 
-        # Prüft die angegebene Bedingung.
+        # Wählt nur genau dieses Jobobjekt.
         def is_selected_job(item):
-            if item is selected_job:
-                return True
-            return False
+            return item is selected_job
 
         job = yield self.from_store(
             target_store,
@@ -352,9 +352,9 @@ class SimMachine(sim.Component):
         ).encode("utf-8")
         # Bildet einen SHA-256-Fingerabdruck und nutzt dessen erste 8 Bytes als Startwert.
         # Derselbe Schlüssel erzeugt dadurch dieselbe Zufallszahlenfolge.
-        quality_rng = random.Random(
-            int.from_bytes(hashlib.sha256(quality_key).digest()[:8], "big")
-        )
+        quality_hash = hashlib.sha256(quality_key).digest()
+        quality_seed = int.from_bytes(quality_hash[:8], "big")
+        quality_rng = random.Random(quality_seed)
         # Die erste Zufallszahl entscheidet anhand des Maschinenrisikos über einen Defekt.
         if quality_rng.random() < self.defect_probability:
             # Die zweite Zufallszahl bestimmt den Defektschweregrad.
@@ -380,9 +380,6 @@ class SimMachine(sim.Component):
         pass
     
     # Führt die Funktion mit den übergebenen Werten aus.
-    def plot(self, legend = False):
-        categories = ['Waiting', 'Mounting', 'Unmounting', 'Working', 'Returning']
-
     def plot(self, legend=False):
         categories = ["Waiting", "Mounting", "Unmounting", "Working", "Returning"]
 

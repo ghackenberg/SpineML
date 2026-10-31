@@ -47,9 +47,9 @@ class RLCandidatePolicy(Policy):
         self.decision_callback = decision_callback
         self.expose_forced_actions = expose_forced_actions
         self.cancellation_check = cancellation_check
-        self.action_generator = (
-            action_generator if action_generator is not None else SpineActionGenerator()
-        )
+        if action_generator is None:
+            action_generator = SpineActionGenerator()
+        self.action_generator = action_generator
 
     def make_decision(self, observation: PolicyObservation) -> PolicyDecision:
         # Auch lange Folgen erzwungener Aktionen müssen von außen abbrechbar sein.

@@ -57,19 +57,14 @@ class SimRobotMain(SimRobot):
     # Führt die Funktion mit den übergebenen Werten aus.
     def simulation_corridor_index(self, sim_corridor) -> int:
         """Resolve a runtime corridor by object or configured corridor name."""
-        corridor_name = getattr(
-            getattr(sim_corridor, "corridor", None),
-            "name",
-            getattr(sim_corridor, "name", None),
-        )
+        corridor = getattr(sim_corridor, "corridor", None)
+        fallback_name = getattr(sim_corridor, "name", None)
+        corridor_name = getattr(corridor, "name", fallback_name)
         for index, configured_sim_corridor in enumerate(self.sim_corridors):
             if configured_sim_corridor is sim_corridor:
                 return index
-            configured_name = getattr(
-                getattr(configured_sim_corridor, "corridor", None),
-                "name",
-                None,
-            )
+            configured_corridor = getattr(configured_sim_corridor, "corridor", None)
+            configured_name = getattr(configured_corridor, "name", None)
             if corridor_name is not None and configured_name == corridor_name:
                 return index
         raise ValueError(

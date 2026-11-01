@@ -3049,7 +3049,7 @@ sequenceDiagram
     loop Bis zum Episodenende
         T->>T: Netz wählt einen<br/>gültigen Kandidatenindex
         T->>E: step(index)
-        E->>S: Index an Policy zurückgeben;<br/>Aktion vormerken
+        E->>S: Index an Policy zurückgeben<br/>Aktion vormerken
         opt Auswahl für alle Objekte vollständig
             S->>S: Bridge stellt Aktionen zu<br/>Komponenten führen sie aus
         end

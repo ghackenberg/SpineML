@@ -2898,6 +2898,50 @@ Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
 als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
 [Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
 
+**Überblick: Was machen Gymnasium, Salabim und das Netz?**
+
+- **Salabim** simuliert die Fabrik. Bridge, Policy und Generator verbinden
+  ihre Zustände mit der Aktionsauswahl; sie sind im Diagramm rechts zusammengefasst.
+- **`SpineRLEnv`** ist unsere RL-Umgebung. Sie implementiert die
+  Gymnasium-Schnittstelle mit `reset()` und `step()` und bereitet Zustandsdaten
+  sowie Belohnungen für das Lernverfahren auf. Gymnasium simuliert die Fabrik nicht.
+- **MaskablePPO und das Netz** wählen Aktionen und passen während des
+  Trainings die Netzparameter an. Die Regeln des Simulationskerns bleiben dabei gleich.
+
+```mermaid
+sequenceDiagram
+    participant T as Trainer und Netz<br/>MaskablePPO
+    participant E as Unsere RL-Umgebung<br/>SpineRLEnv (Gymnasium)
+    participant S as Fabrik und Aktionsanbindung<br/>Salabim, Bridge,<br/>Policy und Generator
+
+    T->>E: reset(seed)
+    E->>S: Neue Episode starten
+    S-->>E: Erster Zustand und angebotene Aktionen
+    E->>E: Daten in Zahlenfelder<br/>und Maske übersetzen
+    E-->>T: Erste Beobachtung
+
+    loop Bis zum Episodenende
+        T->>T: Netz wählt einen<br/>gültigen Kandidatenindex
+        T->>E: step(index)
+        E->>S: Index an Policy zurückgeben;<br/>Aktion vormerken
+        opt Auswahl für alle Objekte vollständig
+            S->>S: Bridge stellt Aktionen zu<br/>Komponenten führen sie aus
+        end
+        S-->>E: Nächste Auswahl<br/>oder Episodenende
+        E->>E: Beobachtung und<br/>Belohnung bestimmen
+        E-->>T: Beobachtung und Belohnung<br/>plus Abschlussstatus
+        T->>T: Zustand, Aktion und<br/>Belohnung speichern
+        opt Trainingsdatenblock vollständig
+            T->>T: PPO verändert die Netzparameter
+        end
+    end
+```
+
+Während die Episode weiterläuft, liefert `step()` die Belohnung `0`.
+Am Ende liefert es die Abschlussbelohnung oder bei einem Limit die Strafe `-1`.
+Ein PPO-Update hängt vom gesammelten Datenblock ab, nicht vom Episodenende.
+Für eine weitere Episode wird die Umgebung mit `reset()` neu gestartet.
+
 **Während einer Episode: Aktionen auswählen und ausführen**
 
 1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)

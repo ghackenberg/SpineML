@@ -2887,9 +2887,18 @@ Das Netz liefert die Auswahlwahrscheinlichkeiten; der heuristische
 Evaluator wird dabei nicht verwendet. Heuristik und `RandomPolicy` bleiben
 für den Vergleich verfügbar.
 
-Ein gestarteter Simulationslauf heißt beim RL **Episode**. Er endet, wenn
-alle Jobprozesse beendet sind oder ein Limit erreicht wird. Während
-des Trainings läuft die Zusammenarbeit so ab:
+Ein gestarteter Simulationslauf heißt beim RL **Episode**. Der reguläre
+Abschluss ist erreicht, wenn **alle Jobprozesse beendet sind**.
+
+Für RL-Versuche gibt es zusätzlich Sicherheitsgrenzen für die Anzahl der
+Entscheidungen (`max_decisions`) und die simulierte Zeit (`max_simulation_time`).
+Ein noch untrainiertes Netz könnte beispielsweise immer wieder Warten wählen.
+Die Grenzen verhindern, dass ein solcher Versuch unbegrenzt weiterläuft.
+Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
+als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
+[Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
+
+Während des Trainings läuft die Zusammenarbeit so ab:
 
 1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)
    startet die Simulation und hält sie an, sobald eine Auswahl erforderlich ist.

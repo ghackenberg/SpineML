@@ -2874,36 +2874,51 @@ nicht automatisch für die vollständige Optimierung.
 
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
-Die RL-Policy lernt durch Simulationsläufe. RL steht für
-Reinforcement Learning: Am Laufende erhält das Netz eine Belohnung.
-Anhand der gesammelten Entscheidungen wird es angepasst.
+**RL** steht für **Reinforcement Learning**. Die RL-Steuerung verwendet ein
+neuronales Netz, um aus den Aktionen des [ActionGenerators](#actiongenerator)
+eine auszuwählen. Das Netz soll durch viele Simulationsläufe lernen, welche
+Entscheidungen zu günstigeren Produktionsergebnissen führen.
 
-Die [heuristische Optimierung](#optimierungsvorgang) sucht einen lokalen
-Gewichtssatz für feste Regeln. Die RL-Policy wählt dagegen direkt einen
-Kandidaten des [ActionGenerator](#actiongenerator), ohne heuristischen
-Evaluator oder Aktionsscores. Heuristik und `RandomPolicy` bleiben
-eigenständig nutzbar.
+**Unterschied zur Heuristik:** Bei der [heuristischen Optimierung](#optimierungsvorgang)
+werden lokale `HeuristicWeights` für fest programmierte Bewertungsregeln gesucht.
+Bei RL werden stattdessen die **internen Parameter des neuronalen Netzes**
+trainiert: die Zahlenwerte, mit denen es seine Auswahl berechnet.
+Das Netz liefert die Auswahlwahrscheinlichkeiten; der heuristische
+Evaluator wird dabei nicht verwendet. Heuristik und `RandomPolicy` bleiben
+für den Vergleich verfügbar.
 
-Ein Simulationslauf heißt **Episode**. Das Training läuft so:
+Ein gestarteter Simulationslauf heißt beim RL **Episode**. Er endet, wenn
+alle Jobprozesse beendet sind oder ein Limit erreicht wird. Während
+des Trainings läuft die Zusammenarbeit so ab:
 
-1. [`SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py) startet mit
-   `reset(seed=...)` eine neue Simulation bis zur ersten Kandidatenauswahl.
-2. Das Netz erhält Zustand und Aktionen als Zahlen. `step(index)` übergibt
-   seine Wahl.
-3. Die Policy sammelt alle Aktionen des Bridge-Aufrufs. Die
-   [SimulationBridge](#simulationbridge) stellt sie den Objekten zur Ausführung zu.
-4. Auswahl und Simulation wechseln sich bis zum Abschluss oder Limit ab.
-   Dann ergeben die Produktionskennzahlen eine Belohnung.
+1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)
+   startet die Simulation und hält sie an, sobald eine Auswahl erforderlich ist.
+2. Das Netz erhält Zustandsdaten und die angebotenen Aktionen als Zahlenfelder.
+   Es wählt eine Aktion aus; die Simulation setzt die gewählten Aktionen um.
+3. Dieser Wechsel zwischen Auswahl und Ausführung wiederholt sich bis zum Episodenende.
+4. Aus dem Produktionsergebnis wird eine **Belohnung** berechnet. Das ist eine
+   Zahl als Rückmeldung: Ein besseres vollständiges Ergebnis ergibt eine höhere
+   Belohnung. Solange die Episode weiterläuft, liefert jeder Entscheidungsschritt
+   die Belohnung `0`.
 
-Der Trainer nutzt die Gymnasium-Schnittstelle `reset()`/`step()` mit
-**MaskablePPO** aus `sb3-contrib`. Ein gespeichertes Netz läuft auch im
-normalen Runner. Ein kurzer Probelauf belegt noch keine Verbesserung.
+Der Trainingsalgorithmus **MaskablePPO** speichert Zustände, gewählte Aktionen
+und Belohnungen. Nach einer festgelegten Anzahl gesammelter Entscheidungen
+passt er die Netzparameter an. Das geschieht **nicht zwingend genau am Ende
+eines Simulationslaufs**. Die Trainingsschritte werden unter
+[Training starten](#training-starten) erklärt.
+
+Nach dem Training kann die gespeicherte RL-Policy eine Simulation steuern,
+ohne dabei weiterzulernen. Ob sie besser ist als die anderen Steuerungen,
+zeigt erst der [Vergleich auf getrennten Test-Seeds](#auf-getrennten-test-seeds-vergleichen).
 
 ### Was wählt die RL-Policy aus?
 
-Beispiel: Ein defekter Job hat Schweregrad `0.2` und keine laufende Nacharbeit.
-Seine [Defektmaschine ist verfügbar](#nacharbeitskandidaten), eine Alternativroute
-fehlt. Die Kandidatenliste lautet:
+Das Netz erfindet keine Aktionen. Es wählt einen **Index**, also die Nummer
+einer Aktion in der aktuell angebotenen Liste.
+
+**Beispiel:** Ein Job hat Defektschweregrad `0.2`; eine Nacharbeit wurde noch
+nicht gewählt. Seine [Defektmaschine ist verfügbar](#nacharbeitskandidaten),
+eine Alternativroute fehlt. Der Generator bietet diese drei Aktionen an:
 
 | Index für `step(index)` | Angebotene Aktion |
 | --- | --- |
@@ -2911,45 +2926,52 @@ fehlt. Die Kandidatenliste lautet:
 | `1` | `downgrade_product`: Produkt herabstufen. |
 | `2` | `wait_job`: Zunächst warten. |
 
-`step(0)` wählt hier Nacharbeit. Der Index gilt nur für diese Liste;
-bei der nächsten Entscheidung kann `0` eine andere Aktion bedeuten.
-Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske) markiert gültige
-Indizes. Der [folgende Ablauf](#vom-bridge-aufruf-zur-kandidatenentscheidung)
-zeigt die Übergabe an die Bridge.
+Mit `step(0)` wird in diesem Beispiel die Nacharbeit auf der Defektmaschine
+gewählt. Bei der nächsten Entscheidung kann Index `0` eine andere Aktion
+bezeichnen. Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske)
+kennzeichnet, welche Indizes gerade gewählt werden dürfen.
 
 ### Vom Bridge-Aufruf zur Kandidatenentscheidung
 
-Die Bridge ruft `make_decision()` der
-[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) auf:
+Die [Bridge](#simulationbridge) ruft `make_decision()` der
+[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py)
+auf. Diese Policy verbindet den gemeinsamen Generator mit der RL-Auswahl:
 
-1. Die Policy liest den Snapshot, eine Kopie der Simulationsdaten, und
-   betrachtet wartende Objekte in Einfügereihenfolge.
-2. Der `SpineActionGenerator` erzeugt ausführbare Kandidaten. Picks enthalten
-   bereits die EDD-basierte `queue_priority`. Schon vorgemerkte Pick-Jobs
-   werden im selben Bridge-Aufruf nicht erneut angeboten.
-3. Einzelkandidaten übernimmt die Policy direkt. Sonst erhält die
-   Auswahlfunktion einen `DecisionRequest` mit kopiertem Zustand,
-   Kandidaten und bisher vorgemerkten Aktionen. Änderungen an diesen Kopien
-   beeinflussen die Ausführung nicht.
-4. `SpineRLEnv` wartet auf den Kandidatenindex des Netzes. Die Policy merkt
-   die Aktion vor und fährt mit den übrigen Objekten fort.
-5. Die Bridge erhält erst die vollständige `PolicyDecision` und stellt
-   dann alle Aktionen zu.
+1. **Wartende Objekte prüfen:** Die Policy liest die Zustandskopie, den
+   Snapshot, und bearbeitet die Objekte in der gespeicherten Reihenfolge.
+2. **Aktionen erzeugen:** Der `SpineActionGenerator` liefert die Kandidaten.
+   Pick-Aktionen enthalten bereits die EDD-basierte `queue_priority`.
+   Ein in diesem Aufruf bereits für eine Pick-Aktion reservierter Job wird
+   nicht erneut zum Pick angeboten.
+3. **Auswahl anfordern:** Bei nur einem Kandidaten ist keine Auswahl nötig.
+   Bei mehreren wird ein `DecisionRequest` mit Zustand, Kandidaten und
+   bisher gewählten Aktionen an die Auswahlfunktion übergeben. Diese Daten
+   sind Kopien; ihre Veränderung ändert nicht die auszuführenden Aktionen.
+4. **Gewählte Aktion vormerken:** Während des Trainings liefert das Netz
+   seinen Index über `SpineRLEnv.step(index)`. Die Policy speichert die
+   Auswahl und prüft das nächste wartende Objekt.
+5. **Aktionen zustellen:** Erst wenn alle wartenden Objekte bearbeitet sind,
+   gibt die Policy eine vollständige `PolicyDecision` an die Bridge zurück.
+   Die Bridge stellt die Aktionen den Simulationskomponenten zu.
 
-Innerhalb eines Bridge-Aufrufs vergeht keine Simulationszeit. Daher kann
-`step()` schon die nächste Auswahl liefern, bevor Aktionen ausgeführt sind.
-Vorgemerkte Aktionen und Pick-Reservierungen stehen in der Beobachtung;
-die Aktionen zusätzlich in `info["pending_actions"]`.
+Deshalb bedeutet ein `step()` nicht immer, dass die Simulation schon Zeit
+weitergelaufen ist: Zunächst können mehrere Objekte nacheinander eine Auswahl
+benötigen. Bereits vorgemerkte Aktionen und reservierte Pick-Jobs sind in den
+Netzeingaben berücksichtigt. Die vorgemerkten Aktionen stehen außerdem in
+`info["pending_actions"]`.
 
-`expose_forced_actions=True` gibt bei direkter `RLCandidatePolicy`-Nutzung
-auch Einzelkandidaten an die Auswahlfunktion weiter. `SpineRLEnv` überspringt sie.
+Bei direkter Nutzung von `RLCandidatePolicy` kann `expose_forced_actions=True`
+auch einzelne Kandidaten an die Auswahlfunktion melden. Die Trainingsumgebung
+`SpineRLEnv` übernimmt einzelne Kandidaten dagegen automatisch.
 
 ### Numerische Beobachtung und Aktionsmaske
 
+Das Netz erhält keine Salabim-Objekte. Der
 [`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py)
-übersetzt die Snapshot-Dictionaries in Zahlenfelder fester Größe.
-Eine Zeile beschreibt ein Objekt oder einen Kandidaten. Freie Zeilen
-werden mit Nullen gefüllt (**Padding**); Masken markieren echte Daten.
+übersetzt die Zustandsdaten und Kandidaten in Zahlenfelder fester Größe.
+Eine Zeile beschreibt ein Objekt oder eine Aktion. Nicht benötigte Zeilen
+werden mit Nullen aufgefüllt; das heißt **Padding**. Zusätzliche Felder, die
+**Masken**, kennzeichnen die tatsächlich belegten Zeilen.
 
 Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
 
@@ -2961,193 +2983,269 @@ Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
 | `candidates` | `(A, 58)` | Aktionsart, beteiligte IDs sowie Job-, Routen-, Maschinen-, Werkzeug- und Puffermerkmale je Kandidat. |
 | `action_mask` | `(A,)` | `1` für einen aktuell angebotenen Kandidaten, `0` für Padding. |
 
-Standard sind `A = E = 256`: Merkmale als `float32` in `[-1, 1]`, Masken als
-`int8` mit `0` oder `1`. `action_masks()` liefert eine boolesche Kopie.
-Nur `True`-Indizes sind wählbar. Die Maske markiert erzeugte Kandidaten;
-sie prüft Routen nicht nochmals unabhängig.
+Standardmäßig sind bis zu `256` Objekte und `256` Kandidaten vorgesehen.
+Merkmale werden als `float32` im Bereich `[-1, 1]` gespeichert, Masken als
+`int8` mit `0` oder `1`. Die Methode `action_masks()` liefert die Aktionsmaske
+als `True`-/`False`-Werte: Nur `True`-Einträge dürfen gewählt werden.
+Die technische Prüfung einer Aktion übernimmt der Generator, nicht die Maske.
 
-Die Reihenfolge steht in `CONTEXT_FEATURE_NAMES`, `ENTITY_FEATURE_NAMES`
-und `CANDIDATE_FEATURE_NAMES`. Merkmale sind etwa Termindruck, Produktdaten,
-Operationsbasisdauer, Maschinenbelegung, aufgelöste Defektwahrscheinlichkeit
-und Werkzeugzustand. Objektzeilen sind nach ID sortiert; Kandidaten bleiben
-in der angebotenen Reihenfolge.
+Die Merkmale umfassen beispielsweise Termindruck, Produktdaten, konfigurierte
+Operationsdauer, Maschinenbelegung, verwendete Defektwahrscheinlichkeit und
+Werkzeugzustand. Ihre Reihenfolge ist in `CONTEXT_FEATURE_NAMES`,
+`ENTITY_FEATURE_NAMES` und `CANDIDATE_FEATURE_NAMES` festgelegt. Objektzeilen
+sind nach ID sortiert; Aktionen behalten die Reihenfolge der Kandidatenliste.
 
-Der erste vollständige Snapshot legt sortierte ID-Kataloge an. Ihre
-Zahlenzuordnung bleibt bei Resets erhalten; fehlende Werte sind getrennt,
-IDs werden nicht gehasht. Zu viele Zeilen oder ein geändertes ID-Schema
-lösen Fehler aus. Kandidaten werden nicht abgeschnitten. Ein anderes
-Modell-/Objektschema braucht eine neue Umgebung beziehungsweise einen neuen Encoder.
+Beim ersten vollständigen Snapshot werden die IDs in sortierten Listen
+gespeichert und Zahlenwerten größer als `0` zugeordnet. Diese Zuordnung bleibt
+beim Neustart einer Episode erhalten. Eine fehlende ID wird als `0` dargestellt.
+Sind mehr Objekte oder Kandidaten vorhanden als vorgesehen, bricht der Encoder
+mit einem Fehler ab; er lässt keine Kandidaten stillschweigend weg.
+Auch andere IDs oder ein geänderter Objektaufbau benötigen eine neue Umgebung
+beziehungsweise einen neuen Encoder.
 
-Die Beobachtung enthält nicht alle internen Simulations- und Qualitätszustände.
-Ob sie alle entscheidungsrelevanten Informationen enthält, ist nicht
-nachgewiesen. `info`-Dictionaries wie `candidates` und `policy_observation`
-dienen nur der Diagnose, nicht als zusätzliche Netzeingaben.
+Die Netzeingaben enthalten nicht alle internen Simulations- und Qualitätsdaten.
+Ob damit jede Entscheidung ausreichend beschrieben ist, muss noch untersucht
+werden. Die zusätzlichen Angaben in `info`, etwa `candidates` und
+`policy_observation`, helfen bei der Fehlersuche; sie werden nicht an das Netz
+weitergegeben.
 
 ### Gymnasium-API und Reward
 
-`SpineRLEnv(model_file, global_evaluation, ...)` benötigt eine
-`GlobalSimulationEvaluation` mit festen positiven Zeitreferenzen aus
-[vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration).
-[`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py) kopiert diese
-Referenzen und die nichtnegativen globalen Zielgewichte. Sie bleiben
-während der Episode fest.
+Die Bibliothek **Gymnasium** stellt die gemeinsame Schnittstelle bereit,
+über die das Lernverfahren die Simulation startet und Aktionen übergibt.
+`SpineRLEnv(model_file, global_evaluation, ...)` bildet die Simulation als
+solche RL-Umgebung ab.
 
-- `reset(seed=...)` beendet eine laufende Episode und liefert
-  `(observation, info)` bei der ersten Auswahl einer neuen Simulation.
-- `step(index)` nimmt einen gültigen ganzzahligen Index und liefert
-  `(observation, reward, terminated, truncated, info)`: bei der nächsten
-  Auswahl oder am Ende. `terminated` bedeutet regulärer Abschluss,
-  `truncated` Limitabbruch.
-- `info` enthält bei Auswahlen unter anderem `candidates`, `current_object_id`,
-  `simulation_time`, `policy_observation` und `pending_actions`; am Ende
-  zusätzlich `metrics`, `global_cost` und `reward_reason`.
+Vor dem Start benötigt die Umgebung eine `GlobalSimulationEvaluation` mit
+festen positiven Referenzwerten aus
+[vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration).
+[`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py) übernimmt eine Kopie
+dieser Werte und der nichtnegativen globalen Zielgewichte. Diese
+Bewertungsvorgaben bleiben während der Episode unverändert; sie werden nicht gelernt.
+
+- **`reset(seed=...)`:** Beendet eine gegebenenfalls laufende Episode und
+  startet eine neue Simulation. An ihrem ersten Auswahlpunkt gibt die Methode
+  `(observation, info)` zurück: die Netzeingaben und zusätzliche Informationen.
+- **`step(index)`:** Übernimmt den gewählten Listenindex. Bei der nächsten
+  Auswahl oder am Episodenende liefert die Methode
+  `(observation, reward, terminated, truncated, info)` zurück.
+  `terminated=True` bedeutet regulären Abschluss, `truncated=True` einen
+  Abbruch wegen eines Limits.
+- **`info`:** Enthält Informationen für die Auswertung und Fehlersuche,
+  etwa Kandidaten, aktuelles Objekt, Simulationszeit und vorgemerkte Aktionen.
+  Am Ende kommen die Kennzahlen `metrics`, die Bewertungszahl `global_cost`
+  und der Abschlussgrund `reward_reason` hinzu.
 
 #### Reward und Episodenende
 
-Der Reward ist die Lernbelohnung. Zwischenschritte erhalten `0`, reguläre
-Abschlüsse `reward = 1 / (1 + global_cost)`. Die Kosten verwenden dieselben
-Kennzahlen, Referenzen und Zielgewichte wie die heuristische Optimierung.
-Kleinere Kosten ergeben mehr Belohnung; die Rangfolge bleibt erhalten.
-Ein Limitabbruch erhält immer `-1`.
+**Reward** bedeutet hier **Belohnung**: eine Zahl, mit der das Lernverfahren
+eine Rückmeldung über das Produktionsergebnis erhält. Der aktuelle Code gibt
+nicht jeder einzelnen Aktion eine eigene Belohnung:
+
+- **Episode läuft weiter:** `reward = 0`.
+- **Alle Jobprozesse sind beendet:** Die globale Bewertungszahl `global_cost`
+  wird in `reward = 1 / (1 + global_cost)` umgerechnet. Die Kennzahlen,
+  Referenzen und globalen Zielgewichte sind dieselben wie bei der
+  [heuristischen Optimierung](#globale-bewertungszahl).
+- **Abbruch wegen eines Limits:** `reward = -1`.
+
+Bei der globalen Bewertungszahl ist kleiner besser, bei der Belohnung größer.
+Beispielsweise ergeben Kosten von `3` die Belohnung `1 / 4 = 0.25`, Kosten
+von `1` dagegen `1 / 2 = 0.5`. Das günstigere vollständige Ergebnis erhält
+also die höhere Belohnung. Ein regulär beendeter Lauf kann auch Ausschuss
+oder herabgestufte Jobs enthalten; diese gehen in seine globale Bewertung ein.
 
 | Ende | Rückgabe und Beobachtung |
 | --- | --- |
-| Alle Jobprozesse beendet | `terminated=True`, `truncated=False`; alle Beobachtungsfelder und Masken sind null. |
-| Nach `max_decisions` beantworteten Entscheidungen tritt ein weiterer Auswahlpunkt auf | `truncated=True`; die Beobachtung dieses unbeantworteten Auswahlpunkts bleibt erhalten. Alle noch nicht zugestellten Aktionen des Bridge-Aufrufs werden verworfen (`pending_batch_discarded=True`). |
-| `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; die globalen Zustandsmerkmale bleiben erhalten, aber ohne aktuell entscheidendes Objekt oder angebotene Aktionen. Kandidatenfeld und Aktionsmaske sind null. |
+| Alle Jobprozesse beendet | `terminated=True`, `truncated=False`; alle Zahlenfelder und Masken der Beobachtung sind mit `0` gefüllt. |
+| Entscheidungsgrenze: Nach `max_decisions` beantworteten Auswahlen wird eine weitere Auswahl nötig | `truncated=True`; die Beobachtung dieser unbeantworteten Auswahl bleibt erhalten. Noch nicht zugestellte Aktionen des aktuellen Bridge-Aufrufs werden verworfen (`pending_batch_discarded=True`). |
+| Zeitgrenze `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; globale Zustandsmerkmale bleiben erhalten, jedoch ohne aktuell entscheidendes Objekt. Kandidatenfeld und Aktionsmaske sind mit `0` gefüllt. |
 
-Diese Rückgaben gelten für die direkte Umgebung und die Evaluation.
-Nach einem Abbruch ist kein weiterer `step()` erlaubt, auch bei erhaltenen
-Kandidaten. Andere Lernverfahren könnten den Zustand zur Schätzung eines
-Folgewerts nutzen (Value-Bootstrapping), nicht zur Fortsetzung.
+Die Tabelle beschreibt die direkte Umgebung und ihre Auswertung. Nach einem
+Abbruch darf kein weiterer `step()` ausgeführt werden, auch wenn noch Kandidaten
+in der letzten Beobachtung stehen. Andere Lernverfahren könnten diesen Zustand
+verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
+**Value-Bootstrapping**; die abgebrochene Episode wird damit nicht fortgesetzt.
 
-Im Training behandelt `EpisodeSeedWrapper` aus
+Für das vorhandene PPO-Training gelten beide Limits als endgültiger Fehlschlag.
+Die Zusatzklasse `EpisodeSeedWrapper` in
 [`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
-beide Limits als endgültigen Fehlschlag. Für Stable-Baselines3 (SB3) setzt
-er `terminated=True`, `truncated=False` und in `info`
-`training_limit_terminated=True`. Der Abbruchgrund bleibt erhalten.
-So addiert SB3 keinen geschätzten Folgewert zum Reward `-1`.
-Timeouts und Simulationsfehler sind Exceptions, keine Limitabbrüche.
+meldet sie deshalb an Stable-Baselines3 (SB3) als `terminated=True` und
+`truncated=False`. `info["training_limit_terminated"]` und der Abbruchgrund
+halten fest, dass tatsächlich ein Limit erreicht wurde. So rechnet SB3 zur
+Strafe `-1` keine geschätzte spätere Belohnung hinzu.
+
+Ein Timeout oder ein Simulationsfehler wird dagegen als Ausnahme gemeldet.
+Es handelt sich dabei nicht um einen der regulären Limitabbrüche aus der Tabelle.
 
 ### Neuronales Netz und MaskablePPO
 
 [CandidateActorCriticPolicy](sources/SpineML/Control/RLPolicy/CandidateActorCriticPolicy.py)
-hat zwei Teile: Der **Actor** berechnet Kandidatenscores und daraus
-Auswahlwahrscheinlichkeiten. Der **Critic** schätzt die noch zu erwartende
-Belohnung des Zustands. Er hilft beim Training, bewertet aber keine
-einzelnen Kandidaten.
+enthält zwei Netzteile mit unterschiedlichen Aufgaben:
+
+- **Actor — Aktion auswählen:** Berechnet mit seinen trainierten Parametern
+  einen Bewertungswert für jeden angebotenen Kandidaten. Daraus entstehen
+  die Auswahlwahrscheinlichkeiten.
+  Diese Werte stammen nicht aus den festen Regeln des heuristischen Evaluators.
+- **Critic — weiteren Verlauf einschätzen:** Schätzt, welche Belohnung aus
+  dem aktuellen Zustand noch zu erwarten ist. Er unterstützt das Training,
+  wählt aber keine Aktion und bewertet nicht die einzelnen Kandidaten.
 
 Das Netz verarbeitet die Zahlenfelder so:
 
-1. Drei Teilnetze (Encoder) erzeugen je 32 gelernte Merkmalswerte für
-   Kontext, Objektzeilen und Kandidatenzeilen. Alle Objektzeilen teilen
-   ein Teilnetz, alle Kandidaten ein weiteres.
-2. Mittelwert und Maximum der echten Objekt- und Kandidatenzeilen bilden
-   zusammen mit dem Kontext die Zustandszusammenfassung. Padding zählt nicht mit.
-3. Dasselbe Actor-Netz bewertet jeden Kandidaten anhand seiner Merkmale
-   und der Zusammenfassung. Indizes haben keine feste Aktionsbedeutung;
-   Padding ist nicht wählbar.
-4. Der Critic schätzt aus der Zusammenfassung den Zustandswert, auch am
-   Ende ohne Kandidaten.
+1. **Eingaben verarbeiten:** Drei Teilnetze berechnen jeweils 32 Zwischenwerte
+   für Kontext, Objektzeilen und Kandidatenzeilen. Alle Objektzeilen verwenden
+   dasselbe Teilnetz; ebenso alle Kandidatenzeilen.
+2. **Zustand zusammenfassen:** Aus den echten Objekt- und Kandidatenzeilen
+   werden Mittelwerte und Maxima gebildet und mit den Kontextwerten kombiniert.
+   Aufgefüllte Leerzeilen zählen nicht mit.
+3. **Kandidaten bewerten:** Der Actor verarbeitet für jede Aktion deren
+   Merkmale zusammen mit der Zustandszusammenfassung. Dafür verwendet er
+   immer dieselben Netzparameter, unabhängig von der Position in der Liste.
+4. **Belohnung schätzen:** Der Critic verarbeitet die Zustandszusammenfassung
+   und liefert seine Schätzung, auch wenn keine Kandidaten vorhanden sind.
 
-Standard sind `embedding_dim=32` (Merkmalswerte je Encoder), `hidden_dim=64`
-(versteckte Schichten) und 30.242 trainierbare Parameter. Die Parameterzahl
-hängt nicht von der Zeilenkapazität ab. Eine umgeordnete Kandidatenliste
-ordnet nur die Scores um. Zusätzliche Aktionsmasken können die vorhandene
-Maske nur einschränken. Ohne gültigen Kandidaten erfolgt keine Auswahl.
+Mit den Standardeinstellungen `embedding_dim=32` und `hidden_dim=64` hat das
+Netz 30.242 trainierbare Parameter. `embedding_dim` bestimmt die Zahl der
+Zwischenwerte je Teilnetz, `hidden_dim` die Breite der internen Netzschichten.
+Die Zahl vorgesehener Objekt- oder Kandidatenzeilen ändert die Parameterzahl nicht.
+Wird nur die Kandidatenliste umgeordnet, werden auch ihre Bewertungen umgeordnet.
+Maskierte Kandidaten bleiben ausgeschlossen; ohne gültigen Kandidaten wird
+keine Auswahl getroffen.
 
-Die Klasse erbt von `MaskableMultiInputActorCriticPolicy`. MaskablePPO
-sammelt mehrere Schritte, wählt unter Beachtung der Maske aus den
-Wahrscheinlichkeiten und passt das Netz anschließend mit PPO an.
+Die Netzklasse baut auf `MaskableMultiInputActorCriticPolicy` auf. Während
+des Trainings wählt **MaskablePPO** Aktionen aus den berechneten Wahrscheinlichkeiten
+und berücksichtigt dabei die Aktionsmaske. Nach einem gesammelten Datenblock
+verändert PPO die Netzparameter in kleinen Schritten. Dazu vergleicht es die
+erhaltene beziehungsweise vom Critic geschätzte weitere Belohnung mit seiner
+bisherigen Erwartung. Auswahlen, die zu einem günstigeren Verlauf als erwartet
+beitragen, sollen in ähnlichen Situationen wahrscheinlicher werden. Das Netz
+bekommt also keine vorgegebene „richtige Aktion“.
 
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
+Vor dem Training führt
 [`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
-führt vor dem Lernen vollständige Standardheuristik-Läufe aus (Baseline).
-Ihre Mittelwerte liefern feste Referenzen für Makespan, Verspätungs-,
-Transport- und Werkzeugwechselzeit. Diese Kalibrierung trainiert kein Netz;
-ihre Zeit wird separat erfasst. Alle Referenzen müssen positiv sein.
-Null führt zum Fehler, nicht zu einem Ersatzwert.
+vollständige Simulationsläufe mit der Standardheuristik aus. Diese Läufe bilden
+die **Baseline**, also die Vergleichsbasis. Für Makespan, Gesamtverspätung,
+Transportzeit und Werkzeugwechselzeit wird jeweils der Mittelwert berechnet.
+Diese Werte bleiben anschließend die festen Referenzen der globalen Bewertung.
 
-Globale Zielgewichte sowie Standard-Baseline- und Test-Seeds stammen aus
-der Optimierungsanwendung:
+Dieser Vorbereitungsschritt heißt hier **Kalibrierung**. Er trainiert noch
+kein Netz; seine Rechenzeit wird getrennt erfasst. Ist ein Referenzwert null,
+bricht die Vorbereitung mit einem Fehler ab, weil die spätere Bewertung
+diesen Wert als Divisor benötigt.
 
-- Baseline: standardmäßig `SEEDS = [1, 2]`; änderbar über
+Die globalen Zielgewichte und die voreingestellten Baseline- und Test-Seeds
+stammen aus der Optimierungsanwendung. Ein [Seed](#seed-und-reproduzierbarkeit)
+bestimmt die reproduzierbaren Zufallsfolgen eines Simulationslaufs:
+
+- **Baseline:** standardmäßig `SEEDS = [1, 2]`; änderbar über
   `--baseline-seeds`.
-- Training: Seeds `1` bis `10`, änderbar über `--train-seeds`.
-  Jeder Prozess wiederholt sie mit versetztem Startpunkt. `--seed`
-  (Standard `0`) steuert separat Netzinitialisierung und Lernzufall.
-- Reservierter Test: `TEST_SEEDS = [101, 102, 103, 104, 105]`, änderbar über
-  `--evaluation-seeds`. Diese Seeds müssen von Training und Baseline
-  getrennt bleiben. Jede Liste muss eindeutige Einträge haben. Baseline
-  und Training dürfen sich überschneiden.
+- **Training:** Seeds `1` bis `10`, änderbar über `--train-seeds`. Jeder
+  Simulationsprozess durchläuft diese Liste wiederholt, beginnt aber an einer
+  anderen Stelle. Der separate Parameter `--seed` (Standard `0`) steuert
+  die Anfangsparameter des Netzes und die Zufallsentscheidungen des Lernverfahrens.
+- **Abschließender Test:** `TEST_SEEDS = [101, 102, 103, 104, 105]`, änderbar
+  über `--evaluation-seeds`. Diese Seeds dürfen weder im Training noch in
+  der Baseline verwendet werden. Baseline und Training dürfen dagegen
+  dieselben Seeds enthalten. Innerhalb einer Liste sind keine Duplikate erlaubt.
 
 Das Training speichert im Ausgabeordner:
 
 | Datei | Inhalt |
 | --- | --- |
-| `manifest.json` | Lernverfahren, Netzaufbau, Trainingseinstellungen, Paketversionen, Seeds, Baseline-Kennzahlen und -zeit sowie alle Modell- und Bewertungsvorgaben. |
-| `model.zip` | Netz-/PPO-Modellstand nach dem Training oder nach einem Abbruch mit `Strg+C`. |
-| `checkpoint_*.zip` | Regelmäßige Zwischenstände; `--checkpoint-every` ist standardmäßig `10000` Entscheidungen. |
-| `episodes.jsonl` | Je beendeter Episode Seed, Reward, Kosten, Kennzahlen, Entscheidungszahl und Abschluss-/Limitstatus; entsteht erst beim ersten Episodenende. |
-| `progress.csv` | Protokollierte PPO-Trainingswerte. |
-| `training_report.json` | Trainingsstatus, tatsächliche Entscheidungszahl, Episodenanzahl sowie Baseline-, Trainings- und Gesamtzeit. |
+| `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
+| `model.zip` | Gespeicherter Stand des neuronalen Netzes und des PPO-Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
+| `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. |
+| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus. Die Datei entsteht beim ersten Episodenende. |
+| `progress.csv` | Protokoll der PPO-Trainingswerte. |
+| `training_report.json` | Status und Umfang des Trainings sowie Rechenzeiten für Baseline, Training und Gesamtlauf. |
 
-Das Manifest speichert Modellpfad und SHA-256-Prüfsumme, Merkmalsreihenfolge,
-Objekt-/Aktionsarten, Zielgewichte, Referenzen und Umgebungsgrenzen.
-Beim Laden werden diese Angaben und die Feldgrößen geprüft. Aktuelle
-App-Einstellungen ersetzen die gespeicherte Bewertung nicht.
-`--model` erlaubt eine Dateikopie mit gleicher Prüfsumme an einem anderen Ort,
-aber kein anderes Fabrikmodell. Nur eigene oder vertrauenswürdige
-SB3-Zwischenstände (Checkpoints) laden: Sie enthalten Python-Objekte.
+**Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
+mit Layout und Produktionsaufträgen. `model.zip` enthält dagegen den gelernten
+Netzstand. `manifest.json` verbindet beides: Die Datei speichert den Pfad und
+eine SHA-256-Prüfsumme der Fabrikdatei sowie Eingabemerkmale, Objekt- und
+Aktionsarten, Zielgewichte, Referenzen und Umgebungsgrenzen. Die Prüfsumme
+erkennt, ob sich die Fabrikdatei verändert hat.
+
+Beim Laden werden diese Angaben und die Größen der Zahlenfelder geprüft.
+Es gelten die gespeicherten Bewertungsvorgaben, nicht nachträglich geänderte
+App-Einstellungen. `--model` erlaubt eine identische Dateikopie an einem
+anderen Speicherort, aber kein anderes Fabrikmodell.
+
+Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten
+Python-Objekte und sind nicht als unbedenkliche Datendateien zu behandeln.
 
 ### Training starten
 
-Das Extra `rl-training` ergänzt die normale Installation um Gymnasium,
-PyTorch, Stable-Baselines3 und `sb3-contrib`:
+Für das Training werden zusätzlich Gymnasium, PyTorch, Stable-Baselines3
+und `sb3-contrib` benötigt. Die optionale Paketgruppe `rl-training`
+installiert diese Bibliotheken:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
 .\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/ppo --steps 100000 --workers 4
 ```
 
-[`train_rl_policy.py`](sources/tools/train_rl_policy.py) nutzt ohne `--model`
-das `EXAMPLE_FILE` der Optimierungsanwendung, derzeit
-[example-5.py](sources/examples/normal/example-5.py). Der Ausgabeordner muss
-neu oder leer sein. `--help` zeigt Optionen, ohne einen Lauf zu starten.
+Ohne `--model` verwendet
+[`train_rl_policy.py`](sources/tools/train_rl_policy.py) die unter `EXAMPLE_FILE`
+eingestellte Fabrikdatei, derzeit [example-5.py](sources/examples/normal/example-5.py).
+`--output` bestimmt den Ausgabeordner. Dieser muss neu oder leer sein, damit
+kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
+ohne eine Simulation oder ein Training zu starten.
 
-Jeder Simulationsprozess (Worker) sammelt Entscheidungen, Zustände und
-Belohnungen zu einem Rollout. Danach passt PPO das Netz an (PPO-Update).
-Dazu durchläuft es die Daten mehrfach in kleinen Gruppen (Minibatches).
+**Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
+Simulationsprozesse. Jeder Worker führt seine eigene Simulation aus. Das
+gemeinsam trainierte Netz und das Lernverfahren liegen dagegen im übergeordneten
+Trainingsprozess. Dieser berechnet die Aktionsauswahl für die Worker und sammelt
+ihre Zustände, Aktionen und Belohnungen.
+
+**Wann wird das Netz verändert?** Sobald jeder Worker `--rollout-steps`
+Entscheidungen geliefert hat, beginnt eine Anpassungsphase, das **PPO-Update**.
+Die dafür gesammelten Trainingsdaten heißen **Rollout**. PPO teilt sie in
+kleine Gruppen mit `--batch-size` Einträgen (**Minibatches**) und verarbeitet
+den gesamten Datenblock `--epochs`-mal. Danach werden mit dem aktualisierten
+Netz neue Entscheidungen gesammelt.
+
+Ein Rollout ist kein vollständiger Simulationslauf. Er kann mitten in einer
+Episode enden oder mehrere Episoden enthalten. Ist eine Episode noch nicht
+fertig, schätzt der Critic die noch zu erwartende Belohnung. Beim Training
+zählen nur Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
+automatisch übernommene Einzelkandidaten zählen nicht mit.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--steps` | `100000` | Mindestzahl externer Kandidatenentscheidungen insgesamt, nicht Episoden oder Simulationsstunden. Der aktuelle Rollout wird noch beendet; die tatsächliche Zahl kann größer sein. |
+| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln. Gemeint sind weder Episoden noch Simulationsstunden. Der letzte Rollout wird noch vollständig gesammelt; die tatsächliche Zahl kann deshalb größer sein. |
 | `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
-| `--rollout-steps` | `256` | Entscheidungen je Worker vor einem PPO-Update; mindestens `2`. |
-| `--batch-size` / `--epochs` | `64` / `10` | Entscheidungen je Minibatch und Durchläufe über den Rollout je Update. |
+| `--rollout-steps` | `256` | Gesammelte Entscheidungen je Worker vor einer Netzanpassung; mindestens `2`. |
+| `--batch-size` / `--epochs` | `64` / `10` | Größe der Datengruppen und Anzahl der Durchläufe über den gesammelten Datenblock pro Anpassungsphase. |
 | `--learning-rate` | `0.0003` | Schrittweite bei der Anpassung der Netzparameter. |
-| `gamma` / `gae_lambda` | `1.0` / `1.0` | Die spätere Belohnung wird nicht allein wegen zusätzlicher Entscheidungsschritte abgeschwächt; im Trainer festgelegt. |
-| `ent_coef` | `0.01` | Fördert das Ausprobieren verschiedener Kandidaten statt einer zu frühen Festlegung; im Trainer festgelegt. |
-| `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Grenzen je Trainingsepisode: externe Entscheidungen beziehungsweise simulierte Stunden. |
+| `gamma` / `gae_lambda` | `1.0` / `1.0` | Zusätzliche Entscheidungsschritte schwächen die spätere Belohnung in diesen Berechnungen nicht ab. Beide Werte sind im Trainingsskript festgelegt. |
+| `ent_coef` | `0.01` | Fördert das Ausprobieren unterschiedlicher Kandidaten. Der Wert ist im Trainingsskript festgelegt. |
+| `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
-| `--device` | `cpu` | Rechengerät für das Netz, nicht für die Simulation. |
+| `--device` | `cpu` | CPU oder GPU für das Netz und seine Anpassung; die Simulation bleibt auf der CPU. |
 
-Vier Worker sammeln `4 × 256 = 1024` Entscheidungen pro Update.
-`--batch-size` muss mindestens `2` sein und `workers × rollout-steps` ohne
-Rest teilen. Mehr Worker ändern somit auch die Datenmenge je Update,
-nicht nur die Laufzeit.
+**Beispiel mit den Standardwerten:** Vier Worker liefern jeweils `256`
+Entscheidungen. Damit enthält ein Rollout `4 × 256 = 1024` Datensätze.
+PPO verarbeitet sie in Gruppen von `64` Einträgen und durchläuft den
+gesamten Datenblock `10`-mal, bevor der nächste Rollout gesammelt wird.
+`--batch-size` muss mindestens `2` sein und `workers × rollout-steps` ohne Rest teilen.
 
-`--workers 20 --output rl_runs/ppo_20` startet beispielsweise einen separaten
-Lauf mit `5120` Entscheidungen pro Update. Jeder Worker braucht ein eigenes
-Modell und eine Simulation. Der Rolloutspeicher wächst mit Workerzahl,
-Rolloutlänge und aufgefüllten Beobachtungsfeldern; kleinere Minibatches
-senken diesen Gesamtspeicher nicht. 20 Worker sind keine allgemeine
-Empfehlung oder Laufzeitzusage.
+Mit `--workers 20 --output rl_runs/ppo_20` entstehen entsprechend `5120`
+Datensätze pro Update. Mehr Worker ändern also nicht nur die Parallelität,
+sondern auch den Umfang der Trainingsdaten pro Anpassungsphase. Jeder Worker
+benötigt Speicher für sein separat geladenes Layout, Szenario und seine
+Simulation — nicht für ein eigenes trainierendes Netz. Der zentrale
+Rolloutspeicher wächst zusätzlich mit Workerzahl, Rolloutlänge und den festen
+Größen der Beobachtungsfelder. Kleinere Minibatches verkleinern diesen
+gesamten Datenspeicher nicht. 20 Worker garantieren deshalb keine kürzere Laufzeit.
 
-Salabim bleibt auf der CPU. `--device cuda` oder `auto` verlagert nur das
-Netz und PPO-Updates auf eine passende GPU. `cuda` ohne CUDA-GPU wird
-abgewiesen. Für das kleine Netz ist `cpu` Standard.
+Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
+Netzberechnung und die PPO-Updates auf eine passende GPU verlagern.
+`cuda` ohne verfügbare CUDA-GPU führt zu einem Fehler. Für das vorhandene
+kleine Netz ist `cpu` voreingestellt.
 
 ### Auf getrennten Test-Seeds vergleichen
 
@@ -3155,34 +3253,49 @@ abgewiesen. Für das kleine Netz ist `cpu` Standard.
 .\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/ppo
 ```
 
-[`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt
-`manifest.json` und `model.zip`. Mit gespeicherter Bewertung und denselben
-reservierten Test-Seeds vergleicht es RL, `RandomPolicy` und Standardheuristik.
-RL wählt standardmäßig den wahrscheinlichsten gültigen Kandidaten
-(deterministisch). `--stochastic` zieht nach den gelernten Wahrscheinlichkeiten,
-`--skip-comparisons` prüft nur RL. `--seeds` muss von Training und Baseline
-getrennt bleiben. Alle Policies verwenden das gespeicherte Simulationszeitlimit.
+[`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt den
+gespeicherten Netzstand aus `model.zip` und die Einstellungen aus `manifest.json`.
+Danach führt es RL, `RandomPolicy` und Standardheuristik mit denselben
+reservierten Test-Seeds und derselben globalen Bewertung aus. Die Netzparameter
+werden dabei nicht weiter verändert.
 
-`evaluation.json` enthält Läufe, Abschluss-/Limitstatus, Kosten, Kennzahlen
-und reale Laufzeit. Mittelwerte erscheinen je Policy nur, wenn alle
-angeforderten Läufe abgeschlossen sind; sonst stehen sie auf `null`.
-So zählen unfertige Läufe nicht als scheinbar günstig.
-Bei Fehlern bleiben erfasste Läufe als Teilbericht erhalten.
-Teilberichte, kurze Trainingsläufe oder Checkpoints allein belegen keine Verbesserung.
+- **Standardauswahl:** Die RL-Policy nimmt den gültigen Kandidaten mit der
+  höchsten gelernten Wahrscheinlichkeit. Diese Auswahl ist deterministisch.
+- **`--stochastic`:** Wählt eine gültige Aktion zufällig entsprechend den
+  gelernten Wahrscheinlichkeiten.
+- **`--skip-comparisons`:** Führt nur die RL-Policy aus.
+- **`--seeds`:** Wählt andere Test-Seeds. Sie dürfen weder im Training noch
+  in der Baseline verwendet worden sein.
 
-`--checkpoint checkpoint_10000.zip` prüft einen Zwischenstand; `--output`
-ändert den Berichtspfad. `--optimized-weights gewichte.json` ergänzt eine
-vierte Policy mit optimiertem lokalem Gewichtssatz. Unterstützt sind
-`HeuristicWeights`-Dictionaries, `best_weights` und
-`optimization_result.best_weights`. Aus Zeitvergleichsberichten mit
-verschachtelten `measurements` müssen die Gewichte separat exportiert werden.
+Alle Steuerungen verwenden das gespeicherte Simulationszeitlimit.
+Für die RL-Policy gilt zusätzlich ihr gespeichertes Entscheidungslimit.
+
+Die Ergebnisdatei `evaluation.json` enthält Kennzahlen, globale Kosten,
+Abschluss- oder Abbruchstatus und die reale Rechenzeit jedes Laufs. Ein
+Mittelwert wird für eine Policy nur ausgegeben, wenn alle angeforderten
+Testläufe abgeschlossen sind. Sonst steht dort `null`, also kein gültiger
+Mittelwert. So wird ein unfertiger Lauf nicht als scheinbar gutes Ergebnis gewertet.
+Bei Fehlern wird der bis dahin erfasste Teilbericht gespeichert.
+
+`--checkpoint checkpoint_10000.zip` lädt einen Zwischenstand statt `model.zip`;
+`--output` bestimmt den Berichtspfad. Mit `--optimized-weights gewichte.json`
+kommt eine vierte Steuerung hinzu: die Heuristik mit einem optimierten lokalen
+Gewichtssatz. Die JSON-Datei darf direkt ein `HeuristicWeights`-Dictionary
+enthalten oder die Felder `best_weights` beziehungsweise
+`optimization_result.best_weights` verwenden. Aus Zeitvergleichsberichten mit
+verschachtelten `measurements` müssen die Gewichte vorher separat exportiert werden.
+
+Erst die vollständigen Testläufe zeigen, wie die trainierte Steuerung abschneidet.
+Ein gespeicherter Zwischenstand oder ein kurzer Trainingsprobelauf allein
+belegt keine Verbesserung.
 
 ### Trainiertes Netz im normalen Runner einsetzen
 
 [TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
-nutzt dieselbe `make_decision()`-Schnittstelle wie andere Policies.
-Der Runner nutzt die Policy und startet die Simulation mit einem Seed.
-Eine eigene `reset()`-/`step()`-Schleife ist nicht nötig:
+verbindet das gespeicherte Netz mit derselben `make_decision()`-Schnittstelle
+wie die anderen Steuerungen. Deshalb kann der normale `SimulationRunner`
+die RL-Policy direkt verwenden. Eine eigene Schleife mit `reset()` und
+`step()` muss dafür nicht geschrieben werden:
 
 ```python
 from SpineML.Control.RLPolicy.TrainedPolicy import TrainedCandidatePolicy
@@ -3198,67 +3311,81 @@ runner = SimulationRunner(
 metrics = runner.run_policy(policy, seed=101)
 ```
 
-Der Runner muss `policy.model_path` verwenden. `model_file=...` erlaubt eine
-Kopie mit gleicher Prüfsumme. Standard ist deterministische Auswahl auf der
-CPU. `deterministic=False, seed=101` wählt zufällig nach den gelernten
-Wahrscheinlichkeiten. Der eigene Torch-Zufallszustand setzt die
-Python-/NumPy-Zufallsfolgen der Simulation nicht neu. Einzelkandidaten
-werden direkt übernommen.
+Für die Simulation wird die unter `policy.model_path` gespeicherte Fabrikdatei
+geladen. Mit `model_file=...` darf eine identische Kopie an einem anderen Ort
+angegeben werden. Standardmäßig erfolgt die Netzauswahl deterministisch auf
+der CPU. Mit `deterministic=False, seed=101` wird stattdessen aus den gelernten
+Wahrscheinlichkeiten gezogen. Die Policy verwendet dafür einen eigenen
+PyTorch-Zufallszustand, ohne die Python- und NumPy-Zufallsfolgen der Simulation
+zurückzusetzen. Einzelne Kandidaten werden ohne Netzauswahl übernommen.
 
-Für Laufserien erzeugt
+Für mehrere Läufe erstellt
 [`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
-frische Policies: `factory = TrainedPolicyFactory("rl_runs/ppo")`, dann
-`factory(seed)` je Lauf. Sie ist als `policy_factory` eines
-`SimulationRunRequest` im Prozesspool nutzbar, ebenfalls mit passendem Modell.
+jeweils eine neue Policy-Instanz: zunächst
+`factory = TrainedPolicyFactory("rl_runs/ppo")`, dann `factory(seed)` pro Lauf.
+Diese Factory kann auch in einem `SimulationRunRequest` an den Prozesspool
+übergeben werden. Der Pool muss dieselbe gespeicherte Fabrikdatei verwenden.
 
-Die Policy überwacht auch im Runner ihre gespeicherten Entscheidungs- und
-Zeitlimits. Limits oder unfertige Jobs führen zu Fehlern, nicht zu gültigen
-Optimierungsergebnissen.
+Auch bei diesem Einsatz überwacht die RL-Policy ihre gespeicherten Zeit- und
+Entscheidungsgrenzen. Wird ein Limit erreicht oder bleiben Jobs unfertig,
+wird ein Fehler gemeldet. Ein solcher Lauf gilt nicht als gültiges
+Optimierungsergebnis.
 
 <a id="optionale-installation-und-cli-test"></a>
 
 ### Umgebung ohne Training prüfen
 
-Zum Schnittstellentest genügt das Extra `rl`, ohne PyTorch oder
-PPO. Dieser Debug-Befehl trainiert und lädt kein Netz:
+Die RL-Umgebung kann auch ohne neuronales Netz geprüft werden. Dafür reicht
+die optionale Paketgruppe `rl`; PyTorch und PPO werden nicht benötigt.
+Der folgende Befehl startet einen solchen Prüflauf und trainiert oder lädt
+kein Netz:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl]"
 .\.venv\Scripts\python.exe sources/tools/run_rl_episode.py --seed 1 --output rl_environment_result.json
 ```
 
-- [`run_rl_episode.py`](sources/tools/run_rl_episode.py) übernimmt Zielgewichte
-  und `SEEDS` aus `heuristic_optimization_app.py`. Vollständige
-  Standardheuristik-Läufe liefern die positiven Reward-Zeitreferenzen.
-  Diese Baselinezeit wird separat erfasst.
-- `--policy random` wählt eine zufällige gültige Nicht-Warteaktion, sonst
-  Warten. `--policy heuristic` nutzt `LocalHeuristicActionEvaluator` und
-  `HeuristicActionSelector` für die RL-Kandidaten. Beide testen die
-  Schnittstelle, kein neuronales Netz.
-- `--model` wählt die Konfiguration, sonst gilt `EXAMPLE_FILE` aus
-  `heuristic_optimization_app.py`. `--seed` ist nichtnegativ.
-  `--max-decisions` zählt externe Entscheidungen, keine Einzelkandidaten:
-  Standard `100000` wie bei direkter `SpineRLEnv`-Nutzung, im Training `10000`.
-  `--max-simulation-time` begrenzt die Zeit auf standardmäßig `10000.0`
-  Stunden. Ungültige CLI-Werte werden vor der Baseline abgewiesen.
-- Ausgabe und optionales JSON enthalten Status, Reward, Kosten, Kennzahlen,
-  Baseline-/Episodenzeiten sowie Modellname und SHA-256. `--help` startet
-  keinen Lauf und benötigt Gymnasium nicht.
+- **Vorbereitung:** [`run_rl_episode.py`](sources/tools/run_rl_episode.py)
+  übernimmt die globalen Zielgewichte und Baseline-Seeds aus
+  `heuristic_optimization_app.py`. Vollständige Standardheuristik-Läufe
+  liefern die Referenzwerte für die Belohnungsberechnung. Ihre Rechenzeit
+  wird getrennt ausgewiesen.
+- **Auswahlverfahren:** `--policy random` wählt zufällig unter den gültigen
+  Nicht-Warteaktionen und wartet nur, wenn keine solche Aktion angeboten wird.
+  `--policy heuristic` verwendet den heuristischen Evaluator und Selector.
+  Beide Verfahren wählen aus den RL-Kandidaten, ohne ein Netz zu verwenden.
+- **Fabrik und Zufall:** `--model` bestimmt die Fabrikdatei. Ohne diese Angabe
+  gilt `EXAMPLE_FILE` aus der Optimierungsanwendung. `--seed` muss nichtnegativ sein.
+- **Grenzen:** `--max-decisions` zählt Auswahlen aus mehreren Kandidaten.
+  Der Standard ist hier `100000`, wie bei direkter Nutzung von `SpineRLEnv`;
+  das Trainingsskript verwendet dagegen `10000`. `--max-simulation-time`
+  begrenzt die simulierte Zeit standardmäßig auf `10000.0` Stunden.
+  Ungültige Befehlsparameter werden vor den Baseline-Läufen abgewiesen.
+- **Ausgabe:** Terminal und optionale JSON-Datei zeigen Status, Belohnung,
+  Kosten, Kennzahlen und Rechenzeiten. Die JSON-Datei enthält außerdem den
+  Namen und die SHA-256-Prüfsumme der Fabrikdatei. `--help` zeigt nur die
+  Hilfe an; dafür ist Gymnasium nicht erforderlich.
 
-CLI-`random` ist nicht die Klasse `RandomPolicy`: Es nutzt RL-Kandidaten,
-direkte Einzelkandidaten und die EDD-Priorität des Generators. Daher ist
-kein identischer Ablauf zur jeweiligen direkten Vergleichspolicy zugesichert.
+Die Auswahl `--policy random` in diesem Prüfskript ist nicht dieselbe
+Implementierung wie die eigenständige `RandomPolicy`. Sie verwendet die
+RL-Kandidaten, übernimmt Einzelkandidaten automatisch und behält die
+EDD-Priorität des Generators bei. Die Abläufe müssen daher nicht identisch sein.
 
 ### Ressourcen und Parallelität
 
-`close()` gehört in einen `finally`-Block. Es beendet aktive Episoden und
-wartet auf den Simulationsthread. Ungültige Indizes, Zeilenüberschreitungen,
-Schemaänderungen, Timeouts und Simulationsfehler lösen Fehler aus.
-Endet die Episode vor der ersten Auswahl, schlägt auch `reset()` fehl.
-
-Pro Prozess darf nur eine RL-Umgebung laufen. Andere Simulationsläufe dürfen
-dort nicht parallel laufen: Salabim und Python-Zufall nutzen prozessweite
-Zustände. Parallelität braucht getrennte Prozesse. Der Trainer nutzt
-`SubprocVecEnv` mit `spawn`, auch für einen Worker, und räumt bei Fehlern auf.
-Der Trainingswrapper entfernt große Diagnose-Dictionaries aus `info`;
-Abschlusskennzahlen und Abbruchgründe bleiben erhalten.
+- **Umgebung schließen:** Bei eigener Nutzung `close()` in einem
+  `finally`-Block aufrufen. Die Methode beendet eine aktive Episode und wartet
+  auf deren Simulationsthread. Dieser Thread führt die Salabim-Simulation
+  innerhalb des jeweiligen Python-Prozesses aus.
+- **Fehler behandeln:** Ungültige Indizes, überschrittene Zeilenkapazitäten,
+  geänderte ID-Zuordnungen, Timeouts und Simulationsfehler werden als Fehler
+  gemeldet. Endet ein Lauf schon vor der ersten Kandidatenauswahl, kann auch
+  `reset()` keine Anfangsbeobachtung liefern und meldet einen Fehler.
+- **Simulationen trennen:** Salabim und der Python-Zufall verwenden gemeinsame
+  Zustände innerhalb eines Prozesses. Dort darf deshalb nur eine RL-Umgebung
+  simulieren; andere Simulationen dürfen nicht gleichzeitig laufen.
+  Parallele Läufe benötigen getrennte Prozesse.
+- **Training ausführen:** Das Trainingsskript startet die Umgebungen über
+  `SubprocVecEnv` mit `spawn`, auch bei nur einem Worker. Es schließt sie
+  auch im Fehlerfall. Große Diagnoseangaben werden vor der Weitergabe an den
+  Trainer aus `info` entfernt; Abschlusskennzahlen und Abbruchgründe bleiben erhalten.

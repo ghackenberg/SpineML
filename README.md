@@ -2898,49 +2898,45 @@ Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
 als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
 [Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
 
-**Überblick: Was machen Gymnasium, Salabim und das Netz?**
+**Überblick: Agent und Environment in unserer Implementierung**
 
-- **Salabim** simuliert die Fabrik. Bridge, Policy und Generator verbinden
-  ihre Zustände mit der Aktionsauswahl; sie sind im Diagramm rechts zusammengefasst.
-- **`SpineRLEnv`** ist unsere RL-Umgebung. Sie implementiert die
-  Gymnasium-Schnittstelle mit `reset()` und `step()` und bereitet Zustandsdaten
-  sowie Belohnungen für das Lernverfahren auf. Gymnasium simuliert die Fabrik nicht.
-- **MaskablePPO und das Netz** wählen Aktionen und passen während des
-  Trainings die Netzparameter an. Die Regeln des Simulationskerns bleiben dabei gleich.
+Im Training gibt es dieselbe Rückkopplung wie im üblichen RL-Grundmodell:
+Der **Agent** wählt eine Aktion; das **Environment** liefert eine Beobachtung
+und eine Belohnung zurück.
 
 ```mermaid
-sequenceDiagram
-    participant T as Trainer und Netz<br/>MaskablePPO
-    participant E as Unsere RL-Umgebung<br/>SpineRLEnv (Gymnasium)
-    participant S as Fabrik und Aktionsanbindung<br/>Salabim, Bridge,<br/>Policy und Generator
+flowchart LR
+    A["Agent<br/>Netz: CandidateActorCriticPolicy<br/>Lernverfahren: MaskablePPO"]
+    E["Environment: SpineRLEnv<br/>Gymnasium-Schnittstelle<br/>mit Salabim-Fabriksimulation"]
 
-    T->>E: reset(seed)
-    E->>S: Neue Episode starten
-    S-->>E: Erster Zustand und angebotene Aktionen
-    E->>E: Daten in Zahlenfelder<br/>und Maske übersetzen
-    E-->>T: Erste Beobachtung
-
-    loop Bis zum Episodenende
-        T->>T: Netz wählt einen<br/>gültigen Kandidatenindex
-        T->>E: step(index)
-        E->>S: Index an Policy zurückgeben;<br/>Aktion vormerken
-        opt Auswahl für alle Objekte vollständig
-            S->>S: Bridge stellt Aktionen zu<br/>Komponenten führen sie aus
-        end
-        S-->>E: Nächste Auswahl<br/>oder Episodenende
-        E->>E: Beobachtung und<br/>Belohnung bestimmen
-        E-->>T: Beobachtung und Belohnung<br/>plus Abschlussstatus
-        T->>T: Zustand, Aktion und<br/>Belohnung speichern
-        opt Trainingsdatenblock vollständig
-            T->>T: PPO verändert die Netzparameter
-        end
-    end
+    A -->|"Action<br/>Kandidatenindex über step(index)"| E
+    E -->|"Observation<br/>Zustand, Kandidaten und Masken"| A
+    E -->|"Reward<br/>Belohnung für das Lernverfahren"| A
 ```
 
-Während die Episode weiterläuft, liefert `step()` die Belohnung `0`.
-Am Ende liefert es die Abschlussbelohnung oder bei einem Limit die Strafe `-1`.
-Ein PPO-Update hängt vom gesammelten Datenblock ab, nicht vom Episodenende.
-Für eine weitere Episode wird die Umgebung mit `reset()` neu gestartet.
+- **Agent:** `CandidateActorCriticPolicy` ist das neuronale Netz. Sein Actor
+  liefert die Aktionsauswahl; sein Critic schätzt die noch zu erwartende
+  Belohnung. `MaskablePPO` sammelt die Erfahrungen und verändert beim Training
+  die Netzparameter.
+- **Environment:** `SpineRLEnv` implementiert die Gymnasium-Schnittstelle
+  mit `reset()` und `step()`. Im Hintergrund simuliert Salabim die Fabrik.
+  Gymnasium ist hier der Schnittstellenstandard, nicht der Fabriksimulator.
+- **Action:** Der Agent übergibt die Nummer eines angebotenen Kandidaten.
+  `RLCandidatePolicy` übernimmt diesen Index und stellt die ausgewählten
+  Aktionen über die Bridge zur Ausführung bereit. Die möglichen Aktionen
+  stammen vom `SpineActionGenerator`.
+- **Observation:** `RLObservationEncoder` übersetzt Zustandsdaten und
+  angebotene Kandidaten in Zahlenfelder und Masken. Diese erhält das Netz
+  als Eingabe, nicht die laufenden Salabim-Objekte.
+- **Reward:** Solange die Episode weiterläuft, liefert `SpineRLEnv` die
+  Belohnung `0`. Am Episodenende berechnet `RLReward` den Wert
+  `1 / (1 + global_cost)` bei regulärem Abschluss oder `-1` bei einem Limitabbruch.
+  Diese Belohnung wird zum Lernen verwendet; sie ist kein zusätzliches
+  Eingabefeld der Beobachtung.
+
+Ein PPO-Update erfolgt nach einem gesammelten Trainingsdatenblock, nicht
+nach jeder einzelnen Rückmeldung und nicht zwingend am Episodenende.
+Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
 
@@ -3035,6 +3031,37 @@ Netzeingaben berücksichtigt. Die vorgemerkten Aktionen stehen außerdem in
 Bei direkter Nutzung von `RLCandidatePolicy` kann `expose_forced_actions=True`
 auch einzelne Kandidaten an die Auswahlfunktion melden. Die Trainingsumgebung
 `SpineRLEnv` übernimmt einzelne Kandidaten dagegen automatisch.
+
+**Detailablauf der Agent–Environment-Schleife:**
+
+```mermaid
+sequenceDiagram
+    participant T as Trainer und Netz<br/>MaskablePPO
+    participant E as Unsere RL-Umgebung<br/>SpineRLEnv (Gymnasium)
+    participant S as Fabrik und Aktionsanbindung<br/>Salabim, Bridge,<br/>Policy und Generator
+
+    T->>E: reset(seed)
+    E->>S: Neue Episode starten
+    S-->>E: Erster Zustand und angebotene Aktionen
+    E->>E: Daten in Zahlenfelder<br/>und Maske übersetzen
+    E-->>T: Erste Beobachtung
+
+    loop Bis zum Episodenende
+        T->>T: Netz wählt einen<br/>gültigen Kandidatenindex
+        T->>E: step(index)
+        E->>S: Index an Policy zurückgeben;<br/>Aktion vormerken
+        opt Auswahl für alle Objekte vollständig
+            S->>S: Bridge stellt Aktionen zu<br/>Komponenten führen sie aus
+        end
+        S-->>E: Nächste Auswahl<br/>oder Episodenende
+        E->>E: Beobachtung und<br/>Belohnung bestimmen
+        E-->>T: Beobachtung und Belohnung<br/>plus Abschlussstatus
+        T->>T: Zustand, Aktion und<br/>Belohnung speichern
+        opt Trainingsdatenblock vollständig
+            T->>T: PPO verändert die Netzparameter
+        end
+    end
+```
 
 ### Numerische Beobachtung und Aktionsmaske
 

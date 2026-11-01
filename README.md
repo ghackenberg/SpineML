@@ -2898,27 +2898,46 @@ Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
 als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
 [Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
 
-Während des Trainings läuft die Zusammenarbeit so ab:
+**Während einer Episode: Aktionen auswählen und ausführen**
 
 1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)
-   startet die Simulation und hält sie an, sobald eine Auswahl erforderlich ist.
-2. Das Netz erhält Zustandsdaten und die angebotenen Aktionen als Zahlenfelder.
-   Es wählt eine Aktion aus; die Simulation setzt die gewählten Aktionen um.
-3. Dieser Wechsel zwischen Auswahl und Ausführung wiederholt sich bis zum Episodenende.
-4. Aus dem Produktionsergebnis wird eine **Belohnung** berechnet. Das ist eine
-   Zahl als Rückmeldung: Ein besseres vollständiges Ergebnis ergibt eine höhere
-   Belohnung. Solange die Episode weiterläuft, liefert jeder Entscheidungsschritt
-   die Belohnung `0`.
+   startet die Simulation. Sobald eine Auswahl aus mehreren Aktionen nötig ist,
+   wartet sie auf die Entscheidung des Netzes.
+2. Der [Encoder](#numerische-beobachtung-und-aktionsmaske) übersetzt die
+   Zustandsdaten und angebotenen Aktionen in Zahlenfelder. Daraus berechnet
+   das Netz seine Auswahl.
+3. Steht die Auswahl für alle wartenden Objekte fest, gibt die Policy die
+   Aktionen an die Bridge zurück. Die Simulationskomponenten führen sie aus.
+   Bei den nächsten Auswahlpunkten entscheidet das Netz erneut.
+4. Sind alle Jobprozesse beendet, werden die Produktionskennzahlen
+   ausgewertet und in eine **Belohnung** umgerechnet. Ein günstigerer
+   vollständiger Produktionslauf erhält eine höhere Belohnung.
 
-Der Trainingsalgorithmus **MaskablePPO** speichert Zustände, gewählte Aktionen
-und Belohnungen. Nach einer festgelegten Anzahl gesammelter Entscheidungen
-passt er die Netzparameter an. Das geschieht **nicht zwingend genau am Ende
-eines Simulationslaufs**. Die Trainingsschritte werden unter
-[Training starten](#training-starten) erklärt.
+Solange die Episode noch läuft, ist die Belohnung eines Entscheidungsschritts
+`0`. Das bedeutet **nicht „schlechte Entscheidung“**, sondern: Für diesen
+Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
 
-Nach dem Training kann die gespeicherte RL-Policy eine Simulation steuern,
-ohne dabei weiterzulernen. Ob sie besser ist als die anderen Steuerungen,
-zeigt erst der [Vergleich auf getrennten Test-Seeds](#auf-getrennten-test-seeds-vergleichen).
+**Beim Training: das Netz anhand gesammelter Daten verändern**
+
+Der Trainingsalgorithmus **MaskablePPO** sammelt die Zustände, gewählten
+Aktionen und Belohnungen. Nach einer festgelegten Anzahl von Entscheidungen
+verarbeitet er diesen Datenblock und verändert die internen Zahlenwerte des
+Netzes, seine **Netzparameter**. Danach werden neue Entscheidungen mit dem
+aktualisierten Netz getroffen.
+
+Ein solcher Trainingsschritt kann stattfinden, **bevor alle Jobs fertig sind**.
+Für den dann noch unbekannten weiteren Verlauf verwendet PPO die Schätzung
+eines zweiten Netzteils, des [Critic](#neuronales-netz-und-maskableppo).
+Dieser schätzt die noch zu erwartende Belohnung. Die tatsächliche
+Abschlussbelohnung entsteht weiterhin erst am Episodenende. Wann Daten gesammelt
+und Netzparameter geändert werden, erklärt [Training starten](#training-starten).
+
+**Nach dem Training: das gespeicherte Netz einsetzen**
+
+Die gespeicherte RL-Policy trifft weiter Aktionsentscheidungen, verändert
+ihre Netzparameter dabei aber nicht mehr. Ob sie bessere Produktionsergebnisse
+erzielt, wird mit dem [Vergleich auf getrennten Test-Seeds](#auf-getrennten-test-seeds-vergleichen)
+geprüft.
 
 ### Was wählt die RL-Policy aus?
 

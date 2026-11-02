@@ -2898,20 +2898,24 @@ Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
 als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
 [Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
 
-**Überblick: Agent und Environment in unserer Implementierung**
+**Überblick: Agent–Environment-Kreislauf**
 
 Im Training gibt es dieselbe Rückkopplung wie im üblichen RL-Grundmodell:
 Der **Agent** wählt eine Aktion; das **Environment** liefert eine Beobachtung
 und eine Belohnung zurück.
 
 ```mermaid
-flowchart LR
-    A["Agent<br/>Netz: CandidateActorCriticPolicy<br/>Lernverfahren: MaskablePPO"]
-    E["Environment: SpineRLEnv<br/>Gymnasium-Schnittstelle<br/>mit Salabim-Fabriksimulation"]
+flowchart TB
+    A([Agent])
+    E([Environment])
 
-    A -->|"Action<br/>Kandidatenindex über step(index)"| E
-    E -->|"Observation<br/>Zustand, Kandidaten und Masken"| A
-    E -->|"Reward<br/>Belohnung für das Lernverfahren"| A
+    A -->|"action Aₜ"| E
+    E -->|"State Sₜ₊₁"| A
+    E -->|"reward Rₜ₊₁"| A
+
+    style A fill:#ffffff,stroke:#246bff,color:#333333
+    style E fill:#ffffff,stroke:#246bff,color:#333333
+    linkStyle default stroke:#246bff
 ```
 
 - **Agent:** `CandidateActorCriticPolicy` ist das neuronale Netz. Sein Actor
@@ -2925,7 +2929,7 @@ flowchart LR
   `RLCandidatePolicy` übernimmt diesen Index und stellt die ausgewählten
   Aktionen über die Bridge zur Ausführung bereit. Die möglichen Aktionen
   stammen vom `SpineActionGenerator`.
-- **Observation:** `RLObservationEncoder` übersetzt Zustandsdaten und
+- **State (Beobachtung):** `RLObservationEncoder` übersetzt Zustandsdaten und
   angebotene Kandidaten in Zahlenfelder und Masken. Diese erhält das Netz
   als Eingabe, nicht die laufenden Salabim-Objekte.
 - **Reward:** Solange die Episode weiterläuft, liefert `SpineRLEnv` die

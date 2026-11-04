@@ -1,4 +1,4 @@
-"""Verwendet ein gespeichertes Kandidaten-DQN als Simulations-Policy.
+"""Verwendet ein gespeichertes DQN- oder Monte-Carlo-Netz als Simulations-Policy.
 
 Nur eigene/vertraute Checkpoints laden: das SB3-ZIP enthält Python-Objekte.
 """
@@ -27,8 +27,26 @@ def _validate_options(deterministic: bool, seed: int) -> int:
     return int(seed)
 
 
+def training_algorithm_classes(manifest: Mapping):
+    """Wählt den gespeicherten Lernalgorithmus und die zugehörige Netzklasse."""
+    algorithm = manifest.get("algorithm")
+    policy_class = manifest.get("policy_class")
+    if algorithm == "MaskablePPO":
+        raise ValueError("Alte PPO-Checkpoints werden nicht unterstützt; ein DQN- oder Monte-Carlo-Training ist erforderlich.")
+    if algorithm == "DQN" and policy_class == "CandidateDQNPolicy":
+        from .CandidateDQN import CandidateDQN
+        from .CandidateDQNPolicy import CandidateDQNPolicy
+
+        return CandidateDQN, CandidateDQNPolicy
+    if algorithm == "MonteCarlo" and policy_class == "CandidateMonteCarloPolicy":
+        from .CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
+
+        return CandidateMonteCarlo, CandidateMonteCarloPolicy
+    raise ValueError("Das Manifest muss einen unterstützten DQN- oder Monte-Carlo-Trainingslauf beschreiben.")
+
+
 class TrainedCandidatePolicy(Policy):
-    """Lädt ein DQN; ohne Exploration gewinnt der höchste gültige Q-Wert."""
+    """Lädt ein trainiertes Netz; ohne Exploration gewinnt der höchste gültige Q-Wert."""
 
     def __init__(
         self,
@@ -48,18 +66,14 @@ class TrainedCandidatePolicy(Policy):
         except json.JSONDecodeError as error:
             raise ValueError(f"Ungültiges JSON-Manifest: {manifest_path}") from error
         if not isinstance(manifest, dict):
-            raise ValueError("Das Manifest muss einen DQN-Trainingslauf beschreiben.")
-        if manifest.get("algorithm") == "MaskablePPO":
-            raise ValueError("Alte PPO-Checkpoints sind mit dem DQN-Loader nicht kompatibel; ein DQN-Trainingslauf ist erforderlich.")
-        if manifest.get("algorithm") != "DQN" or manifest.get("policy_class") != "CandidateDQNPolicy":
-            raise ValueError("Das Manifest muss DQN mit CandidateDQNPolicy beschreiben.")
+            raise ValueError("Das Manifest muss einen RL-Trainingslauf beschreiben.")
         try:
             import torch as th
             from gymnasium import spaces
             from stable_baselines3.common.utils import get_device
-            from .CandidateDQN import CandidateDQN
-            from .CandidateDQNPolicy import CandidateDQNPolicy
             from .TrainingSupport import validate_artifact_context
+
+            algorithm_class, policy_class = training_algorithm_classes(manifest)
         except ImportError as error:
             raise ImportError(
                 'Die trainierte Policy benötigt: python -m pip install ".[rl-training]"'
@@ -73,6 +87,7 @@ class TrainedCandidatePolicy(Policy):
         if not checkpoint_path.is_file():
             raise FileNotFoundError(f"Der NN-Checkpoint fehlt: {checkpoint_path}")
         self.artifact_context = context
+        self.algorithm = manifest["algorithm"]
         self._decision_count = 0
         self.deterministic = deterministic
         self.encoder = RLObservationEncoder(
@@ -95,12 +110,12 @@ class TrainedCandidatePolicy(Policy):
         numpy_rng = np.random.get_state()
         try:
             with th.random.fork_rng(devices=self._rng_devices):
-                self.model = CandidateDQN.load(checkpoint_path, device=selected_device, seed=None)
+                self.model = algorithm_class.load(checkpoint_path, device=selected_device, seed=None)
         finally:
             random.setstate(python_rng)
             np.random.set_state(numpy_rng)
-        if not isinstance(self.model.policy, CandidateDQNPolicy):
-            raise ValueError("Der Checkpoint enthält keine CandidateDQNPolicy.")
+        if not isinstance(self.model.policy, policy_class):
+            raise ValueError("Der Checkpoint enthält nicht die im Manifest angegebene Netzklasse.")
 
         expected_observation_space = spaces.Dict({
             "context": spaces.Box(-1.0, 1.0, (self.encoder.context_size,), np.float32),

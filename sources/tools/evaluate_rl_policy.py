@@ -1,4 +1,4 @@
-"""Lädt ein Kandidaten-DQN und vergleicht es auf unbenutzten Test-Seeds."""
+"""Lädt ein DQN- oder Monte-Carlo-Netz und vergleicht es auf unbenutzten Test-Seeds."""
 
 from __future__ import annotations
 
@@ -44,11 +44,13 @@ def main() -> None:
     except (OSError, ValueError) as error:
         parser.error(f"Trainingskonfiguration nicht lesbar: {error}")
     if not isinstance(manifest, dict):
-        parser.error("Das Manifest muss einen DQN-Trainingslauf beschreiben.")
-    if manifest.get("algorithm") == "MaskablePPO":
-        parser.error("Alte PPO-Checkpoints sind mit der DQN-Auswertung nicht kompatibel; ein DQN-Trainingslauf ist erforderlich.")
-    if manifest.get("algorithm") != "DQN" or manifest.get("policy_class") != "CandidateDQNPolicy":
-        parser.error("Das Manifest muss DQN mit CandidateDQNPolicy beschreiben.")
+        parser.error("Das Manifest muss einen RL-Trainingslauf beschreiben.")
+    try:
+        from SpineML.Control.RLPolicy.TrainedPolicy import training_algorithm_classes
+
+        algorithm_class, policy_class = training_algorithm_classes(manifest)
+    except (ImportError, ValueError) as error:
+        parser.error(str(error))
     seeds = args.seeds
     if not seeds:
         seeds = manifest.get("evaluation_seeds", [])
@@ -67,8 +69,6 @@ def main() -> None:
     try:
         import numpy as np
         import torch
-        from SpineML.Control.RLPolicy.CandidateDQN import CandidateDQN
-        from SpineML.Control.RLPolicy.CandidateDQNPolicy import CandidateDQNPolicy
         from SpineML.Control.RLPolicy.SpineRLEnv import SpineRLEnv
         from SpineML.Control.RLPolicy.TrainingSupport import evaluation_from_context, validate_artifact_context
         from SpineML.Control.RandomPolicy.RandomPolicy import RandomPolicy
@@ -79,6 +79,10 @@ def main() -> None:
         from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
+    algorithm = manifest["algorithm"]
+    policy_name = "RL (DQN)"
+    if algorithm == "MonteCarlo":
+        policy_name = "RL (Monte Carlo)"
     torch.set_num_threads(1)
     context = manifest["artifact_context"]
     model_path = validate_artifact_context(context, args.model)
@@ -109,12 +113,12 @@ def main() -> None:
     numpy_rng = np.random.get_state()
     try:
         with torch.random.fork_rng(devices=[]):
-            network = CandidateDQN.load(checkpoint, device="cpu", seed=None)
+            network = algorithm_class.load(checkpoint, device="cpu", seed=None)
     finally:
         random.setstate(python_rng)
         np.random.set_state(numpy_rng)
-    if not isinstance(network.policy, CandidateDQNPolicy):
-        parser.error("Der Checkpoint enthält keine CandidateDQNPolicy.")
+    if not isinstance(network.policy, policy_class):
+        parser.error("Der Checkpoint enthält nicht die im Manifest angegebene Netzklasse.")
     environment = SpineRLEnv(model_path, evaluation, **context["environment"])
     if network.observation_space != environment.observation_space or network.action_space != environment.action_space:
         environment.close()
@@ -124,7 +128,7 @@ def main() -> None:
 
     def save_progress() -> None:
         # Bei einem späteren Fehler bleiben schon abgeschlossene Läufe als Teilbericht erhalten.
-        partial = {"status": "in_progress", "checkpoint": str(checkpoint),
+        partial = {"status": "in_progress", "algorithm": algorithm, "checkpoint": str(checkpoint),
                    "test_seeds": seeds, "artifact_context": context,
                    "optimized_weights_source": optimized_source, "runs": results,
                    "elapsed_seconds": perf_counter() - started_at}
@@ -160,14 +164,14 @@ def main() -> None:
                 observation, reward, terminated, truncated, info = environment.step(int(np.asarray(action).item()))
                 reward_total += float(reward)
             results.append({
-                "policy": "RL (trained)", "seed": seed, "terminated": bool(terminated),
+                "policy": policy_name, "seed": seed, "terminated": bool(terminated),
                 "truncated": bool(truncated), "reward": reward_total,
                 "global_cost": float(info["global_cost"]), "metrics": info["metrics"],
                 "decisions": info["decision_count"], "limit_reason": info.get("truncation_reason"),
                 "elapsed_seconds": perf_counter() - run_started_at,
             })
             save_progress()
-            print(f"RL, Seed {seed}: abgeschlossen={terminated}, Reward={reward_total:.5f}, Kosten={info['global_cost']:.5f}", flush=True)
+            print(f"{policy_name}, Seed {seed}: abgeschlossen={terminated}, Reward={reward_total:.5f}, Kosten={info['global_cost']:.5f}", flush=True)
     finally:
         environment.close()
 
@@ -247,7 +251,7 @@ def main() -> None:
             "mean_global_cost": mean_global_cost,
             "mean_metrics": mean_metrics,
         })
-    report = {"status": "finished", "checkpoint": str(checkpoint), "model_sha256": context["model_sha256"],
+    report = {"status": "finished", "algorithm": algorithm, "checkpoint": str(checkpoint), "model_sha256": context["model_sha256"],
               "test_seeds": seeds, "deterministic": not args.explore,
               "exploration_rate": float(network.exploration_rate),
               "artifact_context": context, "optimized_weights_source": optimized_source,

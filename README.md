@@ -9,7 +9,7 @@ Maschinen. Diese README beschreibt den Zweig `Foroogh`.
   wählt Aktionen; die Simulation führt diese aus.
 - **Steuerungen vergleichen:** Die heuristische Policy und die Zufallspolicy
   werden anhand derselben Produktionskennzahlen verglichen. Optional lässt
-  sich eine neuronale Kandidatenauswahl mit DQN trainieren und auf
+  sich eine neuronale Kandidatenauswahl mit DQN oder Monte Carlo trainieren und auf
   getrennten Test-Seeds mit diesen Steuerungen vergleichen.
 - **Heuristik verbessern:** Die Gewichtssuche prüft verschiedene lokale
   Gewichtssätze in vollständigen Simulationsläufen. Unabhängige Läufe können
@@ -82,6 +82,7 @@ sources/
             ├── RLReward.py
             ├── CandidateDQN.py
             ├── CandidateDQNPolicy.py
+            ├── CandidateMonteCarlo.py
             ├── TrainingSupport.py
             └── TrainedPolicy.py
 ```
@@ -2908,7 +2909,7 @@ und eine Belohnung zurück.
 
 ```mermaid
 flowchart TB
-    A["Agent mit DQN"]
+    A["Agent mit DQN oder Monte Carlo"]
     E["Environment mit Fabriksimulation"]
 
     A -->|"action Aₜ"| E
@@ -2920,10 +2921,11 @@ flowchart TB
     linkStyle default stroke:#246bff
 ```
 
-- **Agent:** `CandidateDQNPolicy` berechnet die Q-Werte der Kandidaten.
-  `CandidateDQN` sammelt Erfahrungen und verändert beim Training die
-  Netzparameter. Die Klasse erweitert DQN aus Stable-Baselines3 um die
-  Kandidatenmaske.
+- **Agent:** Das Kandidatennetz berechnet die Q-Werte der angebotenen Aktionen.
+  Zum Lernen kann [DQN](#neuronales-netz-und-dqn) oder
+  [Monte Carlo](#monte-carlo-aus-vollständigen-episoden-lernen) verwendet werden.
+  Beide Verfahren nutzen dieselben Eingabemerkmale und denselben Netzaufbau;
+  sie unterscheiden sich darin, wie sie Lernziele berechnen und das Netz anpassen.
 - **Environment:** `SpineRLEnv` implementiert die Gymnasium-Schnittstelle
   mit `reset()` und `step()`. Im Hintergrund simuliert Salabim die Fabrik.
   Gymnasium ist hier der Schnittstellenstandard, nicht der Fabriksimulator.
@@ -2940,8 +2942,9 @@ flowchart TB
   Diese Belohnung wird zum Lernen verwendet; sie ist kein zusätzliches
   Eingabefeld der Beobachtung.
 
-Eine Netzanpassung erfolgt anhand gespeicherter Erfahrungen, nicht zwingend
-nach jeder Rückmeldung und nicht erst am Episodenende.
+Wann das Netz angepasst wird, hängt vom gewählten Lernverfahren ab:
+DQN kann schon während einer Episode lernen; Monte Carlo wartet auf
+vollständige Episoden.
 Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
@@ -2965,16 +2968,16 @@ Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
 
 **Beim Training: das Netz anhand gesammelter Daten verändern**
 
-Der Trainingsalgorithmus **DQN** speichert Zustand, Aktion, Belohnung,
-Folgezustand und Abschlussstatus in einem **Replay Buffer**, also einem
-Erfahrungsspeicher. Für eine Netzanpassung zieht er daraus zufällige
-Datengruppen. Erfahrungen können dadurch mehrmals verwendet werden.
+- **DQN:** Speichert Übergänge in einem **Replay Buffer**, also einem
+  Erfahrungsspeicher, und verwendet sie mehrfach. Das Lernziel enthält bei
+  laufender Episode eine Schätzung des [Zielnetzes](#neuronales-netz-und-dqn).
+- **Monte Carlo:** Sammelt vollständige Episoden und berechnet daraus die
+  tatsächlich beobachtete spätere Belohnung, den **Return**, für jede besuchte
+  Entscheidung. Diese Returns werden direkt als
+  [Lernziele für das Netz](#monte-carlo-aus-vollständigen-episoden-lernen) verwendet.
 
-Ein Trainingsschritt kann stattfinden, **bevor alle Jobs fertig sind**.
-Für den noch unbekannten weiteren Verlauf verwendet DQN die Q-Werte eines
-separaten [Zielnetzes](#neuronales-netz-und-dqn). Die tatsächliche
-Abschlussbelohnung entsteht weiterhin erst am Episodenende. Wann Daten gesammelt
-und Netzparameter geändert werden, erklärt [Training starten](#training-starten).
+Die Abschlussbelohnung entsteht bei beiden Verfahren erst am Episodenende.
+Die Befehle und Einstellungen stehen unter [Training starten](#training-starten).
 
 **Nach dem Training: das gespeicherte Netz einsetzen**
 
@@ -3139,7 +3142,7 @@ in der letzten Beobachtung stehen. Andere Lernverfahren könnten diesen Zustand
 verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
 **Value-Bootstrapping**; die abgebrochene Episode wird damit nicht fortgesetzt.
 
-Für das vorhandene DQN-Training gelten beide Limits als endgültiger Fehlschlag.
+Für das DQN- und Monte-Carlo-Training gelten beide Limits als endgültiger Fehlschlag.
 Die Zusatzklasse `EpisodeSeedWrapper` in
 [`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
 meldet sie deshalb an Stable-Baselines3 (SB3) als `terminated=True` und
@@ -3210,6 +3213,50 @@ dafür DQN aus Stable-Baselines3. Es gibt keinen Actor und keine
 gelernten Auswahlwahrscheinlichkeiten. Das globale Produktionsziel, die
 Belohnungsformel und die Regeln der Simulation bleiben unverändert.
 
+### Monte Carlo: aus vollständigen Episoden lernen
+
+[`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/CandidateMonteCarlo.py)
+trainiert ein einzelnes Kandidaten-Q-Netz. Anders als DQN verwendet es
+**kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
+
+Ein Trainingsabschnitt läuft so ab:
+
+1. **Vollständige Episoden sammeln:** Jeder Worker führt eine Episode aus.
+   Die Netzparameter bleiben währenddessen unverändert. Ein früher fertiger
+   Worker wartet, bis auch die anderen Episoden beendet sind; er startet
+   nicht schon eine weitere Fabriksimulation.
+2. **Returns berechnen:** Für jede besuchte Entscheidung werden ihre
+   tatsächlichen Belohnungen bis zum Episodenende zusammengefasst.
+   Im Trainingsskript gilt `gamma=1.0`. Da nur am Ende eine Belohnung entsteht,
+   ist der Return für alle besuchten Entscheidungen dieser Episode gleich
+   ihrer Endbelohnung.
+3. **Netz trainieren:** Für jeden gespeicherten Zustand wird die Q-Schätzung
+   der damals gewählten Aktion mit diesem Return verglichen:
+   `Fehler = (Q-Schätzung − Return)²`. Die Netzparameter werden so angepasst,
+   dass der mittlere Fehler kleiner wird. `--epochs` bestimmt, wie oft die
+   gesammelten Entscheidungen zum Lernen verwendet werden; dafür ist keine
+   neue Simulation nötig.
+4. **Neue Episoden starten:** Die Daten dieses Abschnitts werden danach
+   verworfen. Die Worker sammeln mit dem angepassten Netz neue Episoden.
+
+**Beispiel:** Eine Episode enthält `S1 → Nacharbeit → S2 → Transport → Ende`.
+Die Zwischenbelohnungen sind `0`, die Endbelohnung ist `0.8`. Dann lautet
+der Lernzielwert sowohl für die besuchte Entscheidung `S1, Nacharbeit`
+als auch für `S2, Transport` jeweils `0.8`. Die Zwischenbelohnungen bleiben
+trotzdem `0`; der Return ist das Ergebnis des weiteren Episodenverlaufs,
+nicht eine eigene unmittelbare Belohnung der Aktion.
+
+Auch Monte Carlo wählt nur gültige Kandidaten: mit Wahrscheinlichkeit
+`epsilon` zufällig, sonst den Kandidaten mit dem höchsten Q-Wert. Während
+eines Sammelabschnitts bleibt auch `epsilon` unverändert. Es gibt keinen
+Replay Buffer mit beliebig alten Episoden anderer Netzstände. Die Dateien
+`RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von beiden
+Lernverfahren verwendet.
+
+Die direkten Lernziele machen Monte Carlo für die reine Endbelohnung zu
+einer Vergleichsmöglichkeit. Ob es mit demselben Simulationsbudget bessere
+Produktionsergebnisse lernt als DQN, muss der Test zeigen.
+
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
 Vor dem Training führt
@@ -3244,11 +3291,11 @@ Das Training speichert im Ausgabeordner:
 | Datei | Inhalt |
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
-| `model.zip` | Gespeicherter Stand der Q-Netze und des DQN-Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
+| `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
 | `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. |
-| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Er wird nicht in jedem Checkpoint mitgespeichert. |
+| `replay_buffer.pkl` | Optionaler DQN-Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Monte Carlo verwendet diese Datei nicht. |
 | `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus. Die Datei entsteht beim ersten Episodenende. |
-| `progress.csv` | Protokoll der DQN-Trainingswerte. |
+| `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
 | `training_report.json` | Status und Umfang des Trainings sowie Rechenzeiten für Baseline, Training und Gesamtlauf. |
 
 **Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
@@ -3263,10 +3310,11 @@ Es gelten die gespeicherten Bewertungsvorgaben, nicht nachträglich geänderte
 App-Einstellungen. `--model` erlaubt eine identische Dateikopie an einem
 anderen Speicherort, aber kein anderes Fabrikmodell.
 
-Manifestversion und Algorithmus müssen zum DQN-Format passen. Alte
+Manifestversion und Algorithmus müssen zum gespeicherten Netzstand passen.
+Der Loader wählt anhand des Manifests DQN oder Monte Carlo. Alte
 PPO-Netzstände sind nicht kompatibel und werden mit einer Fehlermeldung
 abgewiesen. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
-für DQN ist ein neuer, leerer Ausgabeordner zu verwenden.
+für jeden Trainingslauf ist ein neuer, leerer Ausgabeordner zu verwenden.
 
 Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten
 Python-Objekte und sind nicht als unbedenkliche Datendateien zu behandeln.
@@ -3279,14 +3327,27 @@ installiert diese Bibliotheken:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/dqn --steps 100000 --workers 4
+```
+
+**DQN trainieren:**
+
+```console
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dqn --output rl_runs/dqn --steps 100000 --workers 4
+```
+
+**Monte Carlo trainieren:**
+
+```console
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm monte-carlo --output rl_runs/monte_carlo --steps 100000 --workers 4 --epochs 4
 ```
 
 Ohne `--model` verwendet
 [`train_rl_policy.py`](sources/tools/train_rl_policy.py) die unter `EXAMPLE_FILE`
 eingestellte Fabrikdatei, derzeit [example-5.py](sources/examples/normal/example-5.py).
-`--output` bestimmt den Ausgabeordner. Dieser muss neu oder leer sein, damit
-kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
+`--algorithm` wählt das Lernverfahren; ohne Angabe gilt `dqn`.
+`--output` bestimmt den Ausgabeordner; ohne Angabe gilt je nach Verfahren
+`rl_runs/dqn` oder `rl_runs/monte_carlo`. Der Ordner muss neu oder leer sein,
+damit kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
 ohne eine Simulation oder ein Training zu starten.
 
 **Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
@@ -3295,7 +3356,7 @@ gemeinsam trainierte Netz und das Lernverfahren liegen dagegen im übergeordnete
 Trainingsprozess. Dieser berechnet die Aktionsauswahl für die Worker und sammelt
 ihre Zustände, Aktionen und Belohnungen.
 
-**Wann wird das Netz verändert?** Zunächst sammelt DQN Erfahrungen, ohne das
+**DQN: Wann wird das Netz verändert?** Zunächst sammelt DQN Erfahrungen, ohne das
 Netz anzupassen (`--learning-starts`). Danach wechseln sich Sammeln und Lernen
 ab: `--train-freq` bestimmt die Anzahl gemeinsamer Worker-Schritte je
 Sammelphase. Anschließend werden `--gradient-steps` Netzanpassungen ausgeführt.
@@ -3307,32 +3368,42 @@ einer Episode enden oder mehrere Episoden berühren. Beim Training zählen nur
 Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
 automatisch übernommene Einzelkandidaten zählen nicht mit.
 
+**Monte Carlo: Wann wird das Netz verändert?** Erst nachdem jeder Worker
+seine aktuelle Episode beendet hat. Danach wird jede gesammelte Entscheidung
+`--epochs`-mal zum Lernen verwendet. Für jeden Durchgang werden die Daten
+neu gemischt und in Datengruppen mit höchstens `--batch-size` Einträgen
+aufgeteilt. Anschließend beginnen neue Episoden. Den Ablauf erklärt
+[Monte Carlo: aus vollständigen Episoden lernen](#monte-carlo-aus-vollständigen-episoden-lernen).
+
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln. Gemeint sind weder Episoden noch Simulationsstunden. Die letzte Sammelphase wird noch vollständig ausgeführt; die tatsächliche Zahl kann deshalb größer sein. |
+| `--algorithm` | `dqn` | `dqn` oder `monte-carlo` als Lernverfahren verwenden. |
+| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln, nicht Episoden oder Simulationsstunden. DQN beendet seine letzte Sammelphase; Monte Carlo beendet zusätzlich alle Episoden des laufenden Abschnitts und trainiert mit ihnen. Die tatsächliche Zahl kann deshalb größer sein. |
 | `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
-| `--buffer-size` | `5000` | Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
-| `--learning-starts` | `1000` | Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
-| `--train-freq` | `4` | Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
-| `--gradient-steps` | `4` | Netzanpassungen nach einer Sammelphase. |
-| `--batch-size` | `64` | Zufällig gezogene Übergänge pro Netzanpassung. Muss keinen Sammelblock ohne Rest teilen. |
+| `--buffer-size` | `5000` | Nur DQN: Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
+| `--learning-starts` | `1000` | Nur DQN: Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
+| `--train-freq` | `4` | Nur DQN: Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
+| `--gradient-steps` | `4` | Nur DQN: Netzanpassungen nach einer Sammelphase. |
+| `--epochs` | `4` | Nur Monte Carlo: Vollständige Trainingsdurchgänge über die Entscheidungen des letzten Sammelabschnitts. |
+| `--batch-size` | `64` | DQN: zufällig gezogene Übergänge pro Netzanpassung. Monte Carlo: höchstens so viele Entscheidungen pro Datengruppe; alle gesammelten Entscheidungen werden in jedem Durchgang verwendet. |
 | `--learning-rate` | `0.0001` | Schrittweite bei der Anpassung der Netzparameter. |
-| `--target-update-interval` | `1000` | Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
+| `--target-update-interval` | `1000` | Nur DQN: Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
 | `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear vom Anfangs- zum Endwert sinkt. |
 | `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl. |
-| `gamma` / `tau` | `1.0` / `1.0` | Keine Abschwächung späterer Belohnung und vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
+| `gamma` | `1.0` | Spätere Belohnung nicht abschwächen. Für beide Verfahren im Trainingsskript festgelegt. |
+| `tau` | `1.0` | Nur DQN: vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
 | `--device` | `cpu` | CPU oder GPU für das Netz und seine Anpassung; die Simulation bleibt auf der CPU. |
-| `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
+| `--save-replay-buffer` | aus | Nur DQN: Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
 
-**Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
+**DQN-Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
 neue Übergänge. Nach der Aufwärmphase folgen vier Netzanpassungen mit jeweils
 64 zufällig gezogenen Übergängen aus dem Speicher. Das Zielnetz übernimmt
 standardmäßig nach ungefähr 1000 externen Entscheidungen die Online-Parameter.
 Bei mehreren Workern erfolgt die Übernahme an einem gemeinsamen Worker-Schritt.
 
-Mehr Worker liefern bei unverändertem `--train-freq` mehr neue Erfahrungen,
+Bei DQN liefern mehr Worker bei unverändertem `--train-freq` mehr neue Erfahrungen,
 erhöhen aber nicht automatisch `--gradient-steps`. Jeder Worker benötigt
 Speicher für sein eigenes Layout, Szenario und seine Simulation, nicht für
 ein eigenes trainierendes Netz. Zusätzlich benötigt der zentrale Replay
@@ -3341,8 +3412,14 @@ Objekt- und Kandidatenfelder kann dieser Speicher groß werden. Kleinere
 Minibatches verkleinern den gesamten Replay Buffer nicht. Mehr Worker
 garantieren deshalb keine kürzere Laufzeit.
 
+Monte Carlo speichert die Beobachtungen, Aktionen und Belohnungen des aktuellen
+Sammelabschnitts, nicht zusätzlich sämtliche Folgezustände in einem Replay
+Buffer. Auch diese Daten können bei langen Episoden und vielen Workern viel
+Arbeitsspeicher benötigen. Fertige Worker warten auf die längste Episode
+des Abschnitts, bevor das gemeinsame Netz trainiert wird.
+
 Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
-Netzberechnung und die DQN-Netzanpassungen auf eine passende GPU verlagern.
+Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.
 `cuda` ohne verfügbare CUDA-GPU führt zu einem Fehler. Für das vorhandene
 kleine Netz ist `cpu` voreingestellt.
 
@@ -3350,12 +3427,16 @@ kleine Netz ist `cpu` voreingestellt.
 
 ```console
 .\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/dqn
+.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/monte_carlo
 ```
 
 [`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt den
 gespeicherten Netzstand aus `model.zip` und die Einstellungen aus `manifest.json`.
-Danach führt es RL, `RandomPolicy` und Standardheuristik mit denselben
-reservierten Test-Seeds und derselben globalen Bewertung aus. Die Netzparameter
+Das Manifest bestimmt, ob DQN oder Monte Carlo geladen wird. Jeder Befehl
+vergleicht den angegebenen Netzstand mit `RandomPolicy` und Standardheuristik.
+Alle verwenden dieselben reservierten Test-Seeds und dieselbe globale Bewertung.
+Der Bericht bezeichnet das geladene Netz als `RL (DQN)` oder `RL (Monte Carlo)`.
+Die Netzparameter
 werden dabei nicht weiter verändert.
 
 - **Standardauswahl:** Die RL-Policy nimmt den gültigen Kandidaten mit der
@@ -3411,6 +3492,10 @@ runner = SimulationRunner(
 metrics = runner.run_policy(policy, seed=101)
 ```
 
+Für ein Monte-Carlo-Netz wird stattdessen
+`TrainedCandidatePolicy("rl_runs/monte_carlo")` verwendet. Die weitere
+Ausführung bleibt gleich.
+
 Für die Simulation wird die unter `policy.model_path` gespeicherte Fabrikdatei
 geladen. Mit `model_file=...` darf eine identische Kopie an einem anderen Ort
 angegeben werden. Standardmäßig erfolgt die Netzauswahl deterministisch auf
@@ -3437,7 +3522,7 @@ Optimierungsergebnis.
 ### Umgebung ohne Training prüfen
 
 Die RL-Umgebung kann auch ohne neuronales Netz geprüft werden. Dafür reicht
-die optionale Paketgruppe `rl`; PyTorch und DQN werden nicht benötigt.
+die optionale Paketgruppe `rl`; PyTorch und die Lernverfahren werden nicht benötigt.
 Der folgende Befehl startet einen solchen Prüflauf und trainiert oder lädt
 kein Netz:
 

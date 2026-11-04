@@ -1,4 +1,4 @@
-"""Trainiert eine maskierte neuronale Kandidatenauswahl mit MaskablePPO."""
+"""Trainiert eine maskierte Q-Bewertung der Aktionskandidaten mit DQN."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def positive_int(value: str) -> int:
 def nonnegative_int(value: str) -> int:
     number = int(value)
     if number < 0:
-        raise argparse.ArgumentTypeError("Der Seed darf nicht negativ sein.")
+        raise argparse.ArgumentTypeError("Der Wert darf nicht negativ sein.")
     return number
 
 
@@ -37,6 +37,13 @@ def positive_float(value: str) -> float:
     return number
 
 
+def probability(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise argparse.ArgumentTypeError("Die Wahrscheinlichkeit muss zwischen 0 und 1 liegen.")
+    return number
+
+
 def write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
@@ -44,21 +51,28 @@ def write_json(path: Path, value: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, help="Modelldatei; Standard: Beispiel der Optimierungsanwendung.")
-    parser.add_argument("--output", type=Path, default=Path("rl_runs/ppo"), help="Neuer oder leerer Ausgabeordner.")
+    parser.add_argument("--output", type=Path, default=Path("rl_runs/dqn"), help="Neuer oder leerer Ausgabeordner.")
     parser.add_argument("--steps", type=positive_int, default=100_000, help="Mindestens so viele externe Entscheidungen insgesamt trainieren.")
     available_workers = os.cpu_count()
     if not available_workers:
         available_workers = 1
     default_workers = min(available_workers, 4)
     parser.add_argument("--workers", type=positive_int, default=default_workers, help="Getrennte Simulationsprozesse; Standard: höchstens 4.")
-    parser.add_argument("--rollout-steps", type=positive_int, default=256, help="Entscheidungen je Prozess und PPO-Update.")
+    parser.add_argument("--buffer-size", type=positive_int, default=5000, help="Maximale Zahl gespeicherter Übergänge, über alle Worker zusammen.")
+    parser.add_argument("--learning-starts", type=nonnegative_int, default=1000, help="Zunächst so viele neue Entscheidungen sammeln, dann lernen.")
+    parser.add_argument("--train-freq", type=positive_int, default=4, help="Neue Schritte je Worker vor der nächsten Lernphase.")
+    parser.add_argument("--gradient-steps", type=positive_int, default=4, help="Gewichtsanpassungen aus zufälligen Replay-Batches je Lernphase.")
     parser.add_argument("--batch-size", type=positive_int, default=64)
-    parser.add_argument("--epochs", type=positive_int, default=10)
-    parser.add_argument("--learning-rate", type=positive_float, default=0.0003)
+    parser.add_argument("--learning-rate", type=positive_float, default=0.0001)
+    parser.add_argument("--target-update-interval", type=positive_int, default=1000, help="Target-Gewichte ungefähr alle so vielen Entscheidungen nachführen.")
+    parser.add_argument("--exploration-fraction", type=positive_float, default=0.3, help="Anteil des Trainings, in dem Epsilon vom Anfangs- zum Endwert sinkt.")
+    parser.add_argument("--exploration-initial-eps", type=probability, default=1.0)
+    parser.add_argument("--exploration-final-eps", type=probability, default=0.05)
+    parser.add_argument("--save-replay-buffer", action="store_true", help="Replay Buffer am Ende zusätzlich als replay_buffer.pkl speichern; kann groß werden.")
     parser.add_argument("--train-seeds", type=nonnegative_int, nargs="+", default=list(range(1, 11)))
     parser.add_argument("--baseline-seeds", type=nonnegative_int, nargs="+", help="Standard: SEEDS der Optimierungsanwendung.")
     parser.add_argument("--evaluation-seeds", type=nonnegative_int, nargs="+", help="Reservierte Test-Seeds; Standard: TEST_SEEDS der Anwendung.")
-    parser.add_argument("--seed", type=nonnegative_int, default=0, help="Seed für Netzinitialisierung und PPO-Zufall.")
+    parser.add_argument("--seed", type=nonnegative_int, default=0, help="Seed für Netzinitialisierung, Exploration und Replay-Stichproben.")
     parser.add_argument("--max-decisions", type=positive_int, default=10_000)
     parser.add_argument("--max-simulation-time", type=positive_float, default=10_000.0)
     parser.add_argument("--max-actions", type=positive_int, default=256)
@@ -67,26 +81,27 @@ def main() -> None:
     parser.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="Nur das Netz; die Salabim-Simulation bleibt auf der CPU.")
     args = parser.parse_args()
 
-    samples_per_update = args.workers * args.rollout_steps
-    if args.rollout_steps < 2:
-        parser.error("--rollout-steps muss mindestens 2 sein.")
-    if args.batch_size < 2 or args.batch_size > samples_per_update or samples_per_update % args.batch_size:
-        parser.error("--batch-size muss mindestens 2 sein und workers * rollout-steps ohne Rest teilen.")
+    new_decisions_per_collection = args.workers * args.train_freq
+    if args.buffer_size < args.workers:
+        parser.error("--buffer-size muss mindestens so groß wie --workers sein.")
+    if args.exploration_fraction > 1.0:
+        parser.error("--exploration-fraction muss größer als 0 und höchstens 1 sein.")
     if len(set(args.train_seeds)) != len(args.train_seeds):
         parser.error("--train-seeds darf keine doppelten Seeds enthalten.")
     if args.seed + args.workers - 1 >= 2**32:
-        parser.error("Der PPO-Seed einschließlich Worker-Offsets muss kleiner als 2**32 sein.")
+        parser.error("Der DQN-Seed einschließlich Worker-Offsets muss kleiner als 2**32 sein.")
     output = args.output.resolve()
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         parser.error("Der Ausgabeordner muss neu oder leer sein; vorhandene Modelle werden nicht überschrieben.")
 
     try:
+        import numpy as np
         import torch
-        from sb3_contrib import MaskablePPO
         from stable_baselines3.common.callbacks import BaseCallback
         from stable_baselines3.common.logger import configure
         from stable_baselines3.common.vec_env import SubprocVecEnv
-        from SpineML.Control.RLPolicy.CandidateActorCriticPolicy import CandidateActorCriticPolicy
+        from SpineML.Control.RLPolicy.CandidateDQN import CandidateDQN
+        from SpineML.Control.RLPolicy.CandidateDQNPolicy import CandidateDQNPolicy
         from SpineML.Control.RLPolicy.TrainingSupport import (
             EnvironmentFactory, build_artifact_context, calibrate_references, load_app_configuration,
         )
@@ -127,21 +142,27 @@ def main() -> None:
     context = build_artifact_context(model_file, evaluation, env_config)
     output.mkdir(parents=True, exist_ok=True)
     hyperparameters = {
-        "n_steps": args.rollout_steps, "batch_size": args.batch_size, "n_epochs": args.epochs,
-        "learning_rate": args.learning_rate, "gamma": 1.0, "gae_lambda": 1.0,
-        "ent_coef": 0.01, "seed": args.seed,
+        "buffer_size": args.buffer_size, "learning_starts": args.learning_starts,
+        "train_freq": args.train_freq, "gradient_steps": args.gradient_steps,
+        "batch_size": args.batch_size, "learning_rate": args.learning_rate,
+        "target_update_interval": args.target_update_interval,
+        "exploration_fraction": args.exploration_fraction,
+        "exploration_initial_eps": args.exploration_initial_eps,
+        "exploration_final_eps": args.exploration_final_eps,
+        "gamma": 1.0, "tau": 1.0, "seed": args.seed,
     }
     versions = {}
-    for name in ("torch", "stable-baselines3", "sb3-contrib", "gymnasium", "SpineML"):
+    for name in ("torch", "stable-baselines3", "gymnasium", "SpineML"):
         versions[name] = importlib.metadata.version(name)
     manifest = {
-        "algorithm": "MaskablePPO", "policy_class": "CandidateActorCriticPolicy",
+        "algorithm": "DQN", "policy_class": "CandidateDQNPolicy",
         "artifact_context": context, "baseline": baseline_report,
         "train_seeds": args.train_seeds, "evaluation_seeds": evaluation_seeds,
         "workers": args.workers, "requested_timesteps": args.steps,
         "policy_kwargs": {"embedding_dim": 32, "hidden_dim": 64},
         "hyperparameters": hyperparameters,
         "training_limit_semantics": "terminal failure (-1); no timeout value bootstrap",
+        "save_replay_buffer": args.save_replay_buffer,
         "versions": versions,
     }
     write_json(output / "manifest.json", manifest)
@@ -184,19 +205,27 @@ def main() -> None:
             factories.append(factory)
         # Auch bei einem Worker: Salabim bleibt vom Lernprozess getrennt.
         vector_env = SubprocVecEnv(factories, start_method="spawn")
-        model = MaskablePPO(
-            CandidateActorCriticPolicy, vector_env,
+        observation_bytes = 0
+        for space in vector_env.observation_space.spaces.values():
+            observation_bytes += math.prod(space.shape) * np.dtype(space.dtype).itemsize
+        effective_capacity = (args.buffer_size // args.workers) * args.workers
+        replay_gib = 2 * observation_bytes * effective_capacity / 1024**3
+        print(f"Replay: ungefähr {replay_gib:.2f} GiB für Zustände und Folgezustände im CPU-Arbeitsspeicher.", flush=True)
+        model = CandidateDQN(
+            CandidateDQNPolicy, vector_env,
             policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
             **hyperparameters,
         )
         model.set_logger(configure(str(output), ["stdout", "csv"]))
-        print(f"Training: {args.workers} Simulationsprozesse, {samples_per_update} Entscheidungen je PPO-Update, mindestens {args.steps} Entscheidungen insgesamt.", flush=True)
+        print(f"DQN: {args.workers} Simulationsprozesse, {new_decisions_per_collection} neue Entscheidungen je Sammelabschnitt, danach {args.gradient_steps} Replay-Updates ab Entscheidung {args.learning_starts}.", flush=True)
         try:
-            model.learn(total_timesteps=args.steps, callback=TrainingProgress())
+            model.learn(total_timesteps=args.steps, callback=TrainingProgress(), log_interval=1)
         except KeyboardInterrupt:
             interrupted = True
             print("Training unterbrochen; aktuellen Modellstand speichern ...", flush=True)
         model.save(output / "model.zip")
+        if args.save_replay_buffer:
+            model.save_replay_buffer(output / "replay_buffer.pkl")
         completed = []
         for episode in episodes:
             if episode["completed"]:
@@ -217,6 +246,9 @@ def main() -> None:
             "limit_episodes": len(episodes) - len(completed),
             "mean_completed_global_cost": mean_completed_global_cost,
             "baseline_elapsed_seconds": baseline_report["elapsed_seconds"],
+            "gradient_updates": int(model._n_updates),
+            "replay_transitions": int(model.replay_buffer.size() * model.n_envs),
+            "exploration_rate": float(model.exploration_rate),
         }
     except BaseException as error:
         actual_timesteps = 0

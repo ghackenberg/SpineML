@@ -1,4 +1,4 @@
-"""Lädt ein trainiertes Modell und vergleicht es auf unbenutzten Test-Seeds."""
+"""Lädt ein Kandidaten-DQN und vergleicht es auf unbenutzten Test-Seeds."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
+import random
 from statistics import mean
 import sys
 from time import perf_counter
@@ -32,7 +33,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, help="Standard: evaluation.json im Trainingsordner.")
     parser.add_argument("--optimized-weights", type=Path, help="Optional: JSON mit HeuristicWeights oder optimization_result.best_weights.")
     parser.add_argument("--skip-comparisons", action="store_true", help="Nur das RL-Modell ausführen, ohne Zufall und Standardheuristik.")
-    parser.add_argument("--stochastic", action="store_true", help="Aus der gelernten Verteilung ziehen statt den wahrscheinlichsten Kandidaten wählen.")
+    parser.add_argument("--explore", "--stochastic", dest="explore", action="store_true", help="Epsilon-greedy mit der gespeicherten Explorationsrate; sonst den höchsten gültigen Q-Wert wählen.")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     checkpoint = directory / args.checkpoint
@@ -42,6 +43,12 @@ def main() -> None:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         parser.error(f"Trainingskonfiguration nicht lesbar: {error}")
+    if not isinstance(manifest, dict):
+        parser.error("Das Manifest muss einen DQN-Trainingslauf beschreiben.")
+    if manifest.get("algorithm") == "MaskablePPO":
+        parser.error("Alte PPO-Checkpoints sind mit der DQN-Auswertung nicht kompatibel; ein DQN-Trainingslauf ist erforderlich.")
+    if manifest.get("algorithm") != "DQN" or manifest.get("policy_class") != "CandidateDQNPolicy":
+        parser.error("Das Manifest muss DQN mit CandidateDQNPolicy beschreiben.")
     seeds = args.seeds
     if not seeds:
         seeds = manifest.get("evaluation_seeds", [])
@@ -60,8 +67,8 @@ def main() -> None:
     try:
         import numpy as np
         import torch
-        from sb3_contrib import MaskablePPO
-        from SpineML.Control.RLPolicy.CandidateActorCriticPolicy import CandidateActorCriticPolicy
+        from SpineML.Control.RLPolicy.CandidateDQN import CandidateDQN
+        from SpineML.Control.RLPolicy.CandidateDQNPolicy import CandidateDQNPolicy
         from SpineML.Control.RLPolicy.SpineRLEnv import SpineRLEnv
         from SpineML.Control.RLPolicy.TrainingSupport import evaluation_from_context, validate_artifact_context
         from SpineML.Control.RandomPolicy.RandomPolicy import RandomPolicy
@@ -73,8 +80,6 @@ def main() -> None:
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
     torch.set_num_threads(1)
-    if manifest.get("algorithm") != "MaskablePPO":
-        parser.error("Das Manifest beschreibt keinen MaskablePPO-Trainingslauf.")
     context = manifest["artifact_context"]
     model_path = validate_artifact_context(context, args.model)
     evaluation = evaluation_from_context(context)
@@ -100,9 +105,16 @@ def main() -> None:
     if output == directory / "manifest.json" or output.suffix == ".zip":
         parser.error("Ein Auswertungsbericht darf weder Manifest noch Modell-Checkpoint ersetzen.")
     output.parent.mkdir(parents=True, exist_ok=True)
-    network = MaskablePPO.load(checkpoint, device="cpu")
-    if not isinstance(network.policy, CandidateActorCriticPolicy):
-        parser.error("Der Checkpoint enthält nicht die erwartete Kandidaten-NN-Policy.")
+    python_rng = random.getstate()
+    numpy_rng = np.random.get_state()
+    try:
+        with torch.random.fork_rng(devices=[]):
+            network = CandidateDQN.load(checkpoint, device="cpu", seed=None)
+    finally:
+        random.setstate(python_rng)
+        np.random.set_state(numpy_rng)
+    if not isinstance(network.policy, CandidateDQNPolicy):
+        parser.error("Der Checkpoint enthält keine CandidateDQNPolicy.")
     environment = SpineRLEnv(model_path, evaluation, **context["environment"])
     if network.observation_space != environment.observation_space or network.action_space != environment.action_space:
         environment.close()
@@ -121,14 +133,30 @@ def main() -> None:
     save_progress()
     try:
         for seed in seeds:
-            torch.manual_seed(seed)
+            # Exploration erhält einen eigenen Zufallsstrom je Test-Seed.
+            policy_python_rng = random.Random(seed).getstate()
+            policy_numpy_rng = np.random.RandomState(np.random.SeedSequence(seed).generate_state(4)).get_state()
+            policy_torch_rng = torch.Generator(device="cpu").manual_seed(seed).get_state()
             run_started_at = perf_counter()
             observation, info = environment.reset(seed=seed)
             terminated = False
             truncated = False
             reward_total = 0.0
             while not terminated and not truncated:
-                action, _ = network.predict(observation, action_masks=environment.action_masks(), deterministic=not args.stochastic)
+                python_rng = random.getstate()
+                numpy_rng = np.random.get_state()
+                try:
+                    random.setstate(policy_python_rng)
+                    np.random.set_state(policy_numpy_rng)
+                    with torch.random.fork_rng(devices=[]):
+                        torch.set_rng_state(policy_torch_rng)
+                        action, _ = network.predict(observation, deterministic=not args.explore)
+                        policy_torch_rng = torch.get_rng_state()
+                    policy_python_rng = random.getstate()
+                    policy_numpy_rng = np.random.get_state()
+                finally:
+                    random.setstate(python_rng)
+                    np.random.set_state(numpy_rng)
                 observation, reward, terminated, truncated, info = environment.step(int(np.asarray(action).item()))
                 reward_total += float(reward)
             results.append({
@@ -220,7 +248,8 @@ def main() -> None:
             "mean_metrics": mean_metrics,
         })
     report = {"status": "finished", "checkpoint": str(checkpoint), "model_sha256": context["model_sha256"],
-              "test_seeds": seeds, "deterministic": not args.stochastic,
+              "test_seeds": seeds, "deterministic": not args.explore,
+              "exploration_rate": float(network.exploration_rate),
               "artifact_context": context, "optimized_weights_source": optimized_source,
               "summary": summary, "runs": results,
               "elapsed_seconds": perf_counter() - started_at}

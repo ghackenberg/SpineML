@@ -1,4 +1,4 @@
-"""Verwendet ein gespeichertes Kandidaten-NN als Simulations-Policy.
+"""Verwendet ein gespeichertes Kandidaten-DQN als Simulations-Policy.
 
 Nur eigene/vertraute Checkpoints laden: das SB3-ZIP enthält Python-Objekte.
 """
@@ -28,7 +28,7 @@ def _validate_options(deterministic: bool, seed: int) -> int:
 
 
 class TrainedCandidatePolicy(Policy):
-    """Lädt manifest.json und model.zip und lässt das NN Kandidaten auswählen."""
+    """Lädt ein DQN; ohne Exploration gewinnt der höchste gültige Q-Wert."""
 
     def __init__(
         self,
@@ -40,18 +40,6 @@ class TrainedCandidatePolicy(Policy):
         device: str = "cpu",
     ):
         seed = _validate_options(deterministic, seed)
-        try:
-            import torch as th
-            from gymnasium import spaces
-            from sb3_contrib import MaskablePPO
-            from stable_baselines3.common.utils import get_device
-            from .CandidateActorCriticPolicy import CandidateActorCriticPolicy
-            from .TrainingSupport import validate_artifact_context
-        except ImportError as error:
-            raise ImportError(
-                'Die trainierte Policy benötigt: python -m pip install ".[rl-training]"'
-            ) from error
-
         self.run_directory = Path(run_directory).resolve()
         manifest_path = self.run_directory / "manifest.json"
         checkpoint_path = self.run_directory / "model.zip"
@@ -59,8 +47,24 @@ class TrainedCandidatePolicy(Policy):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:
             raise ValueError(f"Ungültiges JSON-Manifest: {manifest_path}") from error
-        if not isinstance(manifest, dict) or manifest.get("algorithm") != "MaskablePPO":
-            raise ValueError("Das Manifest muss einen MaskablePPO-Trainingslauf beschreiben.")
+        if not isinstance(manifest, dict):
+            raise ValueError("Das Manifest muss einen DQN-Trainingslauf beschreiben.")
+        if manifest.get("algorithm") == "MaskablePPO":
+            raise ValueError("Alte PPO-Checkpoints sind mit dem DQN-Loader nicht kompatibel; ein DQN-Trainingslauf ist erforderlich.")
+        if manifest.get("algorithm") != "DQN" or manifest.get("policy_class") != "CandidateDQNPolicy":
+            raise ValueError("Das Manifest muss DQN mit CandidateDQNPolicy beschreiben.")
+        try:
+            import torch as th
+            from gymnasium import spaces
+            from stable_baselines3.common.utils import get_device
+            from .CandidateDQN import CandidateDQN
+            from .CandidateDQNPolicy import CandidateDQNPolicy
+            from .TrainingSupport import validate_artifact_context
+        except ImportError as error:
+            raise ImportError(
+                'Die trainierte Policy benötigt: python -m pip install ".[rl-training]"'
+            ) from error
+
         context = manifest.get("artifact_context")
         if not isinstance(context, Mapping):
             raise ValueError("Im Manifest fehlt ein gültiger artifact_context.")
@@ -91,12 +95,12 @@ class TrainedCandidatePolicy(Policy):
         numpy_rng = np.random.get_state()
         try:
             with th.random.fork_rng(devices=self._rng_devices):
-                self.model = MaskablePPO.load(checkpoint_path, device=selected_device, seed=None)
+                self.model = CandidateDQN.load(checkpoint_path, device=selected_device, seed=None)
         finally:
             random.setstate(python_rng)
             np.random.set_state(numpy_rng)
-        if not isinstance(self.model.policy, CandidateActorCriticPolicy):
-            raise ValueError("Der Checkpoint enthält keine CandidateActorCriticPolicy.")
+        if not isinstance(self.model.policy, CandidateDQNPolicy):
+            raise ValueError("Der Checkpoint enthält keine CandidateDQNPolicy.")
 
         expected_observation_space = spaces.Dict({
             "context": spaces.Box(-1.0, 1.0, (self.encoder.context_size,), np.float32),
@@ -115,6 +119,9 @@ class TrainedCandidatePolicy(Policy):
                 or self.model.action_space != spaces.Discrete(self.encoder.max_actions)):
             raise ValueError("Beobachtungs-/Aktionsraum des Checkpoints passt nicht zum Manifest.")
         self.model.policy.set_training_mode(False)
+        self._python_rng_state = random.Random(seed).getstate()
+        # SeedSequence übernimmt auch Seeds oberhalb von 2**32-1.
+        self._numpy_rng_state = np.random.RandomState(np.random.SeedSequence(seed).generate_state(4)).get_state()
         self._cpu_rng_state = th.Generator(device="cpu").manual_seed(seed).get_state()
         self._cuda_rng_state = None
         if self._rng_devices:
@@ -129,21 +136,30 @@ class TrainedCandidatePolicy(Policy):
         observation = self.encoder.encode(request)
         masks = observation["action_mask"].astype(bool, copy=True)
         # predict erhält ausschließlich frisch erzeugte numerische Kopien.
-        with th.random.fork_rng(devices=self._rng_devices):
-            th.set_rng_state(self._cpu_rng_state)
-            if self._rng_devices:
-                th.cuda.set_rng_state(self._cuda_rng_state, self._rng_devices[0])
-            observation_copy = {}
-            for name, value in observation.items():
-                observation_copy[name] = value.copy()
-            action, _ = self.model.predict(
-                observation_copy,
-                action_masks=masks,
-                deterministic=self.deterministic,
-            )
-            self._cpu_rng_state = th.get_rng_state()
-            if self._rng_devices:
-                self._cuda_rng_state = th.cuda.get_rng_state(self._rng_devices[0])
+        python_rng = random.getstate()
+        numpy_rng = np.random.get_state()
+        try:
+            random.setstate(self._python_rng_state)
+            np.random.set_state(self._numpy_rng_state)
+            with th.random.fork_rng(devices=self._rng_devices):
+                th.set_rng_state(self._cpu_rng_state)
+                if self._rng_devices:
+                    th.cuda.set_rng_state(self._cuda_rng_state, self._rng_devices[0])
+                observation_copy = {}
+                for name, value in observation.items():
+                    observation_copy[name] = value.copy()
+                action, _ = self.model.predict(
+                    observation_copy,
+                    deterministic=self.deterministic,
+                )
+                self._cpu_rng_state = th.get_rng_state()
+                if self._rng_devices:
+                    self._cuda_rng_state = th.cuda.get_rng_state(self._rng_devices[0])
+            self._python_rng_state = random.getstate()
+            self._numpy_rng_state = np.random.get_state()
+        finally:
+            random.setstate(python_rng)
+            np.random.set_state(numpy_rng)
         selected = np.asarray(action)
         if selected.size != 1:
             raise ValueError("Das NN muss genau einen Kandidatenindex liefern.")

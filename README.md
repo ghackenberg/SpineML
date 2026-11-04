@@ -9,7 +9,7 @@ Maschinen. Diese README beschreibt den Zweig `Foroogh`.
   wählt Aktionen; die Simulation führt diese aus.
 - **Steuerungen vergleichen:** Die heuristische Policy und die Zufallspolicy
   werden anhand derselben Produktionskennzahlen verglichen. Optional lässt
-  sich eine neuronale Kandidatenauswahl mit MaskablePPO trainieren und auf
+  sich eine neuronale Kandidatenauswahl mit DQN trainieren und auf
   getrennten Test-Seeds mit diesen Steuerungen vergleichen.
 - **Heuristik verbessern:** Die Gewichtssuche prüft verschiedene lokale
   Gewichtssätze in vollständigen Simulationsläufen. Unabhängige Läufe können
@@ -80,7 +80,8 @@ sources/
             ├── RLCandidatePolicy.py
             ├── RLObservationEncoder.py
             ├── RLReward.py
-            ├── CandidateActorCriticPolicy.py
+            ├── CandidateDQN.py
+            ├── CandidateDQNPolicy.py
             ├── TrainingSupport.py
             └── TrainedPolicy.py
 ```
@@ -2883,7 +2884,8 @@ Entscheidungen zu günstigeren Produktionsergebnissen führen.
 werden lokale `HeuristicWeights` für fest programmierte Bewertungsregeln gesucht.
 Bei RL werden stattdessen die **internen Parameter des neuronalen Netzes**
 trainiert: die Zahlenwerte, mit denen es seine Auswahl berechnet.
-Das Netz liefert die Auswahlwahrscheinlichkeiten; der heuristische
+Das Netz schätzt für jede angebotene Aktion einen **Q-Wert**: die erwartete
+spätere Belohnung, wenn diese Aktion jetzt gewählt wird. Der heuristische
 Evaluator wird dabei nicht verwendet. Heuristik und `RandomPolicy` bleiben
 für den Vergleich verfügbar.
 
@@ -2906,8 +2908,8 @@ und eine Belohnung zurück.
 
 ```mermaid
 flowchart TB
-    A([Agent])
-    E([Environment])
+    A["Agent mit DQN"]
+    E["Environment mit Fabriksimulation"]
 
     A -->|"action Aₜ"| E
     E -->|"State Sₜ₊₁"| A
@@ -2918,10 +2920,10 @@ flowchart TB
     linkStyle default stroke:#246bff
 ```
 
-- **Agent:** `CandidateActorCriticPolicy` ist das neuronale Netz. Sein Actor
-  liefert die Aktionsauswahl; sein Critic schätzt die noch zu erwartende
-  Belohnung. `MaskablePPO` sammelt die Erfahrungen und verändert beim Training
-  die Netzparameter.
+- **Agent:** `CandidateDQNPolicy` berechnet die Q-Werte der Kandidaten.
+  `CandidateDQN` sammelt Erfahrungen und verändert beim Training die
+  Netzparameter. Die Klasse erweitert DQN aus Stable-Baselines3 um die
+  Kandidatenmaske.
 - **Environment:** `SpineRLEnv` implementiert die Gymnasium-Schnittstelle
   mit `reset()` und `step()`. Im Hintergrund simuliert Salabim die Fabrik.
   Gymnasium ist hier der Schnittstellenstandard, nicht der Fabriksimulator.
@@ -2938,8 +2940,8 @@ flowchart TB
   Diese Belohnung wird zum Lernen verwendet; sie ist kein zusätzliches
   Eingabefeld der Beobachtung.
 
-Ein PPO-Update erfolgt nach einem gesammelten Trainingsdatenblock, nicht
-nach jeder einzelnen Rückmeldung und nicht zwingend am Episodenende.
+Eine Netzanpassung erfolgt anhand gespeicherter Erfahrungen, nicht zwingend
+nach jeder Rückmeldung und nicht erst am Episodenende.
 Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
@@ -2963,16 +2965,14 @@ Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
 
 **Beim Training: das Netz anhand gesammelter Daten verändern**
 
-Der Trainingsalgorithmus **MaskablePPO** sammelt die Zustände, gewählten
-Aktionen und Belohnungen. Nach einer festgelegten Anzahl von Entscheidungen
-verarbeitet er diesen Datenblock und verändert die internen Zahlenwerte des
-Netzes, seine **Netzparameter**. Danach werden neue Entscheidungen mit dem
-aktualisierten Netz getroffen.
+Der Trainingsalgorithmus **DQN** speichert Zustand, Aktion, Belohnung,
+Folgezustand und Abschlussstatus in einem **Replay Buffer**, also einem
+Erfahrungsspeicher. Für eine Netzanpassung zieht er daraus zufällige
+Datengruppen. Erfahrungen können dadurch mehrmals verwendet werden.
 
-Ein solcher Trainingsschritt kann stattfinden, **bevor alle Jobs fertig sind**.
-Für den dann noch unbekannten weiteren Verlauf verwendet PPO die Schätzung
-eines zweiten Netzteils, des [Critic](#neuronales-netz-und-maskableppo).
-Dieser schätzt die noch zu erwartende Belohnung. Die tatsächliche
+Ein Trainingsschritt kann stattfinden, **bevor alle Jobs fertig sind**.
+Für den noch unbekannten weiteren Verlauf verwendet DQN die Q-Werte eines
+separaten [Zielnetzes](#neuronales-netz-und-dqn). Die tatsächliche
 Abschlussbelohnung entsteht weiterhin erst am Episodenende. Wann Daten gesammelt
 und Netzparameter geändert werden, erklärt [Training starten](#training-starten).
 
@@ -3035,37 +3035,6 @@ Netzeingaben berücksichtigt. Die vorgemerkten Aktionen stehen außerdem in
 Bei direkter Nutzung von `RLCandidatePolicy` kann `expose_forced_actions=True`
 auch einzelne Kandidaten an die Auswahlfunktion melden. Die Trainingsumgebung
 `SpineRLEnv` übernimmt einzelne Kandidaten dagegen automatisch.
-
-**Detailablauf der Agent–Environment-Schleife:**
-
-```mermaid
-sequenceDiagram
-    participant T as Trainer und Netz<br/>MaskablePPO
-    participant E as Unsere RL-Umgebung<br/>SpineRLEnv (Gymnasium)
-    participant S as Fabrik und Aktionsanbindung<br/>Salabim, Bridge,<br/>Policy und Generator
-
-    T->>E: reset(seed)
-    E->>S: Neue Episode starten
-    S-->>E: Erster Zustand und angebotene Aktionen
-    E->>E: Daten in Zahlenfelder<br/>und Maske übersetzen
-    E-->>T: Erste Beobachtung
-
-    loop Bis zum Episodenende
-        T->>T: Netz wählt einen<br/>gültigen Kandidatenindex
-        T->>E: step(index)
-        E->>S: Index an Policy zurückgeben<br/>Aktion vormerken
-        opt Auswahl für alle Objekte vollständig
-            S->>S: Bridge stellt Aktionen zu<br/>Komponenten führen sie aus
-        end
-        S-->>E: Nächste Auswahl<br/>oder Episodenende
-        E->>E: Beobachtung und<br/>Belohnung bestimmen
-        E-->>T: Beobachtung und Belohnung<br/>plus Abschlussstatus
-        T->>T: Zustand, Aktion und<br/>Belohnung speichern
-        opt Trainingsdatenblock vollständig
-            T->>T: PPO verändert die Netzparameter
-        end
-    end
-```
 
 ### Numerische Beobachtung und Aktionsmaske
 
@@ -3170,7 +3139,7 @@ in der letzten Beobachtung stehen. Andere Lernverfahren könnten diesen Zustand
 verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
 **Value-Bootstrapping**; die abgebrochene Episode wird damit nicht fortgesetzt.
 
-Für das vorhandene PPO-Training gelten beide Limits als endgültiger Fehlschlag.
+Für das vorhandene DQN-Training gelten beide Limits als endgültiger Fehlschlag.
 Die Zusatzklasse `EpisodeSeedWrapper` in
 [`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
 meldet sie deshalb an Stable-Baselines3 (SB3) als `terminated=True` und
@@ -3181,49 +3150,65 @@ Strafe `-1` keine geschätzte spätere Belohnung hinzu.
 Ein Timeout oder ein Simulationsfehler wird dagegen als Ausnahme gemeldet.
 Es handelt sich dabei nicht um einen der regulären Limitabbrüche aus der Tabelle.
 
-### Neuronales Netz und MaskablePPO
+### Neuronales Netz und DQN
 
-[CandidateActorCriticPolicy](sources/SpineML/Control/RLPolicy/CandidateActorCriticPolicy.py)
-enthält zwei Netzteile mit unterschiedlichen Aufgaben:
+**DQN** bedeutet **Deep Q-Network**: Ein neuronales Netz lernt Q-Werte für
+die angebotenen Aktionen. Ein höherer Q-Wert bedeutet eine höhere erwartete
+spätere Belohnung, nicht eine höhere Auswahlwahrscheinlichkeit.
 
-- **Actor — Aktion auswählen:** Berechnet mit seinen trainierten Parametern
-  einen Bewertungswert für jeden angebotenen Kandidaten. Daraus entstehen
-  die Auswahlwahrscheinlichkeiten.
-  Diese Werte stammen nicht aus den festen Regeln des heuristischen Evaluators.
-- **Critic — weiteren Verlauf einschätzen:** Schätzt, welche Belohnung aus
-  dem aktuellen Zustand noch zu erwarten ist. Er unterstützt das Training,
-  wählt aber keine Aktion und bewertet nicht die einzelnen Kandidaten.
+[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/CandidateDQNPolicy.py)
+verarbeitet Kontext, Objektzeilen und Kandidatenmerkmale. Es fasst die echten
+Zeilen zusammen und bewertet dann jeden Kandidaten mit demselben Teilnetz.
+Die Netzparameter gehören damit nicht fest zu einer bestimmten Indexnummer.
+Padding-Zeilen zählen nicht mit. `embedding_dim=32` und `hidden_dim=64`
+bestimmen die Breite der internen Netzschichten.
 
-Das Netz verarbeitet die Zahlenfelder so:
+Beim Training arbeiten zwei Q-Netze zusammen:
 
-1. **Eingaben verarbeiten:** Drei Teilnetze berechnen jeweils 32 Zwischenwerte
-   für Kontext, Objektzeilen und Kandidatenzeilen. Alle Objektzeilen verwenden
-   dasselbe Teilnetz; ebenso alle Kandidatenzeilen.
-2. **Zustand zusammenfassen:** Aus den echten Objekt- und Kandidatenzeilen
-   werden Mittelwerte und Maxima gebildet und mit den Kontextwerten kombiniert.
-   Aufgefüllte Leerzeilen zählen nicht mit.
-3. **Kandidaten bewerten:** Der Actor verarbeitet für jede Aktion deren
-   Merkmale zusammen mit der Zustandszusammenfassung. Dafür verwendet er
-   immer dieselben Netzparameter, unabhängig von der Position in der Liste.
-4. **Belohnung schätzen:** Der Critic verarbeitet die Zustandszusammenfassung
-   und liefert seine Schätzung, auch wenn keine Kandidaten vorhanden sind.
+- **Online-Q-Netz:** Berechnet die aktuellen Q-Werte und wird anhand der
+  Erfahrungen im Replay Buffer angepasst.
+- **Ziel-Q-Netz:** Liefert die Schätzung für den Folgezustand. Seine Parameter
+  werden in größeren Abständen aus dem Online-Netz übernommen. So bleibt
+  das Lernziel zwischen diesen Übernahmen stabiler.
 
-Mit den Standardeinstellungen `embedding_dim=32` und `hidden_dim=64` hat das
-Netz 30.242 trainierbare Parameter. `embedding_dim` bestimmt die Zahl der
-Zwischenwerte je Teilnetz, `hidden_dim` die Breite der internen Netzschichten.
-Die Zahl vorgesehener Objekt- oder Kandidatenzeilen ändert die Parameterzahl nicht.
-Wird nur die Kandidatenliste umgeordnet, werden auch ihre Bewertungen umgeordnet.
-Maskierte Kandidaten bleiben ausgeschlossen; ohne gültigen Kandidaten wird
-keine Auswahl getroffen.
+```mermaid
+flowchart TD
+    O["Online-Q-Netz mit Aktionsmaske"]
+    E["Fabriksimulation führt gültige Aktion aus"]
+    R["Belohnung und Folgezustand mit Maske"]
+    B["Replay Buffer speichert Erfahrungen"]
+    T["Ziel-Q-Netz bewertet gültige Folgeaktionen"]
+    L["Lernziel mit aktueller Q-Schätzung vergleichen"]
 
-Die Netzklasse baut auf `MaskableMultiInputActorCriticPolicy` auf. Während
-des Trainings wählt **MaskablePPO** Aktionen aus den berechneten Wahrscheinlichkeiten
-und berücksichtigt dabei die Aktionsmaske. Nach einem gesammelten Datenblock
-verändert PPO die Netzparameter in kleinen Schritten. Dazu vergleicht es die
-erhaltene beziehungsweise vom Critic geschätzte weitere Belohnung mit seiner
-bisherigen Erwartung. Auswahlen, die zu einem günstigeren Verlauf als erwartet
-beitragen, sollen in ähnlichen Situationen wahrscheinlicher werden. Das Netz
-bekommt also keine vorgegebene „richtige Aktion“.
+    O -->|"Gültiges Maximum oder Exploration"| E
+    E --> R
+    R --> B
+    B -->|"Zufällige Datengruppe"| T
+    B --> L
+    T --> L
+    L -->|"Online-Parameter anpassen"| O
+    O -->|"Parameter regelmäßig übernehmen"| T
+```
+
+Für einen nicht beendeten Übergang lautet das Lernziel vereinfacht
+`reward + gamma × max(Q_Ziel(Folgezustand, gültige Folgeaktion))`.
+Bei einem regulären Abschluss oder einem endgültigen Limitfehlschlag ist
+das Lernziel nur die erhaltene Belohnung. Es wird dann kein Folgewert addiert.
+Im vorhandenen Training ist `gamma=1.0`; zusätzliche Entscheidungsschritte
+schwächen die spätere Belohnung also nicht ab.
+
+Damit das Netz nicht nur seine bisher beste Aktion wiederholt, verwendet
+DQN **Epsilon-Greedy**: Mit Wahrscheinlichkeit `epsilon` wird ein gültiger
+Kandidat zufällig gewählt, sonst der gültige Kandidat mit dem höchsten Q-Wert.
+Zu Beginn werden auch während der Aufwärmphase ausschließlich gültige
+Kandidaten zufällig gewählt. Die Maske gilt ebenso bei der normalen Auswahl
+und beim Maximum des Zielnetzes. Aufgefüllte Kandidatenplätze können daher
+weder ausgeführt werden noch das Lernziel erhöhen.
+
+[`CandidateDQN`](sources/SpineML/Control/RLPolicy/CandidateDQN.py) erweitert
+dafür DQN aus Stable-Baselines3. Es gibt keinen Actor und keine
+gelernten Auswahlwahrscheinlichkeiten. Das globale Produktionsziel, die
+Belohnungsformel und die Regeln der Simulation bleiben unverändert.
 
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
@@ -3259,10 +3244,11 @@ Das Training speichert im Ausgabeordner:
 | Datei | Inhalt |
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
-| `model.zip` | Gespeicherter Stand des neuronalen Netzes und des PPO-Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
+| `model.zip` | Gespeicherter Stand der Q-Netze und des DQN-Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
 | `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. |
+| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Er wird nicht in jedem Checkpoint mitgespeichert. |
 | `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus. Die Datei entsteht beim ersten Episodenende. |
-| `progress.csv` | Protokoll der PPO-Trainingswerte. |
+| `progress.csv` | Protokoll der DQN-Trainingswerte. |
 | `training_report.json` | Status und Umfang des Trainings sowie Rechenzeiten für Baseline, Training und Gesamtlauf. |
 
 **Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
@@ -3277,18 +3263,23 @@ Es gelten die gespeicherten Bewertungsvorgaben, nicht nachträglich geänderte
 App-Einstellungen. `--model` erlaubt eine identische Dateikopie an einem
 anderen Speicherort, aber kein anderes Fabrikmodell.
 
+Manifestversion und Algorithmus müssen zum DQN-Format passen. Alte
+PPO-Netzstände sind nicht kompatibel und werden mit einer Fehlermeldung
+abgewiesen. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
+für DQN ist ein neuer, leerer Ausgabeordner zu verwenden.
+
 Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten
 Python-Objekte und sind nicht als unbedenkliche Datendateien zu behandeln.
 
 ### Training starten
 
-Für das Training werden zusätzlich Gymnasium, PyTorch, Stable-Baselines3
-und `sb3-contrib` benötigt. Die optionale Paketgruppe `rl-training`
+Für das Training werden zusätzlich Gymnasium, PyTorch und Stable-Baselines3
+benötigt. Die optionale Paketgruppe `rl-training`
 installiert diese Bibliotheken:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/ppo --steps 100000 --workers 4
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/dqn --steps 100000 --workers 4
 ```
 
 Ohne `--model` verwendet
@@ -3304,56 +3295,61 @@ gemeinsam trainierte Netz und das Lernverfahren liegen dagegen im übergeordnete
 Trainingsprozess. Dieser berechnet die Aktionsauswahl für die Worker und sammelt
 ihre Zustände, Aktionen und Belohnungen.
 
-**Wann wird das Netz verändert?** Sobald jeder Worker `--rollout-steps`
-Entscheidungen geliefert hat, beginnt eine Anpassungsphase, das **PPO-Update**.
-Die dafür gesammelten Trainingsdaten heißen **Rollout**. PPO teilt sie in
-kleine Gruppen mit `--batch-size` Einträgen (**Minibatches**) und verarbeitet
-den gesamten Datenblock `--epochs`-mal. Danach werden mit dem aktualisierten
-Netz neue Entscheidungen gesammelt.
+**Wann wird das Netz verändert?** Zunächst sammelt DQN Erfahrungen, ohne das
+Netz anzupassen (`--learning-starts`). Danach wechseln sich Sammeln und Lernen
+ab: `--train-freq` bestimmt die Anzahl gemeinsamer Worker-Schritte je
+Sammelphase. Anschließend werden `--gradient-steps` Netzanpassungen ausgeführt.
+Jede verwendet eine zufällige Datengruppe mit `--batch-size` Einträgen aus
+dem Replay Buffer. Ältere Erfahrungen können erneut ausgewählt werden.
 
-Ein Rollout ist kein vollständiger Simulationslauf. Er kann mitten in einer
-Episode enden oder mehrere Episoden enthalten. Ist eine Episode noch nicht
-fertig, schätzt der Critic die noch zu erwartende Belohnung. Beim Training
-zählen nur Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
+Eine Sammelphase ist kein vollständiger Simulationslauf. Sie kann mitten in
+einer Episode enden oder mehrere Episoden berühren. Beim Training zählen nur
+Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
 automatisch übernommene Einzelkandidaten zählen nicht mit.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln. Gemeint sind weder Episoden noch Simulationsstunden. Der letzte Rollout wird noch vollständig gesammelt; die tatsächliche Zahl kann deshalb größer sein. |
+| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln. Gemeint sind weder Episoden noch Simulationsstunden. Die letzte Sammelphase wird noch vollständig ausgeführt; die tatsächliche Zahl kann deshalb größer sein. |
 | `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
-| `--rollout-steps` | `256` | Gesammelte Entscheidungen je Worker vor einer Netzanpassung; mindestens `2`. |
-| `--batch-size` / `--epochs` | `64` / `10` | Größe der Datengruppen und Anzahl der Durchläufe über den gesammelten Datenblock pro Anpassungsphase. |
-| `--learning-rate` | `0.0003` | Schrittweite bei der Anpassung der Netzparameter. |
-| `gamma` / `gae_lambda` | `1.0` / `1.0` | Zusätzliche Entscheidungsschritte schwächen die spätere Belohnung in diesen Berechnungen nicht ab. Beide Werte sind im Trainingsskript festgelegt. |
-| `ent_coef` | `0.01` | Fördert das Ausprobieren unterschiedlicher Kandidaten. Der Wert ist im Trainingsskript festgelegt. |
+| `--buffer-size` | `5000` | Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
+| `--learning-starts` | `1000` | Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
+| `--train-freq` | `4` | Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
+| `--gradient-steps` | `4` | Netzanpassungen nach einer Sammelphase. |
+| `--batch-size` | `64` | Zufällig gezogene Übergänge pro Netzanpassung. Muss keinen Sammelblock ohne Rest teilen. |
+| `--learning-rate` | `0.0001` | Schrittweite bei der Anpassung der Netzparameter. |
+| `--target-update-interval` | `1000` | Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
+| `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear vom Anfangs- zum Endwert sinkt. |
+| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl. |
+| `gamma` / `tau` | `1.0` / `1.0` | Keine Abschwächung späterer Belohnung und vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
 | `--device` | `cpu` | CPU oder GPU für das Netz und seine Anpassung; die Simulation bleibt auf der CPU. |
+| `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
 
-**Beispiel mit den Standardwerten:** Vier Worker liefern jeweils `256`
-Entscheidungen. Damit enthält ein Rollout `4 × 256 = 1024` Datensätze.
-PPO verarbeitet sie in Gruppen von `64` Einträgen und durchläuft den
-gesamten Datenblock `10`-mal, bevor der nächste Rollout gesammelt wird.
-`--batch-size` muss mindestens `2` sein und `workers × rollout-steps` ohne Rest teilen.
+**Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
+neue Übergänge. Nach der Aufwärmphase folgen vier Netzanpassungen mit jeweils
+64 zufällig gezogenen Übergängen aus dem Speicher. Das Zielnetz übernimmt
+standardmäßig nach ungefähr 1000 externen Entscheidungen die Online-Parameter.
+Bei mehreren Workern erfolgt die Übernahme an einem gemeinsamen Worker-Schritt.
 
-Mit `--workers 20 --output rl_runs/ppo_20` entstehen entsprechend `5120`
-Datensätze pro Update. Mehr Worker ändern also nicht nur die Parallelität,
-sondern auch den Umfang der Trainingsdaten pro Anpassungsphase. Jeder Worker
-benötigt Speicher für sein separat geladenes Layout, Szenario und seine
-Simulation — nicht für ein eigenes trainierendes Netz. Der zentrale
-Rolloutspeicher wächst zusätzlich mit Workerzahl, Rolloutlänge und den festen
-Größen der Beobachtungsfelder. Kleinere Minibatches verkleinern diesen
-gesamten Datenspeicher nicht. 20 Worker garantieren deshalb keine kürzere Laufzeit.
+Mehr Worker liefern bei unverändertem `--train-freq` mehr neue Erfahrungen,
+erhöhen aber nicht automatisch `--gradient-steps`. Jeder Worker benötigt
+Speicher für sein eigenes Layout, Szenario und seine Simulation, nicht für
+ein eigenes trainierendes Netz. Zusätzlich benötigt der zentrale Replay
+Buffer Platz für die aktuellen und nächsten Beobachtungen. Wegen der festen
+Objekt- und Kandidatenfelder kann dieser Speicher groß werden. Kleinere
+Minibatches verkleinern den gesamten Replay Buffer nicht. Mehr Worker
+garantieren deshalb keine kürzere Laufzeit.
 
 Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
-Netzberechnung und die PPO-Updates auf eine passende GPU verlagern.
+Netzberechnung und die DQN-Netzanpassungen auf eine passende GPU verlagern.
 `cuda` ohne verfügbare CUDA-GPU führt zu einem Fehler. Für das vorhandene
 kleine Netz ist `cpu` voreingestellt.
 
 ### Auf getrennten Test-Seeds vergleichen
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/ppo
+.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/dqn
 ```
 
 [`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt den
@@ -3363,9 +3359,10 @@ reservierten Test-Seeds und derselben globalen Bewertung aus. Die Netzparameter
 werden dabei nicht weiter verändert.
 
 - **Standardauswahl:** Die RL-Policy nimmt den gültigen Kandidaten mit der
-  höchsten gelernten Wahrscheinlichkeit. Diese Auswahl ist deterministisch.
-- **`--stochastic`:** Wählt eine gültige Aktion zufällig entsprechend den
-  gelernten Wahrscheinlichkeiten.
+  höchsten Q-Schätzung. Diese Auswahl ist deterministisch.
+- **`--explore`:** Verwendet Epsilon-Greedy mit dem im Netzstand gespeicherten
+  `epsilon`. `--stochastic` bleibt als Alias verfügbar. Auch eine zufällige
+  Auswahl berücksichtigt die Aktionsmaske.
 - **`--skip-comparisons`:** Führt nur die RL-Policy aus.
 - **`--seeds`:** Wählt andere Test-Seeds. Sie dürfen weder im Training noch
   in der Baseline verwendet worden sein.
@@ -3405,7 +3402,7 @@ from SpineML.Control.RLPolicy.TrainedPolicy import TrainedCandidatePolicy
 from SpineML.SimulationExecution.ModelLoader import load_layout_and_scenario
 from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
 
-policy = TrainedCandidatePolicy("rl_runs/ppo")
+policy = TrainedCandidatePolicy("rl_runs/dqn")
 layout, scenario = load_layout_and_scenario(policy.model_path)
 runner = SimulationRunner(
     layout, scenario,
@@ -3417,15 +3414,16 @@ metrics = runner.run_policy(policy, seed=101)
 Für die Simulation wird die unter `policy.model_path` gespeicherte Fabrikdatei
 geladen. Mit `model_file=...` darf eine identische Kopie an einem anderen Ort
 angegeben werden. Standardmäßig erfolgt die Netzauswahl deterministisch auf
-der CPU. Mit `deterministic=False, seed=101` wird stattdessen aus den gelernten
-Wahrscheinlichkeiten gezogen. Die Policy verwendet dafür einen eigenen
-PyTorch-Zufallszustand, ohne die Python- und NumPy-Zufallsfolgen der Simulation
-zurückzusetzen. Einzelne Kandidaten werden ohne Netzauswahl übernommen.
+der CPU und nimmt den gültigen Kandidaten mit dem höchsten Q-Wert. Mit
+`deterministic=False, seed=101` wird stattdessen Epsilon-Greedy mit dem im
+Netzstand gespeicherten Explorationswert verwendet. Die Policy isoliert ihre
+Zufallszustände von den Python-, NumPy- und PyTorch-Zufallsfolgen der Simulation.
+Einzelne Kandidaten werden ohne Netzauswahl übernommen.
 
 Für mehrere Läufe erstellt
 [`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
 jeweils eine neue Policy-Instanz: zunächst
-`factory = TrainedPolicyFactory("rl_runs/ppo")`, dann `factory(seed)` pro Lauf.
+`factory = TrainedPolicyFactory("rl_runs/dqn")`, dann `factory(seed)` pro Lauf.
 Diese Factory kann auch in einem `SimulationRunRequest` an den Prozesspool
 übergeben werden. Der Pool muss dieselbe gespeicherte Fabrikdatei verwenden.
 
@@ -3439,7 +3437,7 @@ Optimierungsergebnis.
 ### Umgebung ohne Training prüfen
 
 Die RL-Umgebung kann auch ohne neuronales Netz geprüft werden. Dafür reicht
-die optionale Paketgruppe `rl`; PyTorch und PPO werden nicht benötigt.
+die optionale Paketgruppe `rl`; PyTorch und DQN werden nicht benötigt.
 Der folgende Befehl startet einen solchen Prüflauf und trainiert oder lädt
 kein Netz:
 

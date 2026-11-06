@@ -6,7 +6,7 @@ from numbers import Integral
 
 import numpy as np
 
-from ...SimulationInterface.InterfaceTypes import PolicyObservation
+from ....SimulationInterface.InterfaceTypes import PolicyObservation
 from .RLCandidatePolicy import DecisionRequest
 
 

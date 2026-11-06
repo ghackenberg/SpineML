@@ -46,7 +46,7 @@ def main() -> None:
     if not isinstance(manifest, dict):
         parser.error("Das Manifest muss einen RL-Trainingslauf beschreiben.")
     try:
-        from SpineML.Control.RLPolicy.TrainedPolicy import training_algorithm_classes
+        from SpineML.Control.RLPolicy.Shared.TrainedPolicy import training_algorithm_classes
 
         algorithm_class, policy_class = training_algorithm_classes(manifest)
     except (ImportError, ValueError) as error:
@@ -69,8 +69,8 @@ def main() -> None:
     try:
         import numpy as np
         import torch
-        from SpineML.Control.RLPolicy.SpineRLEnv import SpineRLEnv
-        from SpineML.Control.RLPolicy.TrainingSupport import evaluation_from_context, validate_artifact_context
+        from SpineML.Control.RLPolicy.Shared.SpineRLEnv import SpineRLEnv
+        from SpineML.Control.RLPolicy.Shared.TrainingSupport import evaluation_from_context, validate_artifact_context
         from SpineML.Control.RandomPolicy.RandomPolicy import RandomPolicy
         from SpineML.Control.HeuristicPolicy.HeuristicPolicyFactory import HeuristicPolicyFactory
         from SpineML.Control.HeuristicPolicy.HeuristicWeights import HeuristicWeights
@@ -113,7 +113,10 @@ def main() -> None:
     numpy_rng = np.random.get_state()
     try:
         with torch.random.fork_rng(devices=[]):
-            network = algorithm_class.load(checkpoint, device="cpu", seed=None)
+            network = algorithm_class.load(
+                checkpoint, device="cpu", seed=None,
+                custom_objects={"policy_class": policy_class},
+            )
     finally:
         random.setstate(python_rng)
         np.random.set_state(numpy_rng)

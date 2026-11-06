@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import math
 
-from ...GlobalEvaluation.GlobalSimulationEvaluation import (
+from ....GlobalEvaluation.GlobalSimulationEvaluation import (
     GlobalSimulationEvaluation,
     GlobalSimulationMetrics,
     GlobalSimulationWeights,

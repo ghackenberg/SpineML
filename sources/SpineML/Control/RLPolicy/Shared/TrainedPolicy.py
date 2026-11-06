@@ -14,7 +14,7 @@ import random
 
 import numpy as np
 
-from ...SimulationInterface.InterfaceTypes import Policy, PolicyDecision, PolicyObservation
+from ....SimulationInterface.InterfaceTypes import Policy, PolicyDecision, PolicyObservation
 from .RLCandidatePolicy import DecisionRequest, RLCandidatePolicy
 from .RLObservationEncoder import RLObservationEncoder
 
@@ -34,12 +34,12 @@ def training_algorithm_classes(manifest: Mapping):
     if algorithm == "MaskablePPO":
         raise ValueError("Alte PPO-Checkpoints werden nicht unterstützt; ein DQN- oder Monte-Carlo-Training ist erforderlich.")
     if algorithm == "DQN" and policy_class == "CandidateDQNPolicy":
-        from .CandidateDQN import CandidateDQN
-        from .CandidateDQNPolicy import CandidateDQNPolicy
+        from ..DQN.CandidateDQN import CandidateDQN
+        from ..DQN.CandidateDQNPolicy import CandidateDQNPolicy
 
         return CandidateDQN, CandidateDQNPolicy
     if algorithm == "MonteCarlo" and policy_class == "CandidateMonteCarloPolicy":
-        from .CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
+        from ..MonteCarlo.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
 
         return CandidateMonteCarlo, CandidateMonteCarloPolicy
     raise ValueError("Das Manifest muss einen unterstützten DQN- oder Monte-Carlo-Trainingslauf beschreiben.")
@@ -110,7 +110,11 @@ class TrainedCandidatePolicy(Policy):
         numpy_rng = np.random.get_state()
         try:
             with th.random.fork_rng(devices=self._rng_devices):
-                self.model = algorithm_class.load(checkpoint_path, device=selected_device, seed=None)
+                # Die Netzklasse steht im Manifest; alte Dateipfade im ZIP werden damit ersetzt.
+                self.model = algorithm_class.load(
+                    checkpoint_path, device=selected_device, seed=None,
+                    custom_objects={"policy_class": policy_class},
+                )
         finally:
             random.setstate(python_rng)
             np.random.set_state(numpy_rng)

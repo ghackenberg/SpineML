@@ -70,7 +70,7 @@ def main() -> None:
 
     # --help beendet sich bereits oben: Gymnasium bleibt eine optionale Abhängigkeit.
     try:
-        from SpineML.Control.RLPolicy.SpineRLEnv import SpineRLEnv
+        from SpineML.Control.RLPolicy.Shared.SpineRLEnv import SpineRLEnv
     except ModuleNotFoundError as error:
         if error.name == "gymnasium":
             parser.error("Gymnasium fehlt. Zuerst installieren: python -m pip install -e '.[rl]'")

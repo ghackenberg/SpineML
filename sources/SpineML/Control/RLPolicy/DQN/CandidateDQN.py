@@ -13,7 +13,7 @@ except ImportError as error:
     ) from error
 
 from .CandidateDQNPolicy import CandidateDQNPolicy
-from .CandidateQNetwork import candidate_action_mask
+from ..Shared.CandidateQNetwork import candidate_action_mask
 
 
 class CandidateDQN(DQN):

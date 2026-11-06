@@ -13,11 +13,11 @@ from time import perf_counter
 
 import gymnasium as gym
 
-from ...GlobalEvaluation.GlobalSimulationEvaluation import (
+from ....GlobalEvaluation.GlobalSimulationEvaluation import (
     GlobalSimulationEvaluation,
     GlobalSimulationWeights,
 )
-from ...SimulationExecution.ModelLoader import _resolve_model_path
+from ....SimulationExecution.ModelLoader import _resolve_model_path
 from .RLObservationEncoder import (
     ACTION_TYPES,
     CANDIDATE_FEATURE_NAMES,
@@ -40,7 +40,7 @@ _DEBUG_INFO_KEYS = frozenset(("policy_observation", "candidates", "pending_actio
 
 def load_app_configuration() -> dict:
     """Liest die App-Vorgaben, ohne die Oberfläche zu starten."""
-    app_path = Path(__file__).resolve().parents[3] / "apps" / "heuristic_optimization_app.py"
+    app_path = Path(__file__).resolve().parents[4] / "apps" / "heuristic_optimization_app.py"
     # Unter diesem Namen überspringt die App ihre GUI-Imports und ihren Start.
     configuration = runpy.run_path(str(app_path), run_name="__mp_main__")
     evaluation = configuration["_global_evaluation"]()
@@ -73,9 +73,9 @@ def calibrate_references(
     progress: Callable[[int], None] | None = None,
 ) -> tuple[GlobalSimulationEvaluation, dict]:
     """Berechnet feste Referenzen aus vollständigen Läufen der Standardheuristik."""
-    from ..HeuristicPolicy.HeuristicPolicyFactory import HeuristicPolicyFactory
-    from ...SimulationExecution.ModelLoader import load_layout_and_scenario
-    from ...SimulationExecution.SimulationRunner import SimulationRunner
+    from ...HeuristicPolicy.HeuristicPolicyFactory import HeuristicPolicyFactory
+    from ....SimulationExecution.ModelLoader import load_layout_and_scenario
+    from ....SimulationExecution.SimulationRunner import SimulationRunner
 
     seeds = _validated_seeds(seeds)
     if global_evaluation is None:

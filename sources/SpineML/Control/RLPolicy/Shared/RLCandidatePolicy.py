@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from numbers import Integral
 from typing import Callable
 
-from ..ActionGeneration.ActionGenerator import SpineActionGenerator
-from ...SimulationInterface.InterfaceTypes import (
+from ...ActionGeneration.ActionGenerator import SpineActionGenerator
+from ....SimulationInterface.InterfaceTypes import (
     ActionGenerator,
     Policy,
     PolicyDecision,

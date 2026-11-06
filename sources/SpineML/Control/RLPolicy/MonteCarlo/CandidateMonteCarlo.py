@@ -18,7 +18,7 @@ except ImportError as error:
         'Kandidaten-Monte-Carlo benötigt die Trainingspakete: python -m pip install ".[rl-training]"'
     ) from error
 
-from .CandidateQNetwork import (
+from ..Shared.CandidateQNetwork import (
     CandidateFeaturesExtractor, CandidateQNetwork, _positive_size, candidate_action_mask,
 )
 

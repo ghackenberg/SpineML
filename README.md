@@ -76,16 +76,19 @@ sources/
         │   ├── HeuristicPolicyFactory.py
         │   └── WeightOptimization/LocalHeuristicWeightOptimizer.py
         └── RLPolicy/
-            ├── SpineRLEnv.py
-            ├── RLCandidatePolicy.py
-            ├── RLObservationEncoder.py
-            ├── RLReward.py
-            ├── CandidateQNetwork.py
-            ├── CandidateDQN.py
-            ├── CandidateDQNPolicy.py
-            ├── CandidateMonteCarlo.py
-            ├── TrainingSupport.py
-            └── TrainedPolicy.py
+            ├── DQN/
+            │   ├── CandidateDQN.py
+            │   └── CandidateDQNPolicy.py
+            ├── MonteCarlo/
+            │   └── CandidateMonteCarlo.py
+            └── Shared/
+                ├── CandidateQNetwork.py
+                ├── RLCandidatePolicy.py
+                ├── RLObservationEncoder.py
+                ├── RLReward.py
+                ├── SpineRLEnv.py
+                ├── TrainingSupport.py
+                └── TrainedPolicy.py
 ```
 
 | Bereich | Verantwortung |
@@ -941,7 +944,7 @@ Alle drei Policies nutzen standardmäßig den
 | --- | --- |
 | [`HeuristicPolicy`](sources/SpineML/Control/HeuristicPolicy/HeuristicPolicy.py) | `LocalHeuristicActionEvaluator` berechnet die Scores; `HeuristicActionSelector` wählt anhand dieser Scores aus. |
 | [`RandomPolicy`](sources/SpineML/Control/RandomPolicy/RandomPolicy.py) | Wählt gleichverteilt zufällig unter Nicht-Warteaktionen. Warten ist nur der Fallback; ausgewählte Picks erhalten die neutrale Priorität `0.0`. |
-| [`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py) | Eine übergebene Entscheidungsfunktion wählt den Index eines Kandidaten. Gibt es nur einen Kandidaten, wird er standardmäßig direkt übernommen. |
+| [`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/Shared/RLCandidatePolicy.py) | Eine übergebene Entscheidungsfunktion wählt den Index eines Kandidaten. Gibt es nur einen Kandidaten, wird er standardmäßig direkt übernommen. |
 
 **Nur die HeuristicPolicy benötigt Selector und Evaluator.**
 
@@ -2877,6 +2880,12 @@ nicht automatisch für die vollständige Optimierung.
 
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
+Die Dateien sind nach ihrer Aufgabe getrennt:
+
+- **[DQN](sources/SpineML/Control/RLPolicy/DQN):** das DQN-Lernverfahren.
+- **[MonteCarlo](sources/SpineML/Control/RLPolicy/MonteCarlo):** das Monte-Carlo-Lernverfahren.
+- **[Shared](sources/SpineML/Control/RLPolicy/Shared):** gemeinsamer Netzaufbau, Simulationsanbindung, Beobachtungen, Belohnung und Laden trainierter Netze. Beide Verfahren verwenden diese Bausteine.
+
 **RL** steht für **Reinforcement Learning**. Die RL-Steuerung verwendet ein
 neuronales Netz, um aus den Aktionen des [ActionGenerators](#actiongenerator)
 eine auszuwählen. Das Netz soll durch viele Simulationsläufe lernen, welche
@@ -2950,7 +2959,7 @@ Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
 
-1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/SpineRLEnv.py)
+1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/Shared/SpineRLEnv.py)
    startet die Simulation. Sobald eine Auswahl aus mehreren Aktionen nötig ist,
    wartet sie auf die Entscheidung des Netzes.
 2. Der [Encoder](#numerische-beobachtung-und-aktionsmaske) übersetzt die
@@ -3010,7 +3019,7 @@ kennzeichnet, welche Indizes gerade gewählt werden dürfen.
 ### Vom Bridge-Aufruf zur Kandidatenentscheidung
 
 Die [Bridge](#simulationbridge) ruft `make_decision()` der
-[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/RLCandidatePolicy.py)
+[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/Shared/RLCandidatePolicy.py)
 auf. Diese Policy verbindet den gemeinsamen Generator mit der RL-Auswahl:
 
 1. **Wartende Objekte prüfen:** Die Policy liest die Zustandskopie, den
@@ -3043,7 +3052,7 @@ auch einzelne Kandidaten an die Auswahlfunktion melden. Die Trainingsumgebung
 ### Numerische Beobachtung und Aktionsmaske
 
 Das Netz erhält keine Salabim-Objekte. Der
-[`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/RLObservationEncoder.py)
+[`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/Shared/RLObservationEncoder.py)
 übersetzt die Zustandsdaten und Kandidaten in Zahlenfelder fester Größe.
 Eine Zeile beschreibt ein Objekt oder eine Aktion. Nicht benötigte Zeilen
 werden mit Nullen aufgefüllt; das heißt **Padding**. Zusätzliche Felder, die
@@ -3095,7 +3104,7 @@ solche RL-Umgebung ab.
 Vor dem Start benötigt die Umgebung eine `GlobalSimulationEvaluation` mit
 festen positiven Referenzwerten aus
 [vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration).
-[`RLReward`](sources/SpineML/Control/RLPolicy/RLReward.py) übernimmt eine Kopie
+[`RLReward`](sources/SpineML/Control/RLPolicy/Shared/RLReward.py) übernimmt eine Kopie
 dieser Werte und der nichtnegativen globalen Zielgewichte. Diese
 Bewertungsvorgaben bleiben während der Episode unverändert; sie werden nicht gelernt.
 
@@ -3145,7 +3154,7 @@ verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
 
 Für das DQN- und Monte-Carlo-Training gelten beide Limits als endgültiger Fehlschlag.
 Die Zusatzklasse `EpisodeSeedWrapper` in
-[`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
+[`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/Shared/TrainingSupport.py)
 meldet sie deshalb an Stable-Baselines3 (SB3) als `terminated=True` und
 `truncated=False`. `info["training_limit_terminated"]` und der Abbruchgrund
 halten fest, dass tatsächlich ein Limit erreicht wurde. So rechnet SB3 zur
@@ -3161,14 +3170,14 @@ die angebotenen Aktionen. Ein höherer Q-Wert bedeutet eine höhere erwartete
 spätere Belohnung, nicht eine höhere Auswahlwahrscheinlichkeit.
 
 Der gemeinsame Netzaufbau für DQN und Monte Carlo steht in
-[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/CandidateQNetwork.py).
+[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/Shared/CandidateQNetwork.py).
 `CandidateFeaturesExtractor` verarbeitet Kontext, Objektzeilen und
 Kandidatenmerkmale. `CandidateQNetwork` bewertet jeden Kandidaten mit demselben Teilnetz.
 Die Netzparameter gehören damit nicht fest zu einer bestimmten Indexnummer.
 Padding-Zeilen zählen nicht mit. `embedding_dim=32` und `hidden_dim=64`
 bestimmen die Breite der internen Netzschichten.
 
-[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/CandidateDQNPolicy.py)
+[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/DQN/CandidateDQNPolicy.py)
 erstellt daraus die beiden Q-Netze für DQN:
 
 - **Online-Q-Netz:** Berechnet die aktuellen Q-Werte und wird anhand der
@@ -3211,14 +3220,14 @@ Kandidaten zufällig gewählt. Die Maske gilt ebenso bei der normalen Auswahl
 und beim Maximum des Zielnetzes. Aufgefüllte Kandidatenplätze können daher
 weder ausgeführt werden noch das Lernziel erhöhen.
 
-[`CandidateDQN`](sources/SpineML/Control/RLPolicy/CandidateDQN.py) erweitert
+[`CandidateDQN`](sources/SpineML/Control/RLPolicy/DQN/CandidateDQN.py) erweitert
 dafür DQN aus Stable-Baselines3. Es gibt keinen Actor und keine
 gelernten Auswahlwahrscheinlichkeiten. Das globale Produktionsziel, die
 Belohnungsformel und die Regeln der Simulation bleiben unverändert.
 
 ### Monte Carlo: aus vollständigen Episoden lernen
 
-[`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/CandidateMonteCarlo.py)
+[`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/MonteCarlo/CandidateMonteCarlo.py)
 trainiert ein einzelnes Kandidaten-Q-Netz. Anders als DQN verwendet es
 **kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
 
@@ -3263,7 +3272,7 @@ Produktionsergebnisse lernt als DQN, muss der Test zeigen.
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
 Vor dem Training führt
-[`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/TrainingSupport.py)
+[`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/Shared/TrainingSupport.py)
 vollständige Simulationsläufe mit der Standardheuristik aus. Diese Läufe bilden
 die **Baseline**, also die Vergleichsbasis. Für Makespan, Gesamtverspätung,
 Transportzeit und Werkzeugwechselzeit wird jeweils der Mittelwert berechnet.
@@ -3475,14 +3484,14 @@ belegt keine Verbesserung.
 
 ### Trainiertes Netz im normalen Runner einsetzen
 
-[TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
+[TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
 verbindet das gespeicherte Netz mit derselben `make_decision()`-Schnittstelle
 wie die anderen Steuerungen. Deshalb kann der normale `SimulationRunner`
 die RL-Policy direkt verwenden. Eine eigene Schleife mit `reset()` und
 `step()` muss dafür nicht geschrieben werden:
 
 ```python
-from SpineML.Control.RLPolicy.TrainedPolicy import TrainedCandidatePolicy
+from SpineML.Control.RLPolicy.Shared.TrainedPolicy import TrainedCandidatePolicy
 from SpineML.SimulationExecution.ModelLoader import load_layout_and_scenario
 from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
 
@@ -3509,7 +3518,7 @@ Zufallszustände von den Python-, NumPy- und PyTorch-Zufallsfolgen der Simulatio
 Einzelne Kandidaten werden ohne Netzauswahl übernommen.
 
 Für mehrere Läufe erstellt
-[`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/TrainedPolicy.py)
+[`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
 jeweils eine neue Policy-Instanz: zunächst
 `factory = TrainedPolicyFactory("rl_runs/dqn")`, dann `factory(seed)` pro Lauf.
 Diese Factory kann auch in einem `SimulationRunRequest` an den Prozesspool

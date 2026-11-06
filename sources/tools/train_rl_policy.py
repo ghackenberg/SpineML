@@ -110,10 +110,10 @@ def main() -> None:
         from stable_baselines3.common.callbacks import BaseCallback
         from stable_baselines3.common.logger import configure
         from stable_baselines3.common.vec_env import SubprocVecEnv
-        from SpineML.Control.RLPolicy.CandidateDQN import CandidateDQN
-        from SpineML.Control.RLPolicy.CandidateDQNPolicy import CandidateDQNPolicy
-        from SpineML.Control.RLPolicy.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
-        from SpineML.Control.RLPolicy.TrainingSupport import (
+        from SpineML.Control.RLPolicy.DQN.CandidateDQN import CandidateDQN
+        from SpineML.Control.RLPolicy.DQN.CandidateDQNPolicy import CandidateDQNPolicy
+        from SpineML.Control.RLPolicy.MonteCarlo.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
+        from SpineML.Control.RLPolicy.Shared.TrainingSupport import (
             EnvironmentFactory, build_artifact_context, calibrate_references, load_app_configuration,
         )
     except ImportError as error:

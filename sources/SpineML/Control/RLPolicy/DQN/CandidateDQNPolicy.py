@@ -15,8 +15,8 @@ except ImportError as error:
         'Die Kandidaten-DQN-Policy benötigt die Trainingspakete: python -m pip install ".[rl-training]"'
     ) from error
 
-# Alte Importpfade bleiben erhalten, damit vorhandene Netzstände weiter ladbar sind.
-from .CandidateQNetwork import (
+# Der Netzaufbau wird auch von Monte Carlo verwendet.
+from ..Shared.CandidateQNetwork import (
     CandidateFeaturesExtractor,
     CandidateQNetwork,
     _positive_size,

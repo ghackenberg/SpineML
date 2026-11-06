@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import math
 import pickle
+from collections import deque
 from pathlib import Path
+from time import time_ns
 from typing import Any
 
 import numpy as np
 
 try:
     import torch as th
-    import gymnasium as gym
     from gymnasium import spaces
     from stable_baselines3.common.base_class import BaseAlgorithm
     from stable_baselines3.common.policies import BasePolicy
     from stable_baselines3.common.type_aliases import Schedule
+    from stable_baselines3.common.utils import configure_logger
     from torch import nn
     from torch.nn import functional as F
 except ImportError as error:
@@ -39,24 +41,6 @@ def _stack_observations(observations: list[dict[str, np.ndarray]]) -> dict[str, 
             values.append(observation[name])
         batch[name] = np.stack(values)
     return batch
-
-
-class _NetworkSpacesEnv(gym.Env):
-    """Stellt SB3 nur die Eingabeformen bereit; echte Simulationen laufen in den Workern."""
-
-    def __init__(self, observation_space, action_space):
-        self.observation_space = observation_space
-        self.action_space = action_space
-
-    def reset(self, *, seed=None, options=None):
-        super().reset(seed=seed)
-        observation = {}
-        for name, space in self.observation_space.spaces.items():
-            observation[name] = np.zeros(space.shape, dtype=space.dtype)
-        return observation, {}
-
-    def step(self, action):
-        raise RuntimeError("Die Netzbeschreibung führt keine Fabriksimulation aus.")
 
 
 class CandidateMonteCarloPolicy(BasePolicy):
@@ -149,9 +133,6 @@ class CandidateMonteCarlo(BaseAlgorithm):
         replay_sample_episodes: int = 4,
         _init_setup_model: bool = True,
     ):
-        if env is not None and episode_factories is not None:
-            # Kein zusätzlicher Simulationslauf im zentralen Lernprozess.
-            env = _NetworkSpacesEnv(env.observation_space, env.action_space)
         super().__init__(
             policy, env, learning_rate, policy_kwargs=policy_kwargs,
             seed=seed, device=device, verbose=verbose, tensorboard_log=tensorboard_log,
@@ -174,6 +155,7 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.exploration_rate = exploration_initial_eps
         self.max_grad_norm = max_grad_norm
         self.completed_batches = 0
+        self.total_episodes = 0
         self.episodes_collected = 0
         self.collected_transitions = 0
         self.last_return_min = None
@@ -239,7 +221,7 @@ class CandidateMonteCarlo(BaseAlgorithm):
         return actions, state
 
     def _update_exploration(self) -> None:
-        fraction = self.num_timesteps / max(self._total_timesteps, 1)
+        fraction = self.episodes_collected / max(self.total_episodes, 1)
         fraction = min(fraction / self.exploration_fraction, 1.0)
         self.exploration_rate = self.exploration_initial_eps + fraction * (
             self.exploration_final_eps - self.exploration_initial_eps
@@ -362,9 +344,9 @@ class CandidateMonteCarlo(BaseAlgorithm):
         callback.update_locals({"infos": [info], "dones": dones})
         return callback.on_step()
 
-    def _learn_and_publish(self, total_timesteps, callback, log_interval):
+    def _learn_and_publish(self, callback):
         callback.on_rollout_end()
-        self._current_progress_remaining = max(1 - self.num_timesteps / total_timesteps, 0)
+        self._current_progress_remaining = max(1 - self.episodes_collected / self.total_episodes, 0)
         self._update_exploration()
         self._train_replay()
         self.completed_batches += 1
@@ -374,37 +356,47 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.logger.record("rollout/episodes", self._episode_num)
         self.logger.record("rollout/exploration_rate", self.exploration_rate)
         self.logger.record("rollout/policy_version", self.policy_version)
-        if log_interval is not None and self.completed_batches % log_interval == 0:
-            self.logger.dump(step=self.num_timesteps)
+        self.logger.dump(step=self.num_timesteps)
         callback.on_rollout_start()
 
-    def learn(
-        self,
-        total_timesteps: int,
-        callback=None,
-        log_interval: int = 1,
-        tb_log_name: str = "CandidateMonteCarlo",
-        reset_num_timesteps: bool = True,
-        progress_bar: bool = False,
-    ) -> CandidateMonteCarlo:
+    def _prepare_training(self, total_episodes, callback):
+        """Bereitet einen Trainingslauf mit eigenem Episodenbudget vor, ohne eine Simulation zu starten."""
+        self.total_episodes = _positive_size("total_episodes", total_episodes)
+        self.episodes_collected = 0
+        self.num_timesteps = 0
+        self.collected_transitions = 0
+        self.completed_batches = 0
+        self._episode_num = 0
+        self._num_timesteps_at_start = 0
+        self._current_progress_remaining = 1.0
+        self.start_time = time_ns()
+        self.worker_pids = []
+        self.ep_info_buffer = deque(maxlen=self._stats_window_size)
+        self.ep_success_buffer = deque(maxlen=self._stats_window_size)
+        if not self._custom_logger:
+            self._logger = configure_logger(self.verbose, self.tensorboard_log, "CandidateMonteCarlo", True)
+        return self._init_callback(callback)
+
+    def learn(self, total_episodes: int, callback=None) -> CandidateMonteCarlo:
+        """Sammelt die angegebene Anzahl vollständiger Episoden und trainiert mit dem Replay Buffer."""
         if not self.episode_factories:
             raise ValueError("Asynchrones Training benötigt episode_factories für die Worker.")
         if self.exploration_initial_eps <= 0 or self.exploration_final_eps <= 0:
             raise ValueError("Off-Policy-Monte-Carlo benötigt positive Explorationswahrscheinlichkeiten.")
-        total_timesteps, callback = self._setup_learn(
-            total_timesteps, callback, reset_num_timesteps, tb_log_name, progress_bar,
-        )
+        callback = self._prepare_training(total_episodes, callback)
         callback.on_training_start(locals(), globals())
         pending_episodes = 0
         keep_training = True
-        stop_requested = False
         self._update_exploration()
         self._episode_runner = AsyncEpisodeRunner(
             self.episode_factories, self.observation_space, self.action_space,
             self.policy_kwargs, self.seed or 0,
         )
         try:
-            self._episode_runner.start(self.policy.state_dict(), self.exploration_rate, self.policy_version)
+            self._episode_runner.start(
+                self.policy.state_dict(), self.exploration_rate, self.policy_version,
+                total_episodes=self.total_episodes,
+            )
             callback.on_rollout_start()
             while not self._episode_runner.finished:
                 episode = self._episode_runner.get_completed()
@@ -414,18 +406,14 @@ class CandidateMonteCarlo(BaseAlgorithm):
                 if not keep_training:
                     break
                 pending_episodes += 1
-                if self.num_timesteps >= total_timesteps and not stop_requested:
-                    self._episode_runner.request_stop()
-                    stop_requested = True
                 if pending_episodes >= self.train_every_episodes:
-                    self._learn_and_publish(total_timesteps, callback, log_interval)
+                    self._learn_and_publish(callback)
                     pending_episodes = 0
             if pending_episodes and keep_training:
-                self._learn_and_publish(total_timesteps, callback, log_interval)
+                self._learn_and_publish(callback)
             callback.on_rollout_end()
         finally:
             self._episode_runner.close()
             self._episode_runner = None
-            self._last_obs = None
             callback.on_training_end()
         return self

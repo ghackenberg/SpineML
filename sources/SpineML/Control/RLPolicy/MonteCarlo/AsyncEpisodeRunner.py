@@ -28,7 +28,7 @@ def _send_result(results, message, abort):
 
 def _run_episode_worker(
     worker_id, factory, observation_space, action_space, policy_kwargs,
-    seed, snapshots, results, stop, abort,
+    seed, snapshots, results, abort, remaining_episodes,
 ):
     environment = None
     failure = None
@@ -46,7 +46,12 @@ def _run_episode_worker(
         ).to("cpu")
         policy.set_training_mode(False)
         episode_index = 0
-        while not stop.is_set() and not abort.is_set():
+        while not abort.is_set():
+            # Unter dem gemeinsamen Lock genau einen Episodenplatz reservieren.
+            with remaining_episodes.get_lock():
+                if abort.is_set() or remaining_episodes.value == 0:
+                    break
+                remaining_episodes.value -= 1
             # Genau ein veröffentlichter Netzstand gilt für die gesamte Episode.
             version, epsilon, saved_parameters = snapshots["latest"]
             parameters = {}
@@ -140,29 +145,37 @@ class AsyncEpisodeRunner:
         self._manager = None
         self._snapshots = None
         self._results = None
-        self._stop = self._context.Event()
         self._abort = self._context.Event()
+        self._remaining_episodes = None
         self._processes = []
+        self._worker_count = 0
         self._finished_workers = set()
         self._started = False
         self._closed = False
 
-    def start(self, policy_state, epsilon, version=0):
+    def start(self, policy_state, epsilon, version=0, *, total_episodes: int):
+        """Verteilt insgesamt total_episodes Episoden auf die unabhängigen Worker."""
         if self._started or self._closed:
             raise RuntimeError("Dieser Episoden-Runner kann nur einmal gestartet werden.")
+        if not isinstance(total_episodes, int) or total_episodes < 1:
+            raise ValueError("total_episodes muss eine positive ganze Zahl sein.")
         self._started = True
+        self._worker_count = min(len(self.factories), total_episodes)
         try:
             self._manager = self._context.Manager()
             self._snapshots = self._manager.dict()
-            self._results = self._context.Queue(maxsize=max(2, len(self.factories)))
+            self._results = self._context.Queue(maxsize=max(2, self._worker_count))
+            # Alle Worker teilen sich dieses Budget und den zugehörigen Lock.
+            self._remaining_episodes = self._context.Value("q", total_episodes)
             self.publish(policy_state, epsilon, version)
-            for worker_id, factory in enumerate(self.factories):
+            for worker_id in range(self._worker_count):
+                factory = self.factories[worker_id]
                 process = self._context.Process(
                     target=_run_episode_worker,
                     args=(
                         worker_id, factory, self.observation_space, self.action_space,
                         self.policy_kwargs, self.seed, self._snapshots, self._results,
-                        self._stop, self._abort,
+                        self._abort, self._remaining_episodes,
                     ),
                 )
                 process.start()
@@ -182,14 +195,10 @@ class AsyncEpisodeRunner:
             parameters[name] = tensor.detach().cpu().numpy().copy()
         self._snapshots["latest"] = (int(version), float(epsilon), parameters)
 
-    def request_stop(self):
-        """Startet keine neuen Episoden; bereits laufende Episoden werden noch geliefert."""
-        self._stop.set()
-
     @property
     def finished(self):
         # Endmeldungen kommen hinter den Episoden desselben Workers in die Ergebniswarteschlange.
-        return self._started and len(self._finished_workers) == len(self.factories)
+        return self._started and len(self._finished_workers) == self._worker_count
 
     def _check_processes(self):
         for worker_id, process in enumerate(self._processes):
@@ -225,7 +234,6 @@ class AsyncEpisodeRunner:
         if self._closed:
             return
         self._closed = True
-        self._stop.set()
         self._abort.set()
         deadline = perf_counter() + 5.0
         for process in self._processes:

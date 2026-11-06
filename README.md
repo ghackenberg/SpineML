@@ -3245,7 +3245,8 @@ Die Worker-Ausführung steht in
 2. **Ergebnis abgeben und sofort neu starten:** Nach dem Episodenende übergibt
    der Worker seinen Verlauf und fragt erneut den neuesten Netzstand ab.
    Ist noch keine neue Version verfügbar, verwendet er die bisherige. Er wartet
-   nicht darauf, dass andere Worker ihre Episoden beenden.
+   nicht darauf, dass andere Worker ihre Episoden beenden. Eine neue Episode
+   startet nur, solange vom festgelegten Episodenbudget noch eine übrig ist.
 3. **Fertige Episoden speichern:**
    [`EpisodeReplayBuffer.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/EpisodeReplayBuffer.py)
    speichert Zustände, gewählte Aktionen, Belohnungen, damalige
@@ -3361,11 +3362,12 @@ Das Training speichert im Ausgabeordner:
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
 | `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
-| `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. Bei Monte Carlo wird der Zähler erst mit einer fertigen Episode aktualisiert. |
+| `checkpoint_*.zip` | DQN-Zwischenstände nach standardmäßig `10000` weiteren Entscheidungen, zum Beispiel `checkpoint_10000.zip`. |
+| `checkpoint_episodes_*.zip` | Monte-Carlo-Zwischenstände nach standardmäßig `10` weiteren Episoden, zum Beispiel `checkpoint_episodes_10.zip`. `--checkpoint-every` ändert bei beiden Verfahren den Abstand. |
 | `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`: Übergänge bei DQN, vollständige Episoden bei Monte Carlo. |
 | `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus; bei Monte Carlo zusätzlich Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
 | `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
-| `training_report.json` | Status und Umfang des Trainings sowie Rechenzeiten für Baseline, Training und Gesamtlauf. |
+| `training_report.json` | Status, Umfang und Rechenzeiten. Das angeforderte Budget steht bei DQN unter `requested_timesteps`, bei Monte Carlo unter `requested_episodes`. `actual_timesteps` zählt bei beiden die gesammelten Entscheidungen. |
 
 **Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
 mit Layout und Produktionsaufträgen. `model.zip` enthält dagegen den gelernten
@@ -3410,7 +3412,7 @@ installiert diese Bibliotheken:
 **Monte Carlo trainieren:**
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm monte-carlo --output rl_runs/monte_carlo --steps 100000 --workers 4 --epochs 4
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm monte-carlo --output rl_runs/monte_carlo --episodes 100 --workers 4 --epochs 4
 ```
 
 Ohne `--model` verwendet
@@ -3421,6 +3423,8 @@ eingestellte Fabrikdatei, derzeit [example-5.py](sources/examples/normal/example
 `rl_runs/dqn` oder `rl_runs/monte_carlo`. Der Ordner muss neu oder leer sein,
 damit kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
 ohne eine Simulation oder ein Training zu starten.
+Optionen des anderen Lernverfahrens werden mit einer Fehlermeldung abgewiesen:
+`--steps` gehört zu DQN, `--episodes` zu Monte Carlo.
 
 **Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
 Simulationsprozesse. Jeder Worker führt seine eigene Simulation aus. Das
@@ -3445,21 +3449,26 @@ automatisch übernommene Einzelkandidaten zählen nicht mit.
 `--mc-train-every-episodes` neu eingetroffenen Episoden, ohne auf die übrigen
 Worker zu warten. Bis zu `--mc-replay-sample-episodes` ganze Episoden aus dem
 Speicher werden mit korrigierten Gewichten `--epochs`-mal zum Lernen verwendet.
-Die übrigen Worker laufen währenddessen weiter. Eine kleinere Restgruppe
-wird beim regulären Trainingsende ebenfalls zum Lernen verwendet. Den Ablauf erklärt
+Die übrigen Worker laufen währenddessen weiter. Sind am regulären Trainingsende
+weniger neue Episoden übrig, lösen sie trotzdem eine letzte Lernphase aus dem Replay Buffer aus. Den Ablauf erklärt
 [Monte Carlo: aus vollständigen Episoden lernen](#monte-carlo-aus-vollständigen-episoden-lernen).
 
-Bei Monte Carlo ist `--steps` keine harte Obergrenze. Gezählt wird erst,
-wenn vollständige Episoden im Lernprozess eintreffen. Nach Erreichen des Budgets
-werden keine neuen Episoden mehr gestartet; bereits fertige Episoden in der
-Übergabewarteschlange und noch laufende Episoden werden weiterhin abgeholt.
-Deshalb kann die tatsächliche Entscheidungszahl **deutlich über `--steps` liegen**.
+**Monte Carlo: Wie viele Simulationen werden ausgeführt?** Bei regulär beendetem
+Training führt `--episodes 100` genau `100` Trainingsepisoden aus, verteilt auf die Worker. Jede gestartete
+Episode läuft bis zum regulären Ende oder einem eingestellten Sicherheitslimit.
+Alle Ergebnisse werden abgeholt; es werden keine zusätzlichen Episoden gestartet.
+Eine am Sicherheitslimit beendete Episode zählt ebenfalls zum Budget und erhält
+die Endbelohnung `-1`. Bei einem Fehler oder `Strg+C` kann das Training vorher enden.
+Die Baseline-Läufe zählen nicht zu diesen `100` Trainingsepisoden.
+Die Zahl der Entscheidungen je Episode darf unterschiedlich sein und wird nur
+zusätzlich protokolliert. Sie bestimmt nicht das Monte-Carlo-Trainingsbudget.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
 | `--algorithm` | `dqn` | `dqn` oder `monte-carlo` als Lernverfahren verwenden. |
-| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln, nicht Episoden oder Simulationsstunden. Monte Carlo zählt vollständige eingetroffene Episoden und holt nach dem Stopp noch fertige wartende sowie laufende Episoden ab; die tatsächliche Zahl kann deutlich größer sein. |
-| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
+| `--steps` | `100000` | Nur DQN: mindestens so viele externe Kandidatenauswahlen insgesamt sammeln. |
+| `--episodes` | `100` | Nur Monte Carlo: genau so viele vollständige Trainingsepisoden ausführen und auswerten. |
+| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse; bei Monte Carlo höchstens so viele wie das Episodenbudget. |
 | `--buffer-size` | `5000` | Nur DQN: Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
 | `--learning-starts` | `1000` | Nur DQN: Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
 | `--train-freq` | `4` | Nur DQN: Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
@@ -3472,7 +3481,7 @@ Deshalb kann die tatsächliche Entscheidungszahl **deutlich über `--steps` lieg
 | `--batch-size` | `64` | DQN: zufällige Übergänge pro Netzanpassung. Monte Carlo: höchstens so viele Entscheidungen je Datengruppe aus den ausgewählten Episoden. |
 | `--learning-rate` | `0.0001` | Schrittweite bei der Anpassung der Netzparameter. |
 | `--target-update-interval` | `1000` | Nur DQN: Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
-| `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear vom Anfangs- zum Endwert sinkt. |
+| `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear sinkt: bei DQN nach Entscheidungen, bei Monte Carlo nach eingetroffenen Episoden. |
 | `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl; bei Monte Carlo müssen beide positiv sein. |
 | `gamma` | `1.0` | Spätere Belohnung nicht abschwächen. Für beide Verfahren im Trainingsskript festgelegt. |
 | `tau` | `1.0` | Nur DQN: vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
@@ -3480,6 +3489,7 @@ Deshalb kann die tatsächliche Entscheidungszahl **deutlich über `--steps` lieg
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
 | `--device` | `cpu` | Rechengerät des zentralen Netzes und seiner Anpassung. Salabim und die lokalen Monte-Carlo-Netzkopien bleiben auf der CPU. |
 | `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
+| `--checkpoint-every` | DQN: `10000`; Monte Carlo: `10` | Abstand gespeicherter Zwischenstände: bei DQN in Entscheidungen, bei Monte Carlo in Episoden. |
 
 **DQN-Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
 neue Übergänge. Nach der Aufwärmphase folgen vier Netzanpassungen mit jeweils
@@ -3546,7 +3556,9 @@ Testläufe abgeschlossen sind. Sonst steht dort `null`, also kein gültiger
 Mittelwert. So wird ein unfertiger Lauf nicht als scheinbar gutes Ergebnis gewertet.
 Bei Fehlern wird der bis dahin erfasste Teilbericht gespeichert.
 
-`--checkpoint checkpoint_10000.zip` lädt einen Zwischenstand statt `model.zip`;
+`--checkpoint checkpoint_10000.zip` lädt einen DQN-Zwischenstand statt `model.zip`.
+Bei Monte Carlo heißt ein solcher Zwischenstand beispielsweise
+`checkpoint_episodes_10.zip`.
 `--output` bestimmt den Berichtspfad. Mit `--optimized-weights gewichte.json`
 kommt eine vierte Steuerung hinzu: die Heuristik mit einem optimierten lokalen
 Gewichtssatz. Die JSON-Datei darf direkt ein `HeuristicWeights`-Dictionary

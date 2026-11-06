@@ -80,6 +80,7 @@ sources/
             ├── RLCandidatePolicy.py
             ├── RLObservationEncoder.py
             ├── RLReward.py
+            ├── CandidateQNetwork.py
             ├── CandidateDQN.py
             ├── CandidateDQNPolicy.py
             ├── CandidateMonteCarlo.py
@@ -3159,14 +3160,16 @@ Es handelt sich dabei nicht um einen der regulären Limitabbrüche aus der Tabel
 die angebotenen Aktionen. Ein höherer Q-Wert bedeutet eine höhere erwartete
 spätere Belohnung, nicht eine höhere Auswahlwahrscheinlichkeit.
 
-[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/CandidateDQNPolicy.py)
-verarbeitet Kontext, Objektzeilen und Kandidatenmerkmale. Es fasst die echten
-Zeilen zusammen und bewertet dann jeden Kandidaten mit demselben Teilnetz.
+Der gemeinsame Netzaufbau für DQN und Monte Carlo steht in
+[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/CandidateQNetwork.py).
+`CandidateFeaturesExtractor` verarbeitet Kontext, Objektzeilen und
+Kandidatenmerkmale. `CandidateQNetwork` bewertet jeden Kandidaten mit demselben Teilnetz.
 Die Netzparameter gehören damit nicht fest zu einer bestimmten Indexnummer.
 Padding-Zeilen zählen nicht mit. `embedding_dim=32` und `hidden_dim=64`
 bestimmen die Breite der internen Netzschichten.
 
-Beim Training arbeiten zwei Q-Netze zusammen:
+[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/CandidateDQNPolicy.py)
+erstellt daraus die beiden Q-Netze für DQN:
 
 - **Online-Q-Netz:** Berechnet die aktuellen Q-Werte und wird anhand der
   Erfahrungen im Replay Buffer angepasst.

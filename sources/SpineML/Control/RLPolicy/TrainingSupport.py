@@ -274,9 +274,9 @@ class EpisodeBatchWrapper(gym.Wrapper):
         self.last_observation, self.reset_info = self.env.reset(seed=seed, options=options)
         return self.last_observation, self.reset_info
 
-    def start_episode_batch(self, force=False):
+    def start_episode_batch(self):
         # Alle Worker sammeln ihre nächste Episode mit demselben unveränderten Netz.
-        if self.waiting or self.last_observation is None or force:
+        if self.waiting or self.last_observation is None:
             self.waiting = False
             return self.reset()
         return self.last_observation, self.reset_info

@@ -18,7 +18,7 @@ except ImportError as error:
         'Kandidaten-Monte-Carlo benötigt die Trainingspakete: python -m pip install ".[rl-training]"'
     ) from error
 
-from .CandidateDQNPolicy import (
+from .CandidateQNetwork import (
     CandidateFeaturesExtractor, CandidateQNetwork, _positive_size, candidate_action_mask,
 )
 
@@ -200,6 +200,17 @@ class CandidateMonteCarlo(BaseAlgorithm):
             self.exploration_final_eps - self.exploration_initial_eps
         )
 
+    def _select_actions_for_active_workers(self, observations, active_indices) -> np.ndarray:
+        """Wählt Aktionen für laufende Episoden; fertige Worker erhalten den Platzhalter 0."""
+        active_observations = {}
+        for name, values in observations.items():
+            active_observations[name] = values[active_indices]
+        selected_actions, _ = self.predict(active_observations, deterministic=False)
+        # Der wartende Worker ignoriert den Platzhalter und startet keine neue Simulation.
+        actions = np.zeros(self.n_envs, dtype=np.int64)
+        actions[active_indices] = selected_actions.reshape(-1)
+        return actions
+
     def _collect_episode_batch(self, callback) -> tuple[list[dict], list[int], list[float], bool]:
         # Jeder Worker startet genau eine Episode mit denselben eingefrorenen Netzgewichten.
         starts = self.env.env_method("start_episode_batch")
@@ -219,13 +230,7 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.policy.set_training_mode(False)
         while active.any():
             active_indices = np.flatnonzero(active)
-            active_observations = {}
-            for name, values in self._last_obs.items():
-                active_observations[name] = values[active_indices]
-            selected_actions, _ = self.predict(active_observations, deterministic=False)
-            # Fertige Worker warten ohne weitere Fabriksimulation; Aktion 0 wird dort ignoriert.
-            actions = np.zeros(self.n_envs, dtype=np.int64)
-            actions[active_indices] = selected_actions.reshape(-1)
+            actions = self._select_actions_for_active_workers(self._last_obs, active_indices)
             for worker_index in active_indices:
                 observation = {}
                 for name, values in self._last_obs.items():
@@ -260,6 +265,20 @@ class CandidateMonteCarlo(BaseAlgorithm):
             returns.extend(discounted_returns(episode_rewards[worker_index], self.gamma))
         return observations, actions, returns, True
 
+    def _prepare_training_minibatch(self, observations, actions, returns, indices):
+        """Wandelt ausgewählte Zustände, Aktionen und Returns in Eingaben für das Netz um."""
+        batch_observations = []
+        batch_actions = []
+        batch_returns = []
+        for index in indices:
+            batch_observations.append(observations[index])
+            batch_actions.append(actions[index])
+            batch_returns.append(returns[index])
+        observation_tensors, _ = self.policy.obs_to_tensor(_stack_observations(batch_observations))
+        action_tensor = th.as_tensor(batch_actions, dtype=th.long, device=self.device).reshape(-1, 1)
+        return_tensor = th.as_tensor(batch_returns, dtype=th.float32, device=self.device).reshape(-1, 1)
+        return observation_tensors, action_tensor, return_tensor
+
     def _train_episode_batch(self, observations: list[dict], actions: list[int], returns: list[float]) -> None:
         self.policy.set_training_mode(True)
         self._update_learning_rate(self.policy.optimizer)
@@ -270,20 +289,13 @@ class CandidateMonteCarlo(BaseAlgorithm):
             order = np.random.permutation(len(actions))
             for start in range(0, len(order), self.batch_size):
                 indices = order[start:start + self.batch_size]
-                batch_observations = []
-                batch_actions = []
-                batch_returns = []
-                for index in indices:
-                    batch_observations.append(observations[index])
-                    batch_actions.append(actions[index])
-                    batch_returns.append(returns[index])
-                tensors, _ = self.policy.obs_to_tensor(_stack_observations(batch_observations))
-                action_tensor = th.as_tensor(batch_actions, dtype=th.long, device=self.device).reshape(-1, 1)
-                return_tensor = th.as_tensor(batch_returns, dtype=th.float32, device=self.device).reshape(-1, 1)
-                masks = candidate_action_mask(tensors, self.action_space.n)
+                observation_tensors, action_tensor, return_tensor = self._prepare_training_minibatch(
+                    observations, actions, returns, indices,
+                )
+                masks = candidate_action_mask(observation_tensors, self.action_space.n)
                 if not bool(th.gather(masks, dim=1, index=action_tensor).all()):
                     raise ValueError("Eine gespeicherte Monte-Carlo-Aktion ist ungültig.")
-                predictions = self.policy.q_net(tensors).gather(dim=1, index=action_tensor)
+                predictions = self.policy.q_net(observation_tensors).gather(dim=1, index=action_tensor)
                 # Nur tatsächliche Returns: kein nächster Q-Wert und kein Target-Netz.
                 loss = F.mse_loss(predictions, return_tensor)
                 self.policy.optimizer.zero_grad()

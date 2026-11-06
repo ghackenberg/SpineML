@@ -12,7 +12,8 @@ except ImportError as error:
         'Kandidaten-DQN benötigt die Trainingspakete: python -m pip install ".[rl-training]"'
     ) from error
 
-from .CandidateDQNPolicy import CandidateDQNPolicy, candidate_action_mask
+from .CandidateDQNPolicy import CandidateDQNPolicy
+from .CandidateQNetwork import candidate_action_mask
 
 
 class CandidateDQN(DQN):
@@ -29,6 +30,7 @@ class CandidateDQN(DQN):
         super()._setup_model()
 
     def _valid_action_masks(self, observation: dict[str, np.ndarray]) -> np.ndarray:
+        # Eine Maskenzeile kennzeichnet die gültigen Kandidaten eines Zustands.
         if not isinstance(observation, dict) or "action_mask" not in observation:
             raise ValueError("Kandidaten-DQN benötigt die action_mask in der Beobachtung.")
         mask = np.asarray(observation["action_mask"], dtype=bool)
@@ -41,6 +43,7 @@ class CandidateDQN(DQN):
         return mask
 
     def _random_valid_actions(self, observation: dict[str, np.ndarray]) -> np.ndarray:
+        # Wählt pro Zustand zufällig einen vorhandenen Kandidaten.
         masks = self._valid_action_masks(observation)
         actions = np.empty(masks.shape[0], dtype=np.int64)
         for index in range(masks.shape[0]):
@@ -85,10 +88,15 @@ class CandidateDQN(DQN):
         self._update_learning_rate(self.policy.optimizer)
         losses = []
         for _ in range(gradient_steps):
+            # Lädt eine zufällige Datengruppe aus dem Erfahrungsspeicher.
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-            discounts = replay_data.discounts if replay_data.discounts is not None else self.gamma
+            if replay_data.discounts is None:
+                discounts = self.gamma
+            else:
+                discounts = replay_data.discounts
 
             with th.no_grad():
+                # Berechnet das Lernziel aus Belohnung und geschätztem Folgewert.
                 next_masks = candidate_action_mask(replay_data.next_observations, self.action_space.n)
                 terminal = replay_data.dones.reshape(-1).to(dtype=th.bool)
                 if bool((~next_masks.any(dim=1) & ~terminal).any()):
@@ -108,6 +116,7 @@ class CandidateDQN(DQN):
             loss = F.smooth_l1_loss(current_q_values, target_q_values)
             losses.append(loss.item())
 
+            # Passt das Hauptnetz an; das Target-Netz bleibt in diesem Schritt unverändert.
             self.policy.optimizer.zero_grad()
             loss.backward()
             th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)

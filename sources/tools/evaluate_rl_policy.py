@@ -1,4 +1,4 @@
-"""Lädt ein DQN- oder Monte-Carlo-Netz und vergleicht es auf unbenutzten Test-Seeds."""
+"""Vergleicht eine Dreamer- oder Monte-Carlo-Policy auf unbenutzten Test-Seeds."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, help="Standard: evaluation.json im Trainingsordner.")
     parser.add_argument("--optimized-weights", type=Path, help="Optional: JSON mit HeuristicWeights oder optimization_result.best_weights.")
     parser.add_argument("--skip-comparisons", action="store_true", help="Nur das RL-Modell ausführen, ohne Zufall und Standardheuristik.")
-    parser.add_argument("--explore", "--stochastic", dest="explore", action="store_true", help="Epsilon-greedy mit der gespeicherten Explorationsrate; sonst den höchsten gültigen Q-Wert wählen.")
+    parser.add_argument("--stochastic", "--explore", dest="explore", action="store_true", help="Dreamer: Aktionen zufällig aus seiner Verteilung ziehen; Monte Carlo: gespeicherte Epsilon-Exploration verwenden.")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     checkpoint = directory / args.checkpoint
@@ -80,7 +80,7 @@ def main() -> None:
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
     algorithm = manifest["algorithm"]
-    policy_name = "RL (DQN)"
+    policy_name = "RL (Dreamer)"
     if algorithm == "MonteCarlo":
         policy_name = "RL (Monte Carlo)"
     torch.set_num_threads(1)
@@ -149,6 +149,7 @@ def main() -> None:
             terminated = False
             truncated = False
             reward_total = 0.0
+            recurrent_state = None
             while not terminated and not truncated:
                 python_rng = random.getstate()
                 numpy_rng = np.random.get_state()
@@ -157,7 +158,9 @@ def main() -> None:
                     np.random.set_state(policy_numpy_rng)
                     with torch.random.fork_rng(devices=[]):
                         torch.set_rng_state(policy_torch_rng)
-                        action, _ = network.predict(observation, deterministic=not args.explore)
+                        action, recurrent_state = network.predict(
+                            observation, state=recurrent_state, deterministic=not args.explore,
+                        )
                         policy_torch_rng = torch.get_rng_state()
                     policy_python_rng = random.getstate()
                     policy_numpy_rng = np.random.get_state()
@@ -256,10 +259,11 @@ def main() -> None:
         })
     report = {"status": "finished", "algorithm": algorithm, "checkpoint": str(checkpoint), "model_sha256": context["model_sha256"],
               "test_seeds": seeds, "deterministic": not args.explore,
-              "exploration_rate": float(network.exploration_rate),
               "artifact_context": context, "optimized_weights_source": optimized_source,
               "summary": summary, "runs": results,
               "elapsed_seconds": perf_counter() - started_at}
+    if algorithm == "MonteCarlo":
+        report["exploration_rate"] = float(network.exploration_rate)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print("\nVergleich (Mittelwerte nur, wenn sämtliche Test-Seeds abgeschlossen wurden):")
     for item in summary:

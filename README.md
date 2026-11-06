@@ -9,7 +9,7 @@ Maschinen. Diese README beschreibt den Zweig `Foroogh`.
   wählt Aktionen; die Simulation führt diese aus.
 - **Steuerungen vergleichen:** Die heuristische Policy und die Zufallspolicy
   werden anhand derselben Produktionskennzahlen verglichen. Optional lässt
-  sich eine neuronale Kandidatenauswahl mit DQN oder Monte Carlo trainieren und auf
+  sich eine neuronale Kandidatenauswahl mit Dreamer oder Monte Carlo trainieren und auf
   getrennten Test-Seeds mit diesen Steuerungen vergleichen.
 - **Heuristik verbessern:** Die Gewichtssuche prüft verschiedene lokale
   Gewichtssätze in vollständigen Simulationsläufen. Unabhängige Läufe können
@@ -76,9 +76,11 @@ sources/
         │   ├── HeuristicPolicyFactory.py
         │   └── WeightOptimization/LocalHeuristicWeightOptimizer.py
         └── RLPolicy/
-            ├── DQN/
-            │   ├── CandidateDQN.py
-            │   └── CandidateDQNPolicy.py
+            ├── Dreamer/
+            │   ├── CandidateDreamer.py
+            │   ├── DreamerEpisodeRunner.py
+            │   ├── DreamerNetworks.py
+            │   └── SequenceReplay.py
             ├── MonteCarlo/
             │   ├── CandidateMonteCarlo.py
             │   ├── AsyncEpisodeRunner.py
@@ -2884,9 +2886,9 @@ nicht automatisch für die vollständige Optimierung.
 
 Die Dateien sind nach ihrer Aufgabe getrennt:
 
-- **[DQN](sources/SpineML/Control/RLPolicy/DQN):** das DQN-Lernverfahren.
+- **[Dreamer](sources/SpineML/Control/RLPolicy/Dreamer):** Weltmodell und darauf trainierte Aktionsauswahl.
 - **[MonteCarlo](sources/SpineML/Control/RLPolicy/MonteCarlo):** das Monte-Carlo-Lernverfahren.
-- **[Shared](sources/SpineML/Control/RLPolicy/Shared):** gemeinsamer Netzaufbau, Simulationsanbindung, Beobachtungen, Belohnung und Laden trainierter Netze. Beide Verfahren verwenden diese Bausteine.
+- **[Shared](sources/SpineML/Control/RLPolicy/Shared):** Simulationsanbindung, Beobachtungen, Belohnung und Laden trainierter Netze. `CandidateQNetwork` enthält das Kandidatennetz für Monte Carlo.
 
 **RL** steht für **Reinforcement Learning**. Die RL-Steuerung verwendet ein
 neuronales Netz, um aus den Aktionen des [ActionGenerators](#actiongenerator)
@@ -2897,9 +2899,10 @@ Entscheidungen zu günstigeren Produktionsergebnissen führen.
 werden lokale `HeuristicWeights` für fest programmierte Bewertungsregeln gesucht.
 Bei RL werden stattdessen die **internen Parameter des neuronalen Netzes**
 trainiert: die Zahlenwerte, mit denen es seine Auswahl berechnet.
-Das Netz schätzt für jede angebotene Aktion einen **Q-Wert**: die erwartete
-spätere Belohnung, wenn diese Aktion jetzt gewählt wird. Der heuristische
-Evaluator wird dabei nicht verwendet. Heuristik und `RandomPolicy` bleiben
+Monte Carlo schätzt für jede Aktion einen **Q-Wert**, also ihre erwartete
+spätere Belohnung. Dreamer lernt zusätzlich ein Modell möglicher Folgezustände
+und trainiert damit seine Aktionsauswahl. Der heuristische Evaluator wird
+bei beiden nicht verwendet. Heuristik und `RandomPolicy` bleiben
 für den Vergleich verfügbar.
 
 Ein gestarteter Simulationslauf heißt beim RL **Episode**. Der reguläre
@@ -2921,7 +2924,7 @@ und eine Belohnung zurück.
 
 ```mermaid
 flowchart TB
-    A["Agent mit DQN oder Monte Carlo"]
+    A["Agent mit Dreamer oder Monte Carlo"]
     E["Environment mit Fabriksimulation"]
 
     A -->|"action Aₜ"| E
@@ -2933,11 +2936,11 @@ flowchart TB
     linkStyle default stroke:#246bff
 ```
 
-- **Agent:** Das Kandidatennetz berechnet die Q-Werte der angebotenen Aktionen.
-  Zum Lernen kann [DQN](#neuronales-netz-und-dqn) oder
-  [Monte Carlo](#monte-carlo-aus-vollständigen-episoden-lernen) verwendet werden.
-  Beide Verfahren nutzen dieselben Eingabemerkmale und denselben Netzaufbau;
-  sie unterscheiden sich darin, wie sie Lernziele berechnen und das Netz anpassen.
+- **Agent:** Wählt einen angebotenen Kandidaten. Zur Verfügung stehen
+  [Dreamer](#dreamer-mit-einem-gelernten-weltmodell-lernen) und
+  [Monte Carlo](#monte-carlo-aus-vollständigen-episoden-lernen).
+  Beide erhalten dieselben Beobachtungsfelder, verwenden aber unterschiedliche
+  Netze und Lernverfahren.
 - **Environment:** `SpineRLEnv` implementiert die Gymnasium-Schnittstelle
   mit `reset()` und `step()`. Im Hintergrund simuliert Salabim die Fabrik.
   Gymnasium ist hier der Schnittstellenstandard, nicht der Fabriksimulator.
@@ -2955,8 +2958,9 @@ flowchart TB
   Eingabefeld der Beobachtung.
 
 Wann das Netz angepasst wird, hängt vom gewählten Lernverfahren ab:
-DQN lernt aus einzelnen gespeicherten Übergängen. Monte Carlo verwendet
-vollständige Episoden, wartet dabei aber nicht auf alle Worker. Während der
+Dreamer lernt aus zusammenhängenden Erfahrungsfolgen; Monte Carlo verwendet
+vollständige beobachtete Returns. Beide sammeln Episoden, ohne auf alle Worker
+zu warten. Während der
 zentrale Prozess trainiert, können andere Worker ihre Episoden weiter ausführen.
 Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
@@ -2981,9 +2985,10 @@ Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
 
 **Beim Training: das Netz anhand gesammelter Daten verändern**
 
-- **DQN:** Speichert Übergänge in einem **Replay Buffer**, also einem
-  Erfahrungsspeicher, und verwendet sie mehrfach. Das Lernziel enthält bei
-  laufender Episode eine Schätzung des [Zielnetzes](#neuronales-netz-und-dqn).
+- **Dreamer:** Lernt aus realen Erfahrungsfolgen ein **Weltmodell**. Mit
+  vorhergesagten Verläufen dieses Modells werden anschließend Actor und Critic
+  trainiert. Der Actor liefert die Aktionsauswahl, der Critic schätzt die
+  erwartete spätere Belohnung.
 - **Monte Carlo:** Sammelt vollständige Episoden und berechnet daraus die
   tatsächlich beobachtete spätere Belohnung, den **Return**, für jede besuchte
   Entscheidung. Ein Episodenspeicher bewahrt diese Erfahrungen auf. Beim
@@ -3156,84 +3161,102 @@ in der letzten Beobachtung stehen. Andere Lernverfahren könnten diesen Zustand
 verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
 **Value-Bootstrapping**; die abgebrochene Episode wird damit nicht fortgesetzt.
 
-Für das DQN- und Monte-Carlo-Training gelten beide Limits als endgültiger Fehlschlag.
+Für das Dreamer- und Monte-Carlo-Training gelten beide Limits als endgültiger Fehlschlag.
 Die Zusatzklasse `EpisodeSeedWrapper` in
 [`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/Shared/TrainingSupport.py)
-meldet sie deshalb an Stable-Baselines3 (SB3) als `terminated=True` und
+meldet sie deshalb beiden Trainern als `terminated=True` und
 `truncated=False`. `info["training_limit_terminated"]` und der Abbruchgrund
-halten fest, dass tatsächlich ein Limit erreicht wurde. So rechnet SB3 zur
-Strafe `-1` keine geschätzte spätere Belohnung hinzu.
+halten fest, dass tatsächlich ein Limit erreicht wurde. Monte Carlo beendet
+hier den beobachteten Return; Dreamer lernt für diesen Übergang keine Fortsetzung
+der Episode. Zur Strafe `-1` wird kein geschätzter späterer Erfolg hinzugerechnet.
 
 Ein Timeout oder ein Simulationsfehler wird dagegen als Ausnahme gemeldet.
 Es handelt sich dabei nicht um einen der regulären Limitabbrüche aus der Tabelle.
 
-### Neuronales Netz und DQN
+### Dreamer: mit einem gelernten Weltmodell lernen
 
-**DQN** bedeutet **Deep Q-Network**: Ein neuronales Netz lernt Q-Werte für
-die angebotenen Aktionen. Ein höherer Q-Wert bedeutet eine höhere erwartete
-spätere Belohnung, nicht eine höhere Auswahlwahrscheinlichkeit.
+[`CandidateDreamer`](sources/SpineML/Control/RLPolicy/Dreamer/CandidateDreamer.py)
+verwendet die öffentlichen DreamerV3-Bausteine aus
+[TorchRL 0.14](https://docs.pytorch.org/rl/0.14/reference/dreamer_v3.html).
+Das ist eine **kompakte, an dieses Projekt angepasste Dreamer-Implementierung**,
+nicht die unveränderte Benchmark-Konfiguration der ursprünglichen Veröffentlichung.
+Die Salabim-Fabrik bleibt die echte Trainingsumgebung und läuft weiterhin auf der CPU.
 
-Der gemeinsame Netzaufbau für DQN und Monte Carlo steht in
-[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/Shared/CandidateQNetwork.py).
-`CandidateFeaturesExtractor` verarbeitet Kontext, Objektzeilen und
-Kandidatenmerkmale. `CandidateQNetwork` bewertet jeden Kandidaten mit demselben Teilnetz.
-Die Netzparameter gehören damit nicht fest zu einer bestimmten Indexnummer.
-Padding-Zeilen zählen nicht mit. `embedding_dim=32` und `hidden_dim=64`
-bestimmen die Breite der internen Netzschichten.
+Dreamer lernt drei zusammenarbeitende Bestandteile:
 
-[`CandidateDQNPolicy`](sources/SpineML/Control/RLPolicy/DQN/CandidateDQNPolicy.py)
-erstellt daraus die beiden Q-Netze für DQN:
+- **Weltmodell:** Fasst die Beobachtungen in einem internen Zustand zusammen
+  und lernt, wie sich dieser Zustand nach einer Aktion verändert. Das Modell
+  sagt außerdem Beobachtungsmerkmale, Belohnung und Fortsetzung der Episode voraus.
+- **Actor:** Berechnet die Auswahlwahrscheinlichkeiten der angebotenen Aktionen.
+  Er wird anhand vorhergesagter Verläufe im Weltmodell trainiert.
+- **Critic:** Schätzt die spätere Belohnung eines internen Zustands und hilft,
+  die vorhergesagten Verläufe zu bewerten.
 
-- **Online-Q-Netz:** Berechnet die aktuellen Q-Werte und wird anhand der
-  Erfahrungen im Replay Buffer angepasst.
-- **Ziel-Q-Netz:** Liefert die Schätzung für den Folgezustand. Seine Parameter
-  werden in größeren Abständen aus dem Online-Netz übernommen. So bleibt
-  das Lernziel zwischen diesen Übernahmen stabiler.
+Die Netze stehen in
+[`DreamerNetworks.py`](sources/SpineML/Control/RLPolicy/Dreamer/DreamerNetworks.py).
+Das Weltmodell verwendet ein **RSSM**: einen wiederkehrenden Zustand für den
+bisherigen Verlauf und zusätzlich zufällige kategoriale Zustandsvariablen.
+Voreingestellt sind `hidden_dim=128`, `stochastic_variables=8` und
+`stochastic_classes=8`. Das ist ein anderer Netzaufbau als das Monte-Carlo-Q-Netz.
+
+**Ablauf beim Lernen:**
+
+1. Die Worker sammeln vollständige Episoden mit der echten Salabim-Simulation.
+   Ein fertiger Worker übernimmt den neuesten verfügbaren Netzstand und startet
+   die nächste Episode, solange das Episodenbudget noch nicht ausgeschöpft ist.
+2. Der Erfahrungsspeicher bewahrt die Episoden auf. Zum Lernen werden
+   zusammenhängende Ausschnitte gewählt, nicht unabhängig gemischte Einzelaktionen.
+   Mindestens ein Ausschnitt je Lernphase enthält das Ende einer gespeicherten
+   Episode, damit die seltene Endbelohnung vorkommt. Die übrigen Ausschnitte
+   beginnen an zufälligen gespeicherten Übergängen. Diese Auswahl gewichtet
+   Episodenenden bewusst stärker als eine gleichverteilte Auswahl aller Ausschnitte.
+   Der vorangegangene Episodenverlauf wird ohne Gewichtsanpassung verarbeitet,
+   damit der interne Zustand zum Beginn des Ausschnitts passt.
+3. Das Weltmodell lernt aus diesen realen Folgen. Verglichen werden unter anderem
+   vorhergesagte und beobachtete Merkmale, Belohnungen und Episodenfortsetzung.
+4. Aus den gelernten internen Zuständen werden zusätzliche Verläufe im
+   **Weltmodell** berechnet. Dafür wird keine weitere Salabim-Simulation gestartet.
+   Daraus entstehen die Lernfehler für Actor und Critic. Anschließend werden
+   die Netzparameter anhand der Weltmodell-, Actor- und Critic-Fehler angepasst.
+5. Der aktualisierte Netzstand steht für danach gestartete Episoden bereit.
+   Die Netzkopie einer bereits laufenden Episode bleibt unverändert.
 
 ```mermaid
 flowchart TD
-    O["Online-Q-Netz mit Aktionsmaske"]
-    E["Fabriksimulation führt gültige Aktion aus"]
-    R["Belohnung und Folgezustand mit Maske"]
-    B["Replay Buffer speichert Erfahrungen"]
-    T["Ziel-Q-Netz bewertet gültige Folgeaktionen"]
-    L["Lernziel mit aktueller Q-Schätzung vergleichen"]
+    S["Salabim: reale Episoden sammeln"]
+    R["Erfahrungsspeicher: zusammenhängende Folgen"]
+    W["Weltmodell-Lernfehler aus realen Folgen berechnen"]
+    I["Verläufe im Weltmodell vorausberechnen"]
+    A["Actor- und Critic-Lernfehler berechnen"]
+    U["Netzparameter mit gemeinsamem Optimiererschritt anpassen"]
 
-    O -->|"Gültiges Maximum oder Exploration"| E
-    E --> R
-    R --> B
-    B -->|"Zufällige Datengruppe"| T
-    B --> L
-    T --> L
-    L -->|"Online-Parameter anpassen"| O
-    O -->|"Parameter regelmäßig übernehmen"| T
+    S --> R --> W --> I --> A --> U
+    U -->|"Neuer Netzstand für neue Episoden"| S
 ```
 
-Für einen nicht beendeten Übergang lautet das Lernziel vereinfacht
-`reward + gamma × max(Q_Ziel(Folgezustand, gültige Folgeaktion))`.
-Bei einem regulären Abschluss oder einem endgültigen Limitfehlschlag ist
-das Lernziel nur die erhaltene Belohnung. Es wird dann kein Folgewert addiert.
-Im vorhandenen Training ist `gamma=1.0`; zusätzliche Entscheidungsschritte
-schwächen die spätere Belohnung also nicht ab.
+**Kandidaten und Masken:** In der echten Simulation gilt immer die vom
+Generator gelieferte Aktionsmaske. Leere Plätze können nicht gewählt werden.
+Das Weltmodell erhält die Merkmale der gewählten Aktion, weil dieselbe
+Indexnummer im nächsten Zustand eine andere Aktion bezeichnen kann.
+Für vorausberechnete Zustände muss das Modell auch die künftigen
+Kandidatenmerkmale und ihre Verfügbarkeit vorhersagen. Diese Vorhersagen
+können falsch sein; sie ersetzen keine technischen Prüfungen der echten Simulation.
 
-Damit das Netz nicht nur seine bisher beste Aktion wiederholt, verwendet
-DQN **Epsilon-Greedy**: Mit Wahrscheinlichkeit `epsilon` wird ein gültiger
-Kandidat zufällig gewählt, sonst der gültige Kandidat mit dem höchsten Q-Wert.
-Zu Beginn werden auch während der Aufwärmphase ausschließlich gültige
-Kandidaten zufällig gewählt. Die Maske gilt ebenso bei der normalen Auswahl
-und beim Maximum des Zielnetzes. Aufgefüllte Kandidatenplätze können daher
-weder ausgeführt werden noch das Lernziel erhöhen.
+`gamma=1.0` bleibt fest eingestellt, damit die Endbelohnung nicht allein wegen
+zusätzlicher Entscheidungen abgeschwächt wird. Das Weltmodell lernt trotzdem,
+ob eine Episode beendet ist. Die Zahl realer Episoden wird durch `--episodes`
+bestimmt; `--imagination-horizon` begrenzt nur die vorausberechneten Modellschritte.
 
-[`CandidateDQN`](sources/SpineML/Control/RLPolicy/DQN/CandidateDQN.py) erweitert
-dafür DQN aus Stable-Baselines3. Es gibt keinen Actor und keine
-gelernten Auswahlwahrscheinlichkeiten. Das globale Produktionsziel, die
-Belohnungsformel und die Regeln der Simulation bleiben unverändert.
+Dreamer kann reale Erfahrungen durch Modelltraining mehrfach nutzen. Ob das
+bei dieser Fabrik bessere Ergebnisse oder eine kürzere Trainingszeit ergibt,
+muss der Vergleich zeigen. Fehler des gelernten Weltmodells können auch die
+darauf trainierte Aktionsauswahl beeinträchtigen.
 
 ### Monte Carlo: aus vollständigen Episoden lernen
 
 [`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/MonteCarlo/CandidateMonteCarlo.py)
 trainiert ein einzelnes Kandidaten-Q-Netz mit **asynchron gesammelten Episoden
-und einem Replay Buffer**. Anders als DQN verwendet es
+und einem Replay Buffer**. Es verwendet
 **kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
 
 Die Worker-Ausführung steht in
@@ -3314,12 +3337,16 @@ Alte Episoden werden als ganze Verläufe entfernt. Überschreitet eine einzelne
 Episode das Übergangslimit, bleibt sie allein vollständig erhalten, statt nur
 einen unvollständigen Rest zum Lernen zu verwenden.
 
-Die Dateien `RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von
-beiden Lernverfahren verwendet.
+Das Kandidaten-Q-Netz steht in
+[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/Shared/CandidateQNetwork.py).
+Es verarbeitet Kontext, Objektzeilen und Kandidatenmerkmale und bewertet
+jeden Kandidaten mit demselben Teilnetz. `embedding_dim=32` und `hidden_dim=64`
+bestimmen die Breite der internen Netzschichten. Die Dateien
+`RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von beiden Lernverfahren verwendet.
 
 Die direkten Lernziele machen Monte Carlo für die reine Endbelohnung zu
 einer Vergleichsmöglichkeit. Ob es mit demselben Simulationsbudget bessere
-Produktionsergebnisse lernt als DQN, muss der Test zeigen.
+Produktionsergebnisse lernt als Dreamer, muss der Test zeigen.
 
 ### Kalibrierung, Seeds und gespeicherte Konfiguration
 
@@ -3362,12 +3389,11 @@ Das Training speichert im Ausgabeordner:
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
 | `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
-| `checkpoint_*.zip` | DQN-Zwischenstände nach standardmäßig `10000` weiteren Entscheidungen, zum Beispiel `checkpoint_10000.zip`. |
-| `checkpoint_episodes_*.zip` | Monte-Carlo-Zwischenstände nach standardmäßig `10` weiteren Episoden, zum Beispiel `checkpoint_episodes_10.zip`. `--checkpoint-every` ändert bei beiden Verfahren den Abstand. |
-| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`: Übergänge bei DQN, vollständige Episoden bei Monte Carlo. |
-| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus; bei Monte Carlo zusätzlich Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
+| `checkpoint_episodes_*.zip` | Zwischenstände nach standardmäßig `10` weiteren Episoden, zum Beispiel `checkpoint_episodes_10.zip`. `--checkpoint-every` ändert den Abstand. |
+| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`: vollständige Episoden, aus denen das jeweilige Verfahren seine Trainingsdaten auswählt. |
+| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl, Abschluss- oder Abbruchstatus sowie Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
 | `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
-| `training_report.json` | Status, Umfang und Rechenzeiten. Das angeforderte Budget steht bei DQN unter `requested_timesteps`, bei Monte Carlo unter `requested_episodes`. `actual_timesteps` zählt bei beiden die gesammelten Entscheidungen. |
+| `training_report.json` | Status, Umfang und Rechenzeiten. `requested_episodes` ist das angeforderte Episodenbudget; `actual_timesteps` zählt zusätzlich die gesammelten Entscheidungen. |
 
 **Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
 mit Layout und Produktionsaufträgen. `model.zip` enthält dagegen den gelernten
@@ -3382,8 +3408,8 @@ App-Einstellungen. `--model` erlaubt eine identische Dateikopie an einem
 anderen Speicherort, aber kein anderes Fabrikmodell.
 
 Manifestversion und Algorithmus müssen zum gespeicherten Netzstand passen.
-Der Loader wählt anhand des Manifests DQN oder Monte Carlo. Alte
-PPO-Netzstände sind nicht kompatibel und werden mit einer Fehlermeldung
+Der Loader wählt anhand des Manifests Dreamer oder Monte Carlo. Netzstände
+entfernter Lernverfahren sind nicht kompatibel und werden mit einer Fehlermeldung
 abgewiesen. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
 für jeden Trainingslauf ist ein neuer, leerer Ausgabeordner zu verwenden.
 
@@ -3396,17 +3422,19 @@ gespeichertem Replay Buffer ist noch nicht vorhanden.
 ### Training starten
 
 Für das Training werden zusätzlich Gymnasium, PyTorch und Stable-Baselines3
-benötigt. Die optionale Paketgruppe `rl-training`
+sowie für Dreamer TorchRL und TensorDict benötigt. Stable-Baselines3 stellt
+hier unter anderem die Speicher- und Callback-Schnittstellen bereit;
+Dreamers Weltmodell stammt aus TorchRL. Die optionale Paketgruppe `rl-training`
 installiert diese Bibliotheken:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
 ```
 
-**DQN trainieren:**
+**Dreamer trainieren:**
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dqn --output rl_runs/dqn --steps 100000 --workers 4
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --output rl_runs/dreamer --episodes 100 --workers 4
 ```
 
 **Monte Carlo trainieren:**
@@ -3418,32 +3446,27 @@ installiert diese Bibliotheken:
 Ohne `--model` verwendet
 [`train_rl_policy.py`](sources/tools/train_rl_policy.py) die unter `EXAMPLE_FILE`
 eingestellte Fabrikdatei, derzeit [example-5.py](sources/examples/normal/example-5.py).
-`--algorithm` wählt das Lernverfahren; ohne Angabe gilt `dqn`.
+`--algorithm` wählt das Lernverfahren; ohne Angabe gilt `monte-carlo`.
 `--output` bestimmt den Ausgabeordner; ohne Angabe gilt je nach Verfahren
-`rl_runs/dqn` oder `rl_runs/monte_carlo`. Der Ordner muss neu oder leer sein,
+`rl_runs/dreamer` oder `rl_runs/monte_carlo`. Der Ordner muss neu oder leer sein,
 damit kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
 ohne eine Simulation oder ein Training zu starten.
 Optionen des anderen Lernverfahrens werden mit einer Fehlermeldung abgewiesen:
-`--steps` gehört zu DQN, `--episodes` zu Monte Carlo.
+beispielsweise `--epochs` bei Dreamer oder `--sequence-length` bei Monte Carlo.
 
 **Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
 Simulationsprozesse. Jeder Worker führt seine eigene Simulation aus. Das
 gemeinsam trainierte Netz und das Lernverfahren liegen im übergeordneten
-Trainingsprozess. Bei DQN berechnet dieser auch die Aktionsauswahl für die Worker.
-Bei Monte Carlo entscheidet jeder Worker mit seiner lokalen, während einer
+Trainingsprozess. Jeder Worker entscheidet mit seiner lokalen, während einer
 Episode unveränderten Netzkopie und liefert danach den vollständigen Verlauf.
 
-**DQN: Wann wird das Netz verändert?** Zunächst sammelt DQN Erfahrungen, ohne das
-Netz anzupassen (`--learning-starts`). Danach wechseln sich Sammeln und Lernen
-ab: `--train-freq` bestimmt die Anzahl gemeinsamer Worker-Schritte je
-Sammelphase. Anschließend werden `--gradient-steps` Netzanpassungen ausgeführt.
-Jede verwendet eine zufällige Datengruppe mit `--batch-size` Einträgen aus
-dem Replay Buffer. Ältere Erfahrungen können erneut ausgewählt werden.
-
-Eine Sammelphase ist kein vollständiger Simulationslauf. Sie kann mitten in
-einer Episode enden oder mehrere Episoden berühren. Beim Training zählen nur
-Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
-automatisch übernommene Einzelkandidaten zählen nicht mit.
+**Dreamer: Wann werden die Netze verändert?** Nach jeder eingetroffenen Episode
+werden `--updates-per-episode` Lernphasen ausgeführt. Eine Lernphase verwendet
+`--batch-size` reale Erfahrungsfolgen von jeweils bis zu `--sequence-length`
+Entscheidungen. Die Weltmodellfehler stammen aus realen Folgen; Actor und Critic
+verwenden Verläufe mit `--imagination-horizon` vorausberechneten Schritten.
+Die übrigen Worker können
+währenddessen weiterlaufen.
 
 **Monte Carlo: Wann wird das Netz verändert?** Nach jeweils
 `--mc-train-every-episodes` neu eingetroffenen Episoden, ohne auf die übrigen
@@ -3453,7 +3476,7 @@ Die übrigen Worker laufen währenddessen weiter. Sind am regulären Trainingsen
 weniger neue Episoden übrig, lösen sie trotzdem eine letzte Lernphase aus dem Replay Buffer aus. Den Ablauf erklärt
 [Monte Carlo: aus vollständigen Episoden lernen](#monte-carlo-aus-vollständigen-episoden-lernen).
 
-**Monte Carlo: Wie viele Simulationen werden ausgeführt?** Bei regulär beendetem
+**Wie viele Simulationen werden ausgeführt?** Bei regulär beendetem
 Training führt `--episodes 100` genau `100` Trainingsepisoden aus, verteilt auf die Worker. Jede gestartete
 Episode läuft bis zum regulären Ende oder einem eingestellten Sicherheitslimit.
 Alle Ergebnisse werden abgeholt; es werden keine zusätzlichen Episoden gestartet.
@@ -3461,53 +3484,39 @@ Eine am Sicherheitslimit beendete Episode zählt ebenfalls zum Budget und erhäl
 die Endbelohnung `-1`. Bei einem Fehler oder `Strg+C` kann das Training vorher enden.
 Die Baseline-Läufe zählen nicht zu diesen `100` Trainingsepisoden.
 Die Zahl der Entscheidungen je Episode darf unterschiedlich sein und wird nur
-zusätzlich protokolliert. Sie bestimmt nicht das Monte-Carlo-Trainingsbudget.
+zusätzlich protokolliert. Sie bestimmt bei keinem der beiden Verfahren das
+Trainingsbudget. Nur Auswahlpunkte mit mehreren Kandidaten zählen als externe
+Entscheidungen; automatisch übernommene Einzelkandidaten zählen nicht mit.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--algorithm` | `dqn` | `dqn` oder `monte-carlo` als Lernverfahren verwenden. |
-| `--steps` | `100000` | Nur DQN: mindestens so viele externe Kandidatenauswahlen insgesamt sammeln. |
-| `--episodes` | `100` | Nur Monte Carlo: genau so viele vollständige Trainingsepisoden ausführen und auswerten. |
-| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse; bei Monte Carlo höchstens so viele wie das Episodenbudget. |
-| `--buffer-size` | `5000` | Nur DQN: Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
-| `--learning-starts` | `1000` | Nur DQN: Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
-| `--train-freq` | `4` | Nur DQN: Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
-| `--gradient-steps` | `4` | Nur DQN: Netzanpassungen nach einer Sammelphase. |
+| `--algorithm` | `monte-carlo` | `dreamer` oder `monte-carlo` als Lernverfahren verwenden. |
+| `--episodes` | `100` | Genau so viele vollständige Trainingsepisoden ausführen und auswerten. |
+| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse; höchstens so viele wie das Episodenbudget. |
+| `--sequence-length` | `32` | Nur Dreamer: Entscheidungen je zusammenhängendem Trainingsausschnitt. |
+| `--imagination-horizon` | `15` | Nur Dreamer: vorausberechnete Schritte je Verlauf im Weltmodell. |
+| `--updates-per-episode` | `1` | Nur Dreamer: Lernphasen nach jeder eingetroffenen Episode. |
+| `--dreamer-replay-episodes` | `8` | Nur Dreamer: maximale Zahl gespeicherter Episoden. |
+| `--dreamer-replay-transitions` | `10000` | Nur Dreamer: Übergangslimit des Episodenspeichers; eine einzelne größere Episode bleibt vollständig erhalten. |
 | `--epochs` | `4` | Nur Monte Carlo: Trainingsdurchgänge über die ausgewählten Replay-Episoden. |
 | `--mc-replay-episodes` | `8` | Nur Monte Carlo: maximale Zahl vollständig gespeicherter Episoden. |
 | `--mc-replay-transitions` | `10000` | Nur Monte Carlo: zusätzliches Übergangslimit des Episodenspeichers; eine einzelne größere Episode wird allein vollständig behalten. |
 | `--mc-train-every-episodes` | `4` | Nur Monte Carlo: nach so vielen neu eingetroffenen Episoden lernen. |
 | `--mc-replay-sample-episodes` | `4` | Nur Monte Carlo: höchstens so viele ganze Episoden je Lernphase auswählen. |
-| `--batch-size` | `64` | DQN: zufällige Übergänge pro Netzanpassung. Monte Carlo: höchstens so viele Entscheidungen je Datengruppe aus den ausgewählten Episoden. |
-| `--learning-rate` | `0.0001` | Schrittweite bei der Anpassung der Netzparameter. |
-| `--target-update-interval` | `1000` | Nur DQN: Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
-| `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear sinkt: bei DQN nach Entscheidungen, bei Monte Carlo nach eingetroffenen Episoden. |
-| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl; bei Monte Carlo müssen beide positiv sein. |
+| `--batch-size` | Monte Carlo: `64`; Dreamer: `8` | Monte Carlo: Entscheidungen je Datengruppe. Dreamer: zusammenhängende Erfahrungsfolgen je Lernphase. |
+| `--learning-rate` | Monte Carlo: `0.0001`; Dreamer: `0.0003` | Schrittweite bei der Anpassung der Netzparameter. |
+| `--exploration-fraction` | `0.3` | Nur Monte Carlo: Anteil der Episoden, über den `epsilon` linear sinkt. |
+| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Nur Monte Carlo: positive Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl. |
 | `gamma` | `1.0` | Spätere Belohnung nicht abschwächen. Für beide Verfahren im Trainingsskript festgelegt. |
-| `tau` | `1.0` | Nur DQN: vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
-| `--device` | `cpu` | Rechengerät des zentralen Netzes und seiner Anpassung. Salabim und die lokalen Monte-Carlo-Netzkopien bleiben auf der CPU. |
+| `--device` | `cpu` | Rechengerät der zentralen Netze und ihrer Anpassung. Salabim und die lokalen Worker-Netzkopien bleiben auf der CPU. |
 | `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
-| `--checkpoint-every` | DQN: `10000`; Monte Carlo: `10` | Abstand gespeicherter Zwischenstände: bei DQN in Entscheidungen, bei Monte Carlo in Episoden. |
+| `--checkpoint-every` | `10` | Abstand gespeicherter Zwischenstände in Episoden. |
 
-**DQN-Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
-neue Übergänge. Nach der Aufwärmphase folgen vier Netzanpassungen mit jeweils
-64 zufällig gezogenen Übergängen aus dem Speicher. Das Zielnetz übernimmt
-standardmäßig nach ungefähr 1000 externen Entscheidungen die Online-Parameter.
-Bei mehreren Workern erfolgt die Übernahme an einem gemeinsamen Worker-Schritt.
-
-Bei DQN liefern mehr Worker bei unverändertem `--train-freq` mehr neue Erfahrungen,
-erhöhen aber nicht automatisch `--gradient-steps`. Jeder Worker benötigt
-Speicher für sein eigenes Layout, Szenario und seine Simulation, nicht für
-ein eigenes trainierendes Netz. Zusätzlich benötigt der zentrale Replay
-Buffer Platz für die aktuellen und nächsten Beobachtungen. Wegen der festen
-Objekt- und Kandidatenfelder kann dieser Speicher groß werden. Kleinere
-Minibatches verkleinern den gesamten Replay Buffer nicht. Mehr Worker
-garantieren deshalb keine kürzere Laufzeit.
-
-Monte Carlo speichert vollständige Episoden mit Beobachtungen, Aktionen,
-Belohnungen, Auswahlwahrscheinlichkeiten und Netzversionen. Zusätzlich besitzen
+Beide Verfahren speichern vollständige Episoden mit Beobachtungen, Aktionen,
+Belohnungen und Netzversionen. Monte Carlo bewahrt zusätzlich die damaligen
+Auswahlwahrscheinlichkeiten auf. Zusätzlich besitzen
 laufende Worker eigene Verläufe und lokale Netzkopien. Dieser Speicher kann bei
 langen Episoden und vielen Workern groß werden. Episoden- und Übergangslimit
 begrenzen den Replay Buffer; sie begrenzen nicht automatisch alle gleichzeitig
@@ -3518,30 +3527,33 @@ CPU-Zeit und Arbeitsspeicher.
 
 Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
 Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.
-`cuda` ohne verfügbare CUDA-GPU führt zu einem Fehler. Für das vorhandene
-kleine Netz ist `cpu` voreingestellt.
+`cuda` ohne von PyTorch erkannte CUDA-Unterstützung führt zu einem Fehler.
+`cpu` ist voreingestellt. GPU-Ausführung benötigt eine passende CUDA-fähige
+PyTorch-Installation und einen geeigneten NVIDIA-Treiber. Die aktuelle
+Implementierung wurde auf der CPU geprüft; ein GPU-Geschwindigkeitsvorteil
+wurde noch nicht gemessen.
 
 ### Auf getrennten Test-Seeds vergleichen
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/dqn
+.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/dreamer
 .\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/monte_carlo
 ```
 
 [`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt den
 gespeicherten Netzstand aus `model.zip` und die Einstellungen aus `manifest.json`.
-Das Manifest bestimmt, ob DQN oder Monte Carlo geladen wird. Jeder Befehl
+Das Manifest bestimmt, ob Dreamer oder Monte Carlo geladen wird. Jeder Befehl
 vergleicht den angegebenen Netzstand mit `RandomPolicy` und Standardheuristik.
 Alle verwenden dieselben reservierten Test-Seeds und dieselbe globale Bewertung.
-Der Bericht bezeichnet das geladene Netz als `RL (DQN)` oder `RL (Monte Carlo)`.
+Der Bericht bezeichnet das geladene Netz als `RL (Dreamer)` oder `RL (Monte Carlo)`.
 Die Netzparameter
 werden dabei nicht weiter verändert.
 
-- **Standardauswahl:** Die RL-Policy nimmt den gültigen Kandidaten mit der
-  höchsten Q-Schätzung. Diese Auswahl ist deterministisch.
-- **`--explore`:** Verwendet Epsilon-Greedy mit dem im Netzstand gespeicherten
-  `epsilon`. `--stochastic` bleibt als Alias verfügbar. Auch eine zufällige
-  Auswahl berücksichtigt die Aktionsmaske.
+- **Standardauswahl:** Monte Carlo nimmt den gültigen Kandidaten mit dem
+  höchsten Q-Wert; Dreamer verwendet die bevorzugte gültige Aktion des Actors.
+- **`--explore`:** Monte Carlo verwendet Epsilon-Greedy mit dem gespeicherten
+  `epsilon`; Dreamer zieht eine Aktion aus den Wahrscheinlichkeiten seines Actors.
+  `--stochastic` bleibt als Alias verfügbar. Beide berücksichtigen die Aktionsmaske.
 - **`--skip-comparisons`:** Führt nur die RL-Policy aus.
 - **`--seeds`:** Wählt andere Test-Seeds. Sie dürfen weder im Training noch
   in der Baseline verwendet worden sein.
@@ -3556,9 +3568,7 @@ Testläufe abgeschlossen sind. Sonst steht dort `null`, also kein gültiger
 Mittelwert. So wird ein unfertiger Lauf nicht als scheinbar gutes Ergebnis gewertet.
 Bei Fehlern wird der bis dahin erfasste Teilbericht gespeichert.
 
-`--checkpoint checkpoint_10000.zip` lädt einen DQN-Zwischenstand statt `model.zip`.
-Bei Monte Carlo heißt ein solcher Zwischenstand beispielsweise
-`checkpoint_episodes_10.zip`.
+`--checkpoint checkpoint_episodes_10.zip` lädt einen Zwischenstand statt `model.zip`.
 `--output` bestimmt den Berichtspfad. Mit `--optimized-weights gewichte.json`
 kommt eine vierte Steuerung hinzu: die Heuristik mit einem optimierten lokalen
 Gewichtssatz. Die JSON-Datei darf direkt ein `HeuristicWeights`-Dictionary
@@ -3583,7 +3593,7 @@ from SpineML.Control.RLPolicy.Shared.TrainedPolicy import TrainedCandidatePolicy
 from SpineML.SimulationExecution.ModelLoader import load_layout_and_scenario
 from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
 
-policy = TrainedCandidatePolicy("rl_runs/dqn")
+policy = TrainedCandidatePolicy("rl_runs/dreamer")
 layout, scenario = load_layout_and_scenario(policy.model_path)
 runner = SimulationRunner(
     layout, scenario,
@@ -3598,17 +3608,18 @@ Ausführung bleibt gleich.
 
 Für die Simulation wird die unter `policy.model_path` gespeicherte Fabrikdatei
 geladen. Mit `model_file=...` darf eine identische Kopie an einem anderen Ort
-angegeben werden. Standardmäßig erfolgt die Netzauswahl deterministisch auf
-der CPU und nimmt den gültigen Kandidaten mit dem höchsten Q-Wert. Mit
-`deterministic=False, seed=101` wird stattdessen Epsilon-Greedy mit dem im
-Netzstand gespeicherten Explorationswert verwendet. Die Policy isoliert ihre
+angegeben werden. Standardmäßig wird auf der CPU die bevorzugte gültige Aktion
+gewählt: bei Monte Carlo nach dem Q-Wert, bei Dreamer nach dem Actor.
+Mit `deterministic=False, seed=101` wird stattdessen die jeweilige zufällige
+Auswahl verwendet. Dreamer führt außerdem seinen internen Zustand von einer
+Entscheidung zur nächsten fort. Die Policy isoliert ihre
 Zufallszustände von den Python-, NumPy- und PyTorch-Zufallsfolgen der Simulation.
 Einzelne Kandidaten werden ohne Netzauswahl übernommen.
 
 Für mehrere Läufe erstellt
 [`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
 jeweils eine neue Policy-Instanz: zunächst
-`factory = TrainedPolicyFactory("rl_runs/dqn")`, dann `factory(seed)` pro Lauf.
+`factory = TrainedPolicyFactory("rl_runs/dreamer")`, dann `factory(seed)` pro Lauf.
 Diese Factory kann auch in einem `SimulationRunRequest` an den Prozesspool
 übergeben werden. Der Pool muss dieselbe gespeicherte Fabrikdatei verwenden.
 
@@ -3671,7 +3682,7 @@ EDD-Priorität des Generators bei. Die Abläufe müssen daher nicht identisch se
   Zustände innerhalb eines Prozesses. Dort darf deshalb nur eine RL-Umgebung
   simulieren; andere Simulationen dürfen nicht gleichzeitig laufen.
   Parallele Läufe benötigen getrennte Prozesse.
-- **Training ausführen:** Das Trainingsskript startet die Umgebungen über
-  `SubprocVecEnv` mit `spawn`, auch bei nur einem Worker. Es schließt sie
-  auch im Fehlerfall. Große Diagnoseangaben werden vor der Weitergabe an den
+- **Training ausführen:** Die Episodenrunner starten eigene Worker-Prozesse
+  mit `spawn`, auch bei nur einem Worker. Jeder Worker führt seine Umgebung
+  nacheinander aus und schließt sie am Ende. Große Diagnoseangaben werden vor der Weitergabe an den
   Trainer aus `info` entfernt; Abschlusskennzahlen und Abbruchgründe bleiben erhalten.

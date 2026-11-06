@@ -247,7 +247,7 @@ class EpisodeSeedWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.env.step(action)
         if truncated:
-            # SB3 darf bei diesem Fehlschlag keinen geschätzten Folgewert hinzurechnen.
+            # Beide Trainer behandeln das Sicherheitslimit als endgültigen Fehlschlag.
             info = dict(info)
             info["training_limit_terminated"] = True
             terminated = True

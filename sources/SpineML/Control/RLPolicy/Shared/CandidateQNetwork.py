@@ -1,4 +1,4 @@
-"""Gemeinsamer Netzaufbau für die Kandidatenbewertung mit DQN und Monte Carlo."""
+"""Netzaufbau für die Kandidatenbewertung des Monte-Carlo-Trainers."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ try:
     from gymnasium import spaces
     from stable_baselines3.common.policies import BasePolicy
     from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-    from stable_baselines3.dqn.policies import QNetwork
     from torch import nn
 except ImportError as error:
     raise ImportError(
@@ -117,7 +116,7 @@ class CandidateFeaturesExtractor(BaseFeaturesExtractor):
         ), dim=1)
 
 
-class CandidateQNetwork(QNetwork):
+class CandidateQNetwork(BasePolicy):
     """Bewertet alle Kandidaten mit denselben Gewichten statt nach Slotindex."""
 
     def __init__(
@@ -169,5 +168,11 @@ class CandidateQNetwork(QNetwork):
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
         data = super()._get_constructor_parameters()
-        data.update(hidden_dim=self.hidden_dim)
+        data.update(
+            net_arch=self.net_arch,
+            features_dim=self.features_dim,
+            activation_fn=self.activation_fn,
+            features_extractor=self.features_extractor,
+            hidden_dim=self.hidden_dim,
+        )
         return data

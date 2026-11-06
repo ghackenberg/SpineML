@@ -1,4 +1,4 @@
-"""Verwendet ein gespeichertes DQN- oder Monte-Carlo-Netz als Simulations-Policy.
+"""Verwendet eine gespeicherte Dreamer- oder Monte-Carlo-Policy in der Simulation.
 
 Nur eigene/vertraute Checkpoints laden: das SB3-ZIP enthält Python-Objekte.
 """
@@ -31,22 +31,20 @@ def training_algorithm_classes(manifest: Mapping):
     """Wählt den gespeicherten Lernalgorithmus und die zugehörige Netzklasse."""
     algorithm = manifest.get("algorithm")
     policy_class = manifest.get("policy_class")
-    if algorithm == "MaskablePPO":
-        raise ValueError("Alte PPO-Checkpoints werden nicht unterstützt; ein DQN- oder Monte-Carlo-Training ist erforderlich.")
-    if algorithm == "DQN" and policy_class == "CandidateDQNPolicy":
-        from ..DQN.CandidateDQN import CandidateDQN
-        from ..DQN.CandidateDQNPolicy import CandidateDQNPolicy
+    if algorithm == "Dreamer" and policy_class == "CandidateDreamerPolicy":
+        from ..Dreamer.CandidateDreamer import CandidateDreamer
+        from ..Dreamer.DreamerNetworks import CandidateDreamerPolicy
 
-        return CandidateDQN, CandidateDQNPolicy
+        return CandidateDreamer, CandidateDreamerPolicy
     if algorithm == "MonteCarlo" and policy_class == "CandidateMonteCarloPolicy":
         from ..MonteCarlo.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
 
         return CandidateMonteCarlo, CandidateMonteCarloPolicy
-    raise ValueError("Das Manifest muss einen unterstützten DQN- oder Monte-Carlo-Trainingslauf beschreiben.")
+    raise ValueError("Das Manifest muss einen Dreamer- oder Monte-Carlo-Trainingslauf beschreiben.")
 
 
 class TrainedCandidatePolicy(Policy):
-    """Lädt ein trainiertes Netz; ohne Exploration gewinnt der höchste gültige Q-Wert."""
+    """Lädt eine trainierte Policy und wählt ausschließlich angebotene Kandidaten."""
 
     def __init__(
         self,
@@ -89,6 +87,7 @@ class TrainedCandidatePolicy(Policy):
         self.artifact_context = context
         self.algorithm = manifest["algorithm"]
         self._decision_count = 0
+        self._recurrent_state = None
         self.deterministic = deterministic
         self.encoder = RLObservationEncoder(
             max_actions=context["environment"]["max_actions"],
@@ -167,8 +166,9 @@ class TrainedCandidatePolicy(Policy):
                 observation_copy = {}
                 for name, value in observation.items():
                     observation_copy[name] = value.copy()
-                action, _ = self.model.predict(
+                action, self._recurrent_state = self.model.predict(
                     observation_copy,
+                    state=self._recurrent_state,
                     deterministic=self.deterministic,
                 )
                 self._cpu_rng_state = th.get_rng_state()

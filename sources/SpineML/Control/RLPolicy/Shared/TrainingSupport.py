@@ -258,39 +258,6 @@ class EpisodeSeedWrapper(gym.Wrapper):
         return self.env.get_wrapper_attr("action_masks")()
 
 
-class EpisodeBatchWrapper(gym.Wrapper):
-    """Lässt einen fertigen MC-Worker bis zur nächsten gemeinsamen Lernphase warten."""
-
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
-        self.waiting = False
-        self.last_observation = None
-        self.reset_info = {}
-
-    def reset(self, *, seed=None, options=None):
-        # SB3 setzt fertige Umgebungen automatisch zurück; hier startet noch kein neuer Lauf.
-        if self.waiting:
-            return self.last_observation, {}
-        self.last_observation, self.reset_info = self.env.reset(seed=seed, options=options)
-        return self.last_observation, self.reset_info
-
-    def start_episode_batch(self):
-        # Alle Worker sammeln ihre nächste Episode mit demselben unveränderten Netz.
-        if self.waiting or self.last_observation is None:
-            self.waiting = False
-            return self.reset()
-        return self.last_observation, self.reset_info
-
-    def step(self, action):
-        if self.waiting:
-            return self.last_observation, 0.0, False, False, {"mc_waiting": True}
-        observation, reward, terminated, truncated, info = self.env.step(action)
-        self.last_observation = observation
-        if terminated or truncated:
-            self.waiting = True
-        return observation, reward, terminated, truncated, info
-
-
 @dataclass(frozen=True)
 class EnvironmentFactory:
     """Erstellt eine Trainingsumgebung mit den gespeicherten Einstellungen."""
@@ -302,7 +269,6 @@ class EnvironmentFactory:
     rank: int = 0
     monitor: bool = True
     compact_info: bool = True
-    episode_batches: bool = False
 
     def __call__(self):
         from .SpineRLEnv import SpineRLEnv
@@ -322,6 +288,4 @@ class EnvironmentFactory:
             from stable_baselines3.common.monitor import Monitor
 
             environment = Monitor(environment)
-        if self.episode_batches:
-            environment = EpisodeBatchWrapper(environment)
         return environment

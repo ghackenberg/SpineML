@@ -80,7 +80,9 @@ sources/
             │   ├── CandidateDQN.py
             │   └── CandidateDQNPolicy.py
             ├── MonteCarlo/
-            │   └── CandidateMonteCarlo.py
+            │   ├── CandidateMonteCarlo.py
+            │   ├── AsyncEpisodeRunner.py
+            │   └── EpisodeReplayBuffer.py
             └── Shared/
                 ├── CandidateQNetwork.py
                 ├── RLCandidatePolicy.py
@@ -2953,8 +2955,9 @@ flowchart TB
   Eingabefeld der Beobachtung.
 
 Wann das Netz angepasst wird, hängt vom gewählten Lernverfahren ab:
-DQN kann schon während einer Episode lernen; Monte Carlo wartet auf
-vollständige Episoden.
+DQN lernt aus einzelnen gespeicherten Übergängen. Monte Carlo verwendet
+vollständige Episoden, wartet dabei aber nicht auf alle Worker. Während der
+zentrale Prozess trainiert, können andere Worker ihre Episoden weiter ausführen.
 Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
@@ -2983,8 +2986,9 @@ Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
   laufender Episode eine Schätzung des [Zielnetzes](#neuronales-netz-und-dqn).
 - **Monte Carlo:** Sammelt vollständige Episoden und berechnet daraus die
   tatsächlich beobachtete spätere Belohnung, den **Return**, für jede besuchte
-  Entscheidung. Diese Returns werden direkt als
-  [Lernziele für das Netz](#monte-carlo-aus-vollständigen-episoden-lernen) verwendet.
+  Entscheidung. Ein Episodenspeicher bewahrt diese Erfahrungen auf. Beim
+  Wiederverwenden älterer Netzstände wird ihr Einfluss durch eine
+  [Off-Policy-Korrektur](#monte-carlo-aus-vollständigen-episoden-lernen) angepasst.
 
 Die Abschlussbelohnung entsteht bei beiden Verfahren erst am Episodenende.
 Die Befehle und Einstellungen stehen unter [Training starten](#training-starten).
@@ -3228,28 +3232,43 @@ Belohnungsformel und die Regeln der Simulation bleiben unverändert.
 ### Monte Carlo: aus vollständigen Episoden lernen
 
 [`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/MonteCarlo/CandidateMonteCarlo.py)
-trainiert ein einzelnes Kandidaten-Q-Netz. Anders als DQN verwendet es
+trainiert ein einzelnes Kandidaten-Q-Netz mit **asynchron gesammelten Episoden
+und einem Replay Buffer**. Anders als DQN verwendet es
 **kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
 
-Ein Trainingsabschnitt läuft so ab:
+Die Worker-Ausführung steht in
+[`AsyncEpisodeRunner.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/AsyncEpisodeRunner.py):
 
-1. **Vollständige Episoden sammeln:** Jeder Worker führt eine Episode aus.
-   Die Netzparameter bleiben währenddessen unverändert. Ein früher fertiger
-   Worker wartet, bis auch die anderen Episoden beendet sind; er startet
-   nicht schon eine weitere Fabriksimulation.
-2. **Returns berechnen:** Für jede besuchte Entscheidung werden ihre
-   tatsächlichen Belohnungen bis zum Episodenende zusammengefasst.
-   Im Trainingsskript gilt `gamma=1.0`. Da nur am Ende eine Belohnung entsteht,
-   ist der Return für alle besuchten Entscheidungen dieser Episode gleich
-   ihrer Endbelohnung.
-3. **Netz trainieren:** Für jeden gespeicherten Zustand wird die Q-Schätzung
-   der damals gewählten Aktion mit diesem Return verglichen:
-   `Fehler = (Q-Schätzung − Return)²`. Die Netzparameter werden so angepasst,
-   dass der mittlere Fehler kleiner wird. `--epochs` bestimmt, wie oft die
-   gesammelten Entscheidungen zum Lernen verwendet werden; dafür ist keine
-   neue Simulation nötig.
-4. **Neue Episoden starten:** Die Daten dieses Abschnitts werden danach
-   verworfen. Die Worker sammeln mit dem angepassten Netz neue Episoden.
+1. **Episode starten:** Jeder Worker übernimmt den neuesten fertig trainierten
+   Netzstand und dessen Explorationswert `epsilon`. Diese beiden Werte bleiben
+   während seiner Episode unverändert.
+2. **Ergebnis abgeben und sofort neu starten:** Nach dem Episodenende übergibt
+   der Worker seinen Verlauf und fragt erneut den neuesten Netzstand ab.
+   Ist noch keine neue Version verfügbar, verwendet er die bisherige. Er wartet
+   nicht darauf, dass andere Worker ihre Episoden beenden.
+3. **Fertige Episoden speichern:**
+   [`EpisodeReplayBuffer.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/EpisodeReplayBuffer.py)
+   speichert Zustände, gewählte Aktionen, Belohnungen, damalige
+   Auswahlwahrscheinlichkeiten und die Netzversion. Nur vollständige Verläufe
+   gehen in den Replay Buffer ein, einschließlich regulärer Limitabbrüche mit
+   Endbelohnung `-1`.
+4. **Zentral trainieren:** Nach `--mc-train-every-episodes` neu eingetroffenen
+   Episoden werden bis zu `--mc-replay-sample-episodes` gespeicherte Episoden
+   ausgewählt. Das zentrale Netz wird damit `--epochs`-mal trainiert. Die
+   Worker können währenddessen mit ihren festen lokalen Netzkopien weitersimulieren.
+5. **Neuen Netzstand bereitstellen:** Nach der Lernphase wird die neue Version
+   veröffentlicht. Sie gilt für danach gestartete Episoden, nicht rückwirkend
+   für bereits laufende Simulationen.
+
+Es gibt keine gemeinsame Episodenbarriere. Ein voller Übergabepuffer kann
+Worker vorübergehend bremsen, damit nicht unbegrenzt große Verläufe im
+Arbeitsspeicher warten. Die Zahl gleichzeitig laufender Worker und die Zeit
+zum Lernen bestimmen gemeinsam den tatsächlichen Durchsatz.
+
+**Returns berechnen:** Für jede besuchte Entscheidung werden die tatsächlich
+beobachteten Belohnungen bis zum Episodenende zusammengefasst. Im Trainingsskript
+gilt `gamma=1.0`. Da nur am Ende eine Belohnung entsteht, ist der Return entlang
+einer Episode gleich ihrer Endbelohnung.
 
 **Beispiel:** Eine Episode enthält `S1 → Nacharbeit → S2 → Transport → Ende`.
 Die Zwischenbelohnungen sind `0`, die Endbelohnung ist `0.8`. Dann lautet
@@ -3259,11 +3278,43 @@ trotzdem `0`; der Return ist das Ergebnis des weiteren Episodenverlaufs,
 nicht eine eigene unmittelbare Belohnung der Aktion.
 
 Auch Monte Carlo wählt nur gültige Kandidaten: mit Wahrscheinlichkeit
-`epsilon` zufällig, sonst den Kandidaten mit dem höchsten Q-Wert. Während
-eines Sammelabschnitts bleibt auch `epsilon` unverändert. Es gibt keinen
-Replay Buffer mit beliebig alten Episoden anderer Netzstände. Die Dateien
-`RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von beiden
-Lernverfahren verwendet.
+`epsilon` zufällig, sonst den Kandidaten mit dem höchsten Q-Wert. Für dieses
+Off-Policy-Training müssen Anfangs- und Endwert von `epsilon` positiv sein:
+Jeder gültige Kandidat benötigt eine mögliche Auswahlchance.
+
+**Ältere Episoden wiederverwenden:** Ein alter Return beschreibt den Verlauf
+der damaligen Policy. Er wird nicht einfach als unveränderte Aussage über die
+neueste Policy behandelt. Vor jeder Lernphase berechnet der Trainer für die
+gespeicherten Aktionen deren Auswahlwahrscheinlichkeiten unter dem aktuellen,
+für diese Lernphase festgehaltenen Netzstand. Für `Q(Zustand, Aktion)` wird
+das Verhältnis der neuen zur damaligen Wahrscheinlichkeit über die
+**nachfolgenden Aktionen** multipliziert; die bereits fest vorgegebene Aktion
+dieses Q-Werts wird nicht noch einmal gewichtet.
+
+Diese [Importance-Sampling-Gewichte](https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/value-rl.html#off-policy-control) werden logarithmisch berechnet und über
+die ausgewählten Trainingsdaten normiert. Trainiert wird ein gewichteter
+quadratischer Fehler:
+
+`Fehler = Summe(normiertes Gewicht × (Q-Schätzung − Return)²)`
+
+Die Targets bleiben tatsächliche vollständige Returns; es wird kein nächster
+Q-Wert hinzugefügt. Die Normierung vermeidet numerischen Überlauf, beseitigt
+aber nicht die möglichen starken Gewichtsunterschiede langer Episoden.
+Bei endlich vielen Daten ist diese selbstnormalisierte Regression nicht
+unverzerrt. Eine bessere oder stabilere Steuerung ist dadurch nicht garantiert.
+`last_importance_ess` zeigt, wie viele gleich stark gewichtete Beispiele dem
+jeweiligen Gewichtsprofil ungefähr entsprechen; ein kleiner Wert weist auf
+wenige dominierende Beispiele hin.
+Die Entscheidungen innerhalb einer Episode sind dabei nicht unabhängig;
+dieser Kennwert misst die Gewichtskonzentration, nicht die Zahl unabhängiger Episoden.
+
+Der Episodenspeicher ist durch Episodenzahl und Übergangszahl begrenzt.
+Alte Episoden werden als ganze Verläufe entfernt. Überschreitet eine einzelne
+Episode das Übergangslimit, bleibt sie allein vollständig erhalten, statt nur
+einen unvollständigen Rest zum Lernen zu verwenden.
+
+Die Dateien `RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von
+beiden Lernverfahren verwendet.
 
 Die direkten Lernziele machen Monte Carlo für die reine Endbelohnung zu
 einer Vergleichsmöglichkeit. Ob es mit demselben Simulationsbudget bessere
@@ -3298,15 +3349,21 @@ bestimmt die reproduzierbaren Zufallsfolgen eines Simulationslaufs:
   der Baseline verwendet werden. Baseline und Training dürfen dagegen
   dieselben Seeds enthalten. Innerhalb einer Liste sind keine Duplikate erlaubt.
 
+Bei asynchronem Monte Carlo bestimmen zusätzlich Betriebssystem und Laufzeiten,
+in welcher Reihenfolge Episoden eintreffen und neue Netzversionen übernommen
+werden. Gleiche Seeds allein garantieren deshalb keinen bitgenau identischen
+Trainingsverlauf. Die Auswertung eines fest gespeicherten Netzes ist davon
+zu unterscheiden: Dabei wird nicht weitertrainiert.
+
 Das Training speichert im Ausgabeordner:
 
 | Datei | Inhalt |
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
 | `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
-| `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. |
-| `replay_buffer.pkl` | Optionaler DQN-Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Monte Carlo verwendet diese Datei nicht. |
-| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus. Die Datei entsteht beim ersten Episodenende. |
+| `checkpoint_*.zip` | Regelmäßig gespeicherte Zwischenstände. `--checkpoint-every` gibt den Abstand an; Standard sind `10000` Entscheidungen. Bei Monte Carlo wird der Zähler erst mit einer fertigen Episode aktualisiert. |
+| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`: Übergänge bei DQN, vollständige Episoden bei Monte Carlo. |
+| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl und Abschluss- oder Abbruchstatus; bei Monte Carlo zusätzlich Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
 | `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
 | `training_report.json` | Status und Umfang des Trainings sowie Rechenzeiten für Baseline, Training und Gesamtlauf. |
 
@@ -3330,6 +3387,9 @@ für jeden Trainingslauf ist ein neuer, leerer Ausgabeordner zu verwenden.
 
 Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten
 Python-Objekte und sind nicht als unbedenkliche Datendateien zu behandeln.
+Das gilt ebenso für die optionale Replay-Datei. `model.zip` enthält nicht den
+großen Erfahrungsspeicher. Ein CLI-Befehl zum Fortsetzen eines Trainings mit
+gespeichertem Replay Buffer ist noch nicht vorhanden.
 
 ### Training starten
 
@@ -3364,9 +3424,10 @@ ohne eine Simulation oder ein Training zu starten.
 
 **Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
 Simulationsprozesse. Jeder Worker führt seine eigene Simulation aus. Das
-gemeinsam trainierte Netz und das Lernverfahren liegen dagegen im übergeordneten
-Trainingsprozess. Dieser berechnet die Aktionsauswahl für die Worker und sammelt
-ihre Zustände, Aktionen und Belohnungen.
+gemeinsam trainierte Netz und das Lernverfahren liegen im übergeordneten
+Trainingsprozess. Bei DQN berechnet dieser auch die Aktionsauswahl für die Worker.
+Bei Monte Carlo entscheidet jeder Worker mit seiner lokalen, während einer
+Episode unveränderten Netzkopie und liefert danach den vollständigen Verlauf.
 
 **DQN: Wann wird das Netz verändert?** Zunächst sammelt DQN Erfahrungen, ohne das
 Netz anzupassen (`--learning-starts`). Danach wechseln sich Sammeln und Lernen
@@ -3380,34 +3441,45 @@ einer Episode enden oder mehrere Episoden berühren. Beim Training zählen nur
 Auswahlpunkte mit mehreren Kandidaten als externe Entscheidungen;
 automatisch übernommene Einzelkandidaten zählen nicht mit.
 
-**Monte Carlo: Wann wird das Netz verändert?** Erst nachdem jeder Worker
-seine aktuelle Episode beendet hat. Danach wird jede gesammelte Entscheidung
-`--epochs`-mal zum Lernen verwendet. Für jeden Durchgang werden die Daten
-neu gemischt und in Datengruppen mit höchstens `--batch-size` Einträgen
-aufgeteilt. Anschließend beginnen neue Episoden. Den Ablauf erklärt
+**Monte Carlo: Wann wird das Netz verändert?** Nach jeweils
+`--mc-train-every-episodes` neu eingetroffenen Episoden, ohne auf die übrigen
+Worker zu warten. Bis zu `--mc-replay-sample-episodes` ganze Episoden aus dem
+Speicher werden mit korrigierten Gewichten `--epochs`-mal zum Lernen verwendet.
+Die übrigen Worker laufen währenddessen weiter. Eine kleinere Restgruppe
+wird beim regulären Trainingsende ebenfalls zum Lernen verwendet. Den Ablauf erklärt
 [Monte Carlo: aus vollständigen Episoden lernen](#monte-carlo-aus-vollständigen-episoden-lernen).
+
+Bei Monte Carlo ist `--steps` keine harte Obergrenze. Gezählt wird erst,
+wenn vollständige Episoden im Lernprozess eintreffen. Nach Erreichen des Budgets
+werden keine neuen Episoden mehr gestartet; bereits fertige Episoden in der
+Übergabewarteschlange und noch laufende Episoden werden weiterhin abgeholt.
+Deshalb kann die tatsächliche Entscheidungszahl **deutlich über `--steps` liegen**.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
 | `--algorithm` | `dqn` | `dqn` oder `monte-carlo` als Lernverfahren verwenden. |
-| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln, nicht Episoden oder Simulationsstunden. DQN beendet seine letzte Sammelphase; Monte Carlo beendet zusätzlich alle Episoden des laufenden Abschnitts und trainiert mit ihnen. Die tatsächliche Zahl kann deshalb größer sein. |
+| `--steps` | `100000` | Mindestens so viele Kandidatenauswahlen insgesamt sammeln, nicht Episoden oder Simulationsstunden. Monte Carlo zählt vollständige eingetroffene Episoden und holt nach dem Stopp noch fertige wartende sowie laufende Episoden ab; die tatsächliche Zahl kann deutlich größer sein. |
 | `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse. |
 | `--buffer-size` | `5000` | Nur DQN: Maximale Kapazität des Replay Buffers insgesamt über alle Worker, auf ein Vielfaches der Workerzahl abgerundet. Alte Einträge werden bei voller Kapazität überschrieben. |
 | `--learning-starts` | `1000` | Nur DQN: Zunächst so viele externe Entscheidungen ohne Netzanpassung sammeln. |
 | `--train-freq` | `4` | Nur DQN: Gemeinsame Worker-Schritte je Sammelphase. Bei vier Workern entstehen dabei `4 × 4 = 16` neue Übergänge. |
 | `--gradient-steps` | `4` | Nur DQN: Netzanpassungen nach einer Sammelphase. |
-| `--epochs` | `4` | Nur Monte Carlo: Vollständige Trainingsdurchgänge über die Entscheidungen des letzten Sammelabschnitts. |
-| `--batch-size` | `64` | DQN: zufällig gezogene Übergänge pro Netzanpassung. Monte Carlo: höchstens so viele Entscheidungen pro Datengruppe; alle gesammelten Entscheidungen werden in jedem Durchgang verwendet. |
+| `--epochs` | `4` | Nur Monte Carlo: Trainingsdurchgänge über die ausgewählten Replay-Episoden. |
+| `--mc-replay-episodes` | `8` | Nur Monte Carlo: maximale Zahl vollständig gespeicherter Episoden. |
+| `--mc-replay-transitions` | `10000` | Nur Monte Carlo: zusätzliches Übergangslimit des Episodenspeichers; eine einzelne größere Episode wird allein vollständig behalten. |
+| `--mc-train-every-episodes` | `4` | Nur Monte Carlo: nach so vielen neu eingetroffenen Episoden lernen. |
+| `--mc-replay-sample-episodes` | `4` | Nur Monte Carlo: höchstens so viele ganze Episoden je Lernphase auswählen. |
+| `--batch-size` | `64` | DQN: zufällige Übergänge pro Netzanpassung. Monte Carlo: höchstens so viele Entscheidungen je Datengruppe aus den ausgewählten Episoden. |
 | `--learning-rate` | `0.0001` | Schrittweite bei der Anpassung der Netzparameter. |
 | `--target-update-interval` | `1000` | Nur DQN: Ungefährer Abstand für die Übernahme ins Zielnetz, gezählt in externen Entscheidungen insgesamt. |
 | `--exploration-fraction` | `0.3` | Anteil des geplanten Trainings, über den `epsilon` linear vom Anfangs- zum Endwert sinkt. |
-| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl. |
+| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl; bei Monte Carlo müssen beide positiv sein. |
 | `gamma` | `1.0` | Spätere Belohnung nicht abschwächen. Für beide Verfahren im Trainingsskript festgelegt. |
 | `tau` | `1.0` | Nur DQN: vollständige Parameterübernahme ins Zielnetz. Im Trainingsskript festgelegt. |
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
-| `--device` | `cpu` | CPU oder GPU für das Netz und seine Anpassung; die Simulation bleibt auf der CPU. |
-| `--save-replay-buffer` | aus | Nur DQN: Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
+| `--device` | `cpu` | Rechengerät des zentralen Netzes und seiner Anpassung. Salabim und die lokalen Monte-Carlo-Netzkopien bleiben auf der CPU. |
+| `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
 
 **DQN-Beispiel mit vier Workern:** Eine Sammelphase liefert `4 × 4 = 16`
 neue Übergänge. Nach der Aufwärmphase folgen vier Netzanpassungen mit jeweils
@@ -3424,11 +3496,15 @@ Objekt- und Kandidatenfelder kann dieser Speicher groß werden. Kleinere
 Minibatches verkleinern den gesamten Replay Buffer nicht. Mehr Worker
 garantieren deshalb keine kürzere Laufzeit.
 
-Monte Carlo speichert die Beobachtungen, Aktionen und Belohnungen des aktuellen
-Sammelabschnitts, nicht zusätzlich sämtliche Folgezustände in einem Replay
-Buffer. Auch diese Daten können bei langen Episoden und vielen Workern viel
-Arbeitsspeicher benötigen. Fertige Worker warten auf die längste Episode
-des Abschnitts, bevor das gemeinsame Netz trainiert wird.
+Monte Carlo speichert vollständige Episoden mit Beobachtungen, Aktionen,
+Belohnungen, Auswahlwahrscheinlichkeiten und Netzversionen. Zusätzlich besitzen
+laufende Worker eigene Verläufe und lokale Netzkopien. Dieser Speicher kann bei
+langen Episoden und vielen Workern groß werden. Episoden- und Übergangslimit
+begrenzen den Replay Buffer; sie begrenzen nicht automatisch alle gleichzeitig
+laufenden Simulationen oder deren Übergabepuffer. Mehr Worker garantieren auch
+hier keine kürzere Trainingszeit. Für den Rechner mit 20 logischen Prozessoren
+kann `--workers 20` geprüft werden; der zentrale Lernprozess benötigt ebenfalls
+CPU-Zeit und Arbeitsspeicher.
 
 Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
 Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.

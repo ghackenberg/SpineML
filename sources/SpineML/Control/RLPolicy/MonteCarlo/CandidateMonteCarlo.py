@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import math
+import pickle
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 try:
     import torch as th
+    import gymnasium as gym
     from gymnasium import spaces
     from stable_baselines3.common.base_class import BaseAlgorithm
     from stable_baselines3.common.policies import BasePolicy
@@ -21,16 +24,11 @@ except ImportError as error:
 from ..Shared.CandidateQNetwork import (
     CandidateFeaturesExtractor, CandidateQNetwork, _positive_size, candidate_action_mask,
 )
-
-
-def discounted_returns(rewards: list[float], gamma: float) -> list[float]:
-    """Berechnet die tatsächliche Restbelohnung ab jeder besuchten Entscheidung."""
-    returns = [0.0] * len(rewards)
-    remaining_return = 0.0
-    for index in range(len(rewards) - 1, -1, -1):
-        remaining_return = float(rewards[index]) + gamma * remaining_return
-        returns[index] = remaining_return
-    return returns
+from .AsyncEpisodeRunner import AsyncEpisodeRunner
+from .EpisodeReplayBuffer import (
+    EpisodeReplayBuffer, discounted_returns, effective_sample_size,
+    normalise_log_weights, suffix_log_importance_weights,
+)
 
 
 def _stack_observations(observations: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
@@ -41,6 +39,24 @@ def _stack_observations(observations: list[dict[str, np.ndarray]]) -> dict[str, 
             values.append(observation[name])
         batch[name] = np.stack(values)
     return batch
+
+
+class _NetworkSpacesEnv(gym.Env):
+    """Stellt SB3 nur die Eingabeformen bereit; echte Simulationen laufen in den Workern."""
+
+    def __init__(self, observation_space, action_space):
+        self.observation_space = observation_space
+        self.action_space = action_space
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        observation = {}
+        for name, space in self.observation_space.spaces.items():
+            observation[name] = np.zeros(space.shape, dtype=space.dtype)
+        return observation, {}
+
+    def step(self, action):
+        raise RuntimeError("Die Netzbeschreibung führt keine Fabriksimulation aus.")
 
 
 class CandidateMonteCarloPolicy(BasePolicy):
@@ -102,7 +118,7 @@ class CandidateMonteCarloPolicy(BasePolicy):
 
 
 class CandidateMonteCarlo(BaseAlgorithm):
-    """Trainiert Kandidaten-Q-Werte auf vollständige, frisch beobachtete Returns."""
+    """Lernt aus vollständigen asynchronen Episoden mit korrigierter Wiederverwendung."""
 
     policy_aliases = {
         "CandidateMonteCarloPolicy": CandidateMonteCarloPolicy,
@@ -126,8 +142,16 @@ class CandidateMonteCarlo(BaseAlgorithm):
         device: str | th.device = "auto",
         verbose: int = 0,
         tensorboard_log: str | None = None,
+        episode_factories=None,
+        replay_episodes: int = 8,
+        replay_transitions: int = 10_000,
+        train_every_episodes: int = 4,
+        replay_sample_episodes: int = 4,
         _init_setup_model: bool = True,
     ):
+        if env is not None and episode_factories is not None:
+            # Kein zusätzlicher Simulationslauf im zentralen Lernprozess.
+            env = _NetworkSpacesEnv(env.observation_space, env.action_space)
         super().__init__(
             policy, env, learning_rate, policy_kwargs=policy_kwargs,
             seed=seed, device=device, verbose=verbose, tensorboard_log=tensorboard_log,
@@ -155,6 +179,17 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.last_return_min = None
         self.last_return_max = None
         self.last_loss = None
+        self.episode_factories = episode_factories
+        self.replay_episodes = _positive_size("replay_episodes", replay_episodes)
+        self.replay_transitions = _positive_size("replay_transitions", replay_transitions)
+        self.train_every_episodes = _positive_size("train_every_episodes", train_every_episodes)
+        self.replay_sample_episodes = _positive_size("replay_sample_episodes", replay_sample_episodes)
+        self.replay_buffer = EpisodeReplayBuffer(self.replay_episodes, self.replay_transitions)
+        self.policy_version = 0
+        self.worker_pids = []
+        self.last_importance_ess = None
+        self.last_importance_max_weight = None
+        self._episode_runner = None
         if _init_setup_model:
             self._setup_model()
 
@@ -170,6 +205,16 @@ class CandidateMonteCarlo(BaseAlgorithm):
 
     def _get_torch_save_params(self) -> tuple[list[str], list[str]]:
         return ["policy", "policy.optimizer"], []
+
+    def _excluded_save_params(self) -> list[str]:
+        excluded = super()._excluded_save_params()
+        excluded.extend(("episode_factories", "_episode_runner", "replay_buffer"))
+        return excluded
+
+    def save_replay_buffer(self, path) -> None:
+        """Speichert vollständige Episoden separat; nur eigene Pickle-Dateien vertrauen."""
+        with Path(path).open("wb") as stream:
+            pickle.dump(self.replay_buffer, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
     def predict(
         self,
@@ -200,70 +245,46 @@ class CandidateMonteCarlo(BaseAlgorithm):
             self.exploration_final_eps - self.exploration_initial_eps
         )
 
-    def _select_actions_for_active_workers(self, observations, active_indices) -> np.ndarray:
-        """Wählt Aktionen für laufende Episoden; fertige Worker erhalten den Platzhalter 0."""
-        active_observations = {}
-        for name, values in observations.items():
-            active_observations[name] = values[active_indices]
-        selected_actions, _ = self.predict(active_observations, deterministic=False)
-        # Der wartende Worker ignoriert den Platzhalter und startet keine neue Simulation.
-        actions = np.zeros(self.n_envs, dtype=np.int64)
-        actions[active_indices] = selected_actions.reshape(-1)
-        return actions
+    def _target_action_probabilities(self, observations, actions):
+        """Bewertet damalige Aktionen unter der vor dieser Lernphase gültigen Policy."""
+        probabilities = []
+        for start in range(0, len(actions), self.batch_size):
+            stop = min(start + self.batch_size, len(actions))
+            tensors, _ = self.policy.obs_to_tensor(_stack_observations(observations[start:stop]))
+            with th.no_grad():
+                greedy_actions = self.policy.q_net._predict(tensors).cpu().numpy()
+            for offset, greedy_action in enumerate(greedy_actions):
+                index = start + offset
+                valid_count = int(np.count_nonzero(observations[index]["action_mask"]))
+                probability = self.exploration_rate / valid_count
+                if int(actions[index]) == int(greedy_action):
+                    probability += 1.0 - self.exploration_rate
+                probabilities.append(float(probability))
+        return probabilities
 
-    def _collect_episode_batch(self, callback) -> tuple[list[dict], list[int], list[float], bool]:
-        # Jeder Worker startet genau eine Episode mit denselben eingefrorenen Netzgewichten.
-        starts = self.env.env_method("start_episode_batch")
-        observations = []
-        for observation, info in starts:
-            observations.append(observation)
-        self._last_obs = _stack_observations(observations)
-        active = np.ones(self.n_envs, dtype=bool)
-        episode_observations = []
-        episode_actions = []
-        episode_rewards = []
-        for _ in range(self.n_envs):
-            episode_observations.append([])
-            episode_actions.append([])
-            episode_rewards.append([])
-        callback.on_rollout_start()
+    def _prepare_replay_data(self):
+        """Berechnet volle Returns und Korrekturgewichte, bevor Netzparameter geändert werden."""
         self.policy.set_training_mode(False)
-        while active.any():
-            active_indices = np.flatnonzero(active)
-            actions = self._select_actions_for_active_workers(self._last_obs, active_indices)
-            for worker_index in active_indices:
-                observation = {}
-                for name, values in self._last_obs.items():
-                    observation[name] = values[worker_index].copy()
-                episode_observations[worker_index].append(observation)
-                episode_actions[worker_index].append(int(actions[worker_index]))
-            new_observations, rewards, dones, infos = self.env.step(actions)
-            self.num_timesteps += len(active_indices)
-            self.collected_transitions += len(active_indices)
-            for worker_index in active_indices:
-                episode_rewards[worker_index].append(float(rewards[worker_index]))
-                if dones[worker_index]:
-                    active[worker_index] = False
-                    self._episode_num += 1
-                    self.episodes_collected += 1
-            self._last_obs = new_observations
-            self._update_info_buffer(infos, dones)
-            callback.update_locals({
-                "infos": infos, "dones": dones, "rewards": rewards,
-                "actions": actions, "new_obs": new_observations,
-            })
-            if not callback.on_step():
-                callback.on_rollout_end()
-                return [], [], [], False
-        callback.on_rollout_end()
+        episodes = self.replay_buffer.sample_episodes(self.replay_sample_episodes, np.random)
         observations = []
         actions = []
         returns = []
-        for worker_index in range(self.n_envs):
-            observations.extend(episode_observations[worker_index])
-            actions.extend(episode_actions[worker_index])
-            returns.extend(discounted_returns(episode_rewards[worker_index], self.gamma))
-        return observations, actions, returns, True
+        log_weights = []
+        for episode in episodes:
+            target_probabilities = self._target_action_probabilities(
+                episode["observations"], episode["actions"],
+            )
+            episode_log_weights = suffix_log_importance_weights(
+                target_probabilities, episode["behavior_probabilities"],
+            )
+            observations.extend(episode["observations"])
+            actions.extend(episode["actions"])
+            returns.extend(discounted_returns(episode["rewards"], self.gamma))
+            log_weights.extend(episode_log_weights)
+        weights = normalise_log_weights(log_weights)
+        self.last_importance_ess = effective_sample_size(weights)
+        self.last_importance_max_weight = float(weights.max())
+        return observations, actions, returns, weights
 
     def _prepare_training_minibatch(self, observations, actions, returns, indices):
         """Wandelt ausgewählte Zustände, Aktionen und Returns in Eingaben für das Netz um."""
@@ -279,7 +300,8 @@ class CandidateMonteCarlo(BaseAlgorithm):
         return_tensor = th.as_tensor(batch_returns, dtype=th.float32, device=self.device).reshape(-1, 1)
         return observation_tensors, action_tensor, return_tensor
 
-    def _train_episode_batch(self, observations: list[dict], actions: list[int], returns: list[float]) -> None:
+    def _train_replay(self) -> None:
+        observations, actions, returns, weights = self._prepare_replay_data()
         self.policy.set_training_mode(True)
         self._update_learning_rate(self.policy.optimizer)
         self.last_return_min = float(min(returns))
@@ -296,8 +318,10 @@ class CandidateMonteCarlo(BaseAlgorithm):
                 if not bool(th.gather(masks, dim=1, index=action_tensor).all()):
                     raise ValueError("Eine gespeicherte Monte-Carlo-Aktion ist ungültig.")
                 predictions = self.policy.q_net(observation_tensors).gather(dim=1, index=action_tensor)
-                # Nur tatsächliche Returns: kein nächster Q-Wert und kein Target-Netz.
-                loss = F.mse_loss(predictions, return_tensor)
+                # Das Lernziel bleibt der tatsächliche Return; korrigiert wird der Einfluss.
+                weight_tensor = th.as_tensor(weights[indices], dtype=th.float32, device=self.device).reshape(-1, 1)
+                squared_errors = F.mse_loss(predictions, return_tensor, reduction="none")
+                loss = (weight_tensor * squared_errors).sum() * len(actions) / len(indices)
                 self.policy.optimizer.zero_grad()
                 loss.backward()
                 th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
@@ -310,6 +334,49 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.logger.record("train/return_max", self.last_return_max)
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/batch_transitions", len(actions))
+        self.logger.record("train/importance_ess", self.last_importance_ess)
+        self.logger.record("train/importance_max_weight", self.last_importance_max_weight)
+        self.logger.record("replay/episodes", len(self.replay_buffer))
+        self.logger.record("replay/transitions", self.replay_buffer.transition_count)
+        self.logger.record("replay/oversized_episode", self.replay_buffer.oversized_episode)
+
+    def _record_episode(self, episode, callback):
+        """Übernimmt einen fertigen Verlauf, ohne auf die anderen Worker zu warten."""
+        decisions = len(episode["actions"])
+        self.num_timesteps += decisions
+        self.collected_transitions += decisions
+        self.episodes_collected += 1
+        self._episode_num += 1
+        self.replay_buffer.add(episode)
+        if episode["worker_pid"] not in self.worker_pids:
+            self.worker_pids.append(episode["worker_pid"])
+        info = dict(episode["info"])
+        info.update({
+            "policy_version": episode["policy_version"],
+            "worker_pid": episode["worker_pid"], "worker_id": episode["worker_id"],
+            "episode_epsilon": episode["epsilon"],
+            "episode_elapsed_seconds": episode["elapsed_seconds"],
+        })
+        dones = np.array([True])
+        self._update_info_buffer([info], dones)
+        callback.update_locals({"infos": [info], "dones": dones})
+        return callback.on_step()
+
+    def _learn_and_publish(self, total_timesteps, callback, log_interval):
+        callback.on_rollout_end()
+        self._current_progress_remaining = max(1 - self.num_timesteps / total_timesteps, 0)
+        self._update_exploration()
+        self._train_replay()
+        self.completed_batches += 1
+        self.policy_version += 1
+        self._episode_runner.publish(self.policy.state_dict(), self.exploration_rate, self.policy_version)
+        self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+        self.logger.record("rollout/episodes", self._episode_num)
+        self.logger.record("rollout/exploration_rate", self.exploration_rate)
+        self.logger.record("rollout/policy_version", self.policy_version)
+        if log_interval is not None and self.completed_batches % log_interval == 0:
+            self.logger.dump(step=self.num_timesteps)
+        callback.on_rollout_start()
 
     def learn(
         self,
@@ -320,29 +387,45 @@ class CandidateMonteCarlo(BaseAlgorithm):
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ) -> CandidateMonteCarlo:
+        if not self.episode_factories:
+            raise ValueError("Asynchrones Training benötigt episode_factories für die Worker.")
+        if self.exploration_initial_eps <= 0 or self.exploration_final_eps <= 0:
+            raise ValueError("Off-Policy-Monte-Carlo benötigt positive Explorationswahrscheinlichkeiten.")
         total_timesteps, callback = self._setup_learn(
             total_timesteps, callback, reset_num_timesteps, tb_log_name, progress_bar,
         )
         callback.on_training_start(locals(), globals())
+        pending_episodes = 0
+        keep_training = True
+        stop_requested = False
+        self._update_exploration()
+        self._episode_runner = AsyncEpisodeRunner(
+            self.episode_factories, self.observation_space, self.action_space,
+            self.policy_kwargs, self.seed or 0,
+        )
         try:
-            while self.num_timesteps < total_timesteps:
-                self._update_exploration()
-                observations, actions, returns, keep_training = self._collect_episode_batch(callback)
+            self._episode_runner.start(self.policy.state_dict(), self.exploration_rate, self.policy_version)
+            callback.on_rollout_start()
+            while not self._episode_runner.finished:
+                episode = self._episode_runner.get_completed()
+                if episode is None:
+                    continue
+                keep_training = self._record_episode(episode, callback)
                 if not keep_training:
                     break
-                self._current_progress_remaining = max(1 - self.num_timesteps / total_timesteps, 0)
-                self._train_episode_batch(observations, actions, returns)
-                self.completed_batches += 1
-                # Die nächste Episode benötigt keine Daten der vorherigen Strategie mehr.
-                del observations, actions, returns
-                if log_interval is not None and self.completed_batches % log_interval == 0:
-                    self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
-                    self.logger.record("rollout/episodes", self._episode_num)
-                    self.logger.record("rollout/exploration_rate", self.exploration_rate)
-                    self.logger.dump(step=self.num_timesteps)
-            self._update_exploration()
+                pending_episodes += 1
+                if self.num_timesteps >= total_timesteps and not stop_requested:
+                    self._episode_runner.request_stop()
+                    stop_requested = True
+                if pending_episodes >= self.train_every_episodes:
+                    self._learn_and_publish(total_timesteps, callback, log_interval)
+                    pending_episodes = 0
+            if pending_episodes and keep_training:
+                self._learn_and_publish(total_timesteps, callback, log_interval)
+            callback.on_rollout_end()
         finally:
-            # Ein späterer learn()-Aufruf beginnt wieder mit vollständigen Episoden.
+            self._episode_runner.close()
+            self._episode_runner = None
             self._last_obs = None
             callback.on_training_end()
         return self

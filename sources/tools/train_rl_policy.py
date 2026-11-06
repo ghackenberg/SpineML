@@ -65,14 +65,18 @@ def main() -> None:
     dqn_options.add_argument("--train-freq", type=positive_int, default=4, help="Neue Schritte je Worker vor der nächsten Lernphase.")
     dqn_options.add_argument("--gradient-steps", type=positive_int, default=4, help="Gewichtsanpassungen aus zufälligen Replay-Batches je Lernphase.")
     mc_options = parser.add_argument_group("Nur Monte Carlo")
-    mc_options.add_argument("--epochs", type=positive_int, default=4, help="Trainingsdurchgänge über die gerade abgeschlossenen Episoden.")
+    mc_options.add_argument("--epochs", type=positive_int, default=4, help="Trainingsdurchgänge über die ausgewählten Replay-Episoden.")
+    mc_options.add_argument("--mc-replay-episodes", type=positive_int, default=8, help="Höchstens so viele vollständige Episoden im Replay Buffer behalten.")
+    mc_options.add_argument("--mc-replay-transitions", type=positive_int, default=10000, help="Zusätzliches Übergangslimit für den Episodenspeicher; eine größere einzelne Episode bleibt vollständig erhalten.")
+    mc_options.add_argument("--mc-train-every-episodes", type=positive_int, default=4, help="Nach so vielen neu eingetroffenen Episoden trainieren, ohne auf andere Worker zu warten.")
+    mc_options.add_argument("--mc-replay-sample-episodes", type=positive_int, default=4, help="Höchstens so viele gespeicherte Episoden je Lernphase auswählen.")
     parser.add_argument("--batch-size", type=positive_int, default=64)
     parser.add_argument("--learning-rate", type=positive_float, default=0.0001)
     dqn_options.add_argument("--target-update-interval", type=positive_int, default=1000, help="Target-Gewichte ungefähr alle so vielen Entscheidungen nachführen.")
     parser.add_argument("--exploration-fraction", type=positive_float, default=0.3, help="Anteil des Trainings, in dem Epsilon vom Anfangs- zum Endwert sinkt.")
     parser.add_argument("--exploration-initial-eps", type=probability, default=1.0)
     parser.add_argument("--exploration-final-eps", type=probability, default=0.05)
-    dqn_options.add_argument("--save-replay-buffer", action="store_true", help="Replay Buffer am Ende zusätzlich als replay_buffer.pkl speichern; kann groß werden.")
+    parser.add_argument("--save-replay-buffer", action="store_true", help="Replay Buffer am Ende zusätzlich als replay_buffer.pkl speichern; kann groß werden.")
     parser.add_argument("--train-seeds", type=nonnegative_int, nargs="+", default=list(range(1, 11)))
     parser.add_argument("--baseline-seeds", type=nonnegative_int, nargs="+", help="Standard: SEEDS der Optimierungsanwendung.")
     parser.add_argument("--evaluation-seeds", type=nonnegative_int, nargs="+", help="Reservierte Test-Seeds; Standard: TEST_SEEDS der Anwendung.")
@@ -88,8 +92,9 @@ def main() -> None:
     new_decisions_per_collection = args.workers * args.train_freq
     if args.algorithm == "dqn" and args.buffer_size < args.workers:
         parser.error("--buffer-size muss mindestens so groß wie --workers sein.")
-    if args.algorithm == "monte-carlo" and args.save_replay_buffer:
-        parser.error("Monte Carlo verwendet keinen Replay Buffer; --save-replay-buffer gehört nur zu DQN.")
+    if args.algorithm == "monte-carlo":
+        if args.exploration_initial_eps <= 0 or args.exploration_final_eps <= 0:
+            parser.error("Monte Carlo benötigt positive Epsilon-Werte, damit alle gültigen Aktionen eine Auswahlwahrscheinlichkeit haben.")
     if args.exploration_fraction > 1.0:
         parser.error("--exploration-fraction muss größer als 0 und höchstens 1 sein.")
     if len(set(args.train_seeds)) != len(args.train_seeds):
@@ -172,7 +177,13 @@ def main() -> None:
         algorithm_class = CandidateMonteCarlo
         policy_class = CandidateMonteCarloPolicy
         algorithm_name = "MonteCarlo"
-        hyperparameters["epochs"] = args.epochs
+        hyperparameters.update({
+            "epochs": args.epochs,
+            "replay_episodes": args.mc_replay_episodes,
+            "replay_transitions": args.mc_replay_transitions,
+            "train_every_episodes": args.mc_train_every_episodes,
+            "replay_sample_episodes": args.mc_replay_sample_episodes,
+        })
     versions = {}
     for name in ("torch", "stable-baselines3", "gymnasium", "SpineML"):
         versions[name] = importlib.metadata.version(name)
@@ -187,6 +198,9 @@ def main() -> None:
         "save_replay_buffer": args.save_replay_buffer,
         "versions": versions,
     }
+    if args.algorithm == "monte-carlo":
+        manifest["monte_carlo_mode"] = "asynchronous_off_policy_episode_replay"
+        manifest["monte_carlo_correction"] = "self_normalised_future_action_importance_weights"
     write_json(output / "manifest.json", manifest)
     episodes: list[dict] = []
 
@@ -206,6 +220,12 @@ def main() -> None:
                     "completed": info.get("reward_reason") == "completed",
                     "limit_reason": info.get("truncation_reason"),
                 }
+                if args.algorithm == "monte-carlo":
+                    event["policy_version"] = info.get("policy_version")
+                    event["worker_pid"] = info.get("worker_pid")
+                    event["worker_id"] = info.get("worker_id")
+                    event["episode_epsilon"] = info.get("episode_epsilon")
+                    event["episode_elapsed_seconds"] = info.get("episode_elapsed_seconds")
                 episodes.append(event)
                 with (output / "episodes.jsonl").open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
@@ -225,28 +245,34 @@ def main() -> None:
         for rank in range(args.workers):
             factory = EnvironmentFactory(
                 context["model_file"], context, env_config, tuple(args.train_seeds), rank,
-                episode_batches=args.algorithm == "monte-carlo",
             )
             factories.append(factory)
-        # Auch bei einem Worker: Salabim bleibt vom Lernprozess getrennt.
-        vector_env = SubprocVecEnv(factories, start_method="spawn")
         if args.algorithm == "dqn":
+            vector_env = SubprocVecEnv(factories, start_method="spawn")
             observation_bytes = 0
             for space in vector_env.observation_space.spaces.values():
                 observation_bytes += math.prod(space.shape) * np.dtype(space.dtype).itemsize
             effective_capacity = (args.buffer_size // args.workers) * args.workers
             replay_gib = 2 * observation_bytes * effective_capacity / 1024**3
             print(f"Replay: ungefähr {replay_gib:.2f} GiB für Zustände und Folgezustände im CPU-Arbeitsspeicher.", flush=True)
-        model = algorithm_class(
-            policy_class, vector_env,
-            policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
-            **hyperparameters,
-        )
+            model = algorithm_class(
+                policy_class, vector_env,
+                policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
+                **hyperparameters,
+            )
+        else:
+            # Diese Umgebung liefert nur die Eingabegrößen; simuliert wird in eigenen Workern.
+            vector_env = factories[0]()
+            model = algorithm_class(
+                policy_class, vector_env, episode_factories=factories,
+                policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
+                **hyperparameters,
+            )
         model.set_logger(configure(str(output), ["stdout", "csv"]))
         if args.algorithm == "dqn":
             print(f"DQN: {args.workers} Simulationsprozesse, {new_decisions_per_collection} neue Entscheidungen je Sammelabschnitt, danach {args.gradient_steps} Replay-Updates ab Entscheidung {args.learning_starts}.", flush=True)
         else:
-            print(f"Monte Carlo: {args.workers} parallele vollständige Episoden, danach {args.epochs} Trainingsdurchgänge mit deren Returns. --steps wird erst nach einer vollständigen Episodengruppe geprüft.", flush=True)
+            print(f"Monte Carlo: {args.workers} unabhängige Simulationsprozesse; nach je {args.mc_train_every_episodes} fertigen Episoden mit bis zu {args.mc_replay_sample_episodes} Replay-Episoden trainieren. Fertige Worker starten sofort mit dem neuesten verfügbaren Netzstand neu.", flush=True)
         try:
             model.learn(total_timesteps=args.steps, callback=TrainingProgress(), log_interval=1)
         except KeyboardInterrupt:
@@ -283,9 +309,16 @@ def main() -> None:
         else:
             report["completed_batches"] = int(model.completed_batches)
             report["collected_transitions"] = int(model.collected_transitions)
+            report["policy_version"] = int(model.policy_version)
+            report["replay_episodes"] = len(model.replay_buffer)
+            report["replay_transitions"] = int(model.replay_buffer.transition_count)
+            report["replay_oversized_episode"] = bool(model.replay_buffer.oversized_episode)
             report["last_return_min"] = model.last_return_min
             report["last_return_max"] = model.last_return_max
             report["last_loss"] = model.last_loss
+            report["last_importance_ess"] = model.last_importance_ess
+            report["last_importance_max_weight"] = model.last_importance_max_weight
+            report["worker_pids"] = sorted(model.worker_pids)
     except BaseException as error:
         actual_timesteps = 0
         if model is not None:

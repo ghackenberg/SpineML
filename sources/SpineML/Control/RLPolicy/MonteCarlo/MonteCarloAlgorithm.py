@@ -43,7 +43,7 @@ def _stack_observations(observations: list[dict[str, np.ndarray]]) -> dict[str, 
     return batch
 
 
-class CandidateMonteCarloPolicy(BasePolicy):
+class MonteCarloPolicy(BasePolicy):
     """Ein Kandidaten-Q-Netz; Monte Carlo benötigt kein Target-Netz."""
 
     def __init__(
@@ -101,17 +101,17 @@ class CandidateMonteCarloPolicy(BasePolicy):
         return data
 
 
-class CandidateMonteCarlo(BaseAlgorithm):
+class MonteCarloAlgorithm(BaseAlgorithm):
     """Lernt aus vollständigen asynchronen Episoden mit korrigierter Wiederverwendung."""
 
     policy_aliases = {
-        "CandidateMonteCarloPolicy": CandidateMonteCarloPolicy,
-        "MultiInputPolicy": CandidateMonteCarloPolicy,
+        "MonteCarloPolicy": MonteCarloPolicy,
+        "MultiInputPolicy": MonteCarloPolicy,
     }
 
     def __init__(
         self,
-        policy: str | type[CandidateMonteCarloPolicy] = CandidateMonteCarloPolicy,
+        policy: str | type[MonteCarloPolicy] = MonteCarloPolicy,
         env=None,
         learning_rate: float | Schedule = 0.0001,
         batch_size: int = 64,
@@ -176,8 +176,8 @@ class CandidateMonteCarlo(BaseAlgorithm):
             self._setup_model()
 
     def _setup_model(self) -> None:
-        if not issubclass(self.policy_class, CandidateMonteCarloPolicy):
-            raise ValueError("CandidateMonteCarlo benötigt CandidateMonteCarloPolicy.")
+        if not issubclass(self.policy_class, MonteCarloPolicy):
+            raise ValueError("MonteCarloAlgorithm benötigt MonteCarloPolicy.")
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
         self.policy = self.policy_class(
@@ -374,10 +374,10 @@ class CandidateMonteCarlo(BaseAlgorithm):
         self.ep_info_buffer = deque(maxlen=self._stats_window_size)
         self.ep_success_buffer = deque(maxlen=self._stats_window_size)
         if not self._custom_logger:
-            self._logger = configure_logger(self.verbose, self.tensorboard_log, "CandidateMonteCarlo", True)
+            self._logger = configure_logger(self.verbose, self.tensorboard_log, "MonteCarloAlgorithm", True)
         return self._init_callback(callback)
 
-    def learn(self, total_episodes: int, callback=None) -> CandidateMonteCarlo:
+    def learn(self, total_episodes: int, callback=None) -> MonteCarloAlgorithm:
         """Sammelt die angegebene Anzahl vollständiger Episoden und trainiert mit dem Replay Buffer."""
         if not self.episode_factories:
             raise ValueError("Asynchrones Training benötigt episode_factories für die Worker.")

@@ -34,13 +34,13 @@ def _run_episode_worker(
     failure = None
     try:
         import torch as th
-        from .CandidateMonteCarlo import CandidateMonteCarloPolicy
+        from .MonteCarloAlgorithm import MonteCarloPolicy
 
         th.set_num_threads(1)
         # Die Aktionsauswahl verändert nicht die Zufallsfolge der Salabim-Simulation.
         rng = np.random.default_rng(seed + worker_id)
         environment = factory()
-        policy = CandidateMonteCarloPolicy(
+        policy = MonteCarloPolicy(
             observation_space, action_space, _actor_learning_rate,
             **policy_kwargs,
         ).to("cpu")

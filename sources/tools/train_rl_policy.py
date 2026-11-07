@@ -140,7 +140,7 @@ def main() -> None:
         if args.algorithm == "dreamer":
             from SpineML.Control.RLPolicy.Dreamer.CandidateDreamer import CandidateDreamer
             from SpineML.Control.RLPolicy.Dreamer.DreamerNetworks import CandidateDreamerPolicy
-        from SpineML.Control.RLPolicy.MonteCarlo.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
+        from SpineML.Control.RLPolicy.MonteCarlo.MonteCarloAlgorithm import MonteCarloAlgorithm, MonteCarloPolicy
         from SpineML.Control.RLPolicy.Shared.TrainingSupport import (
             EnvironmentFactory, build_artifact_context, calibrate_references, load_app_configuration,
         )
@@ -203,7 +203,7 @@ def main() -> None:
         })
     else:
         algorithm_name = "MonteCarlo"
-        policy_name = "CandidateMonteCarloPolicy"
+        policy_name = "MonteCarloPolicy"
         policy_kwargs = {"embedding_dim": 32, "hidden_dim": 64}
         hyperparameters.update({
             "exploration_fraction": args.exploration_fraction,
@@ -321,8 +321,8 @@ def main() -> None:
                 **hyperparameters,
             )
         else:
-            model = CandidateMonteCarlo(
-                CandidateMonteCarloPolicy, training_env, episode_factories=factories,
+            model = MonteCarloAlgorithm(
+                MonteCarloPolicy, training_env, episode_factories=factories,
                 policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
                 **hyperparameters,
             )

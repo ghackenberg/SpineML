@@ -36,10 +36,10 @@ def training_algorithm_classes(manifest: Mapping):
         from ..Dreamer.DreamerNetworks import CandidateDreamerPolicy
 
         return CandidateDreamer, CandidateDreamerPolicy
-    if algorithm == "MonteCarlo" and policy_class == "CandidateMonteCarloPolicy":
-        from ..MonteCarlo.CandidateMonteCarlo import CandidateMonteCarlo, CandidateMonteCarloPolicy
+    if algorithm == "MonteCarlo" and policy_class in ("MonteCarloPolicy", "CandidateMonteCarloPolicy"):
+        from ..MonteCarlo.MonteCarloAlgorithm import MonteCarloAlgorithm, MonteCarloPolicy
 
-        return CandidateMonteCarlo, CandidateMonteCarloPolicy
+        return MonteCarloAlgorithm, MonteCarloPolicy
     raise ValueError("Das Manifest muss einen Dreamer- oder Monte-Carlo-Trainingslauf beschreiben.")
 
 

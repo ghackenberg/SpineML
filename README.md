@@ -83,7 +83,7 @@ sources/
             │   ├── EpisodeDataset.py
             │   └── SequenceReplay.py
             ├── MonteCarlo/
-            │   ├── CandidateMonteCarlo.py
+            │   ├── MonteCarloAlgorithm.py
             │   ├── AsyncEpisodeRunner.py
             │   └── EpisodeReplayBuffer.py
             └── Shared/
@@ -3309,10 +3309,18 @@ darauf trainierte Aktionsauswahl beeinträchtigen.
 
 ### Monte Carlo: aus vollständigen Episoden lernen
 
-[`CandidateMonteCarlo`](sources/SpineML/Control/RLPolicy/MonteCarlo/CandidateMonteCarlo.py)
+[`MonteCarloAlgorithm`](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloAlgorithm.py)
 trainiert ein einzelnes Kandidaten-Q-Netz mit **asynchron gesammelten Episoden
 und einem Replay Buffer**. Es verwendet
 **kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
+
+Die beiden eigenen Klassen stehen in `MonteCarloAlgorithm.py`:
+
+- **`MonteCarloAlgorithm` erbt von `BaseAlgorithm`:** Implementiert das Lernverfahren,
+  sammelt Episoden und trainiert das Q-Netz mit dem Replay Buffer.
+- **`MonteCarloPolicy` erbt von `BasePolicy`:** Enthält das `CandidateQNetwork` und
+  liefert die Aktionsvorhersage anhand der Q-Werte. Das Q-Netz bewertet die vom
+  Generator angebotenen Aktionskandidaten; deshalb bleibt sein Name unverändert.
 
 Die Worker-Ausführung steht in
 [`AsyncEpisodeRunner.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/AsyncEpisodeRunner.py):
@@ -3468,7 +3476,8 @@ anderen Speicherort, aber kein anderes Fabrikmodell.
 Manifestversion und Algorithmus müssen zum gespeicherten Netzstand passen.
 Der Loader wählt anhand des Manifests Dreamer oder Monte Carlo. Netzstände
 entfernter Lernverfahren sind nicht kompatibel und werden mit einer Fehlermeldung
-abgewiesen. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
+abgewiesen. Die früheren Monte-Carlo-Klassennamen werden beim Laden weiterhin
+erkannt. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
 für jeden Trainingslauf ist ein neuer, leerer Ausgabeordner zu verwenden.
 
 Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten

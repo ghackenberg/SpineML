@@ -352,46 +352,215 @@ class CandidateDreamerPolicy(BasePolicy):
 
     def train_sequences(self, episode_windows):
         """Trainiert Weltmodell und Actor/Critic mit echten Folgen und vorgestellten Folgen."""
+        return self._train_sequences(episode_windows, "joint")
+
+    def train_world_model(self, episode_windows):
+        """Lernt nur die Fabrikvorhersage aus gespeicherten Salabim-Verläufen."""
+        return self._train_sequences(episode_windows, "world_model")
+
+    def train_imagination(self, episode_windows):
+        """Trainiert nur Actor und Critic; die Weltmodellgewichte bleiben unverändert."""
+        return self._train_sequences(episode_windows, "imagination")
+
+    def _train_sequences(self, episode_windows, phase):
         if not episode_windows:
             raise ValueError("Dreamer benötigt mindestens ein Lernfenster.")
         self.set_training_mode(True)
-        self.optimizer.zero_grad(set_to_none=True)
-        metrics = {}
+        parameters = list(self.parameters())
+        previous_flags = []
+        active_parameters = set()
+        if phase != "imagination":
+            for parameter in self.model_loss.world_model.parameters():
+                active_parameters.add(id(parameter))
+        if phase != "world_model":
+            for parameter in self.actor_network.scorer.parameters():
+                active_parameters.add(id(parameter))
+            # TorchRL verwaltet die Critic-Gewichte nach der Funktionalisierung hier.
+            for parameter in self.value_loss.value_model_params.parameters():
+                active_parameters.add(id(parameter))
+        for parameter in parameters:
+            previous_flags.append(parameter.requires_grad)
+            parameter.requires_grad_(parameter.requires_grad and id(parameter) in active_parameters)
+        try:
+            self.optimizer.zero_grad(set_to_none=True)
+            metrics = {}
+            for window in episode_windows:
+                sample = self._window_tensordict(window)
+                losses = {}
+                if phase == "imagination":
+                    # Gespeicherte Beobachtungen liefern nur die Startzustände der Träume.
+                    with torch.no_grad():
+                        posterior = self.model_loss.world_model(sample)
+                else:
+                    world_losses, posterior = self.model_loss(sample)
+                    losses.update(world_losses)
+                    mask_logits = posterior["next", "mask_logits"]
+                    masks = sample["next", "action_mask"]
+                    mask_errors = F.binary_cross_entropy_with_logits(mask_logits, masks, reduction="none")
+                    # Belegte und leere Plätze zählen getrennt, damit leere Plätze nicht gewinnen.
+                    positives = masks.sum().clamp_min(1)
+                    negatives = (1 - masks).sum().clamp_min(1)
+                    losses["loss_model_mask"] = 0.5 * (
+                        (mask_errors * masks).sum() / positives
+                        + (mask_errors * (1 - masks)).sum() / negatives
+                    )
+                if phase != "world_model":
+                    # Zustände vor echten Aktionen, nicht nach dem Episodenende.
+                    latent = posterior["state"].detach().reshape(-1, self.state_size)
+                    belief = posterior["belief"].detach().reshape(-1, self.hidden_dim)
+                    actor_input = TensorDict({"state": latent, "belief": belief}, [latent.shape[0]], device=self.device)
+                    actor_losses, imagined = self.actor_loss(actor_input)
+                    value_losses, _ = self.value_loss(imagined.detach())
+                    losses.update(actor_losses)
+                    losses.update(value_losses)
+                total = torch.zeros((), device=self.device)
+                for name, value in losses.items():
+                    if name.startswith("loss_"):
+                        total = total + value.mean()
+                    if isinstance(value, torch.Tensor) and value.numel() == 1:
+                        metrics[name] = metrics.get(name, 0.0) + float(value.detach().item()) / len(episode_windows)
+                if not bool(torch.isfinite(total)):
+                    raise FloatingPointError("Dreamer hat einen nicht endlichen Lernfehler erzeugt.")
+                metrics["loss"] = metrics.get("loss", 0.0) + float(total.detach().item()) / len(episode_windows)
+                (total / len(episode_windows)).backward()
+            gradient_norm = torch.nn.utils.clip_grad_norm_(parameters, 100.0, error_if_nonfinite=True)
+            self.optimizer.step()
+            metrics["gradient_norm"] = float(gradient_norm)
+            return metrics
+        finally:
+            # Auch bei einem Fehler die ursprünglichen Freigaben der Parameter wiederherstellen.
+            for parameter, previous_flag in zip(parameters, previous_flags):
+                parameter.requires_grad_(previous_flag)
+
+    def validate_sequences(self, episode_windows):
+        """Prüft Vorhersagen auf unbenutzten Folgen, ohne Netzgewichte zu verändern."""
+        if not episode_windows:
+            raise ValueError("Die Weltmodellprüfung benötigt mindestens ein Lernfenster.")
+        cuda_devices = []
+        if self.device.type == "cuda":
+            cuda_devices.append(self.device.index)
+        was_training = self.training
+        try:
+            self.set_training_mode(False)
+            # Dieselbe Stichprobe ist wiederholbar und verändert die Trainingszufallsfolge nicht.
+            with torch.random.fork_rng(devices=cuda_devices), torch.no_grad():
+                torch.random.default_generator.manual_seed(0)
+                if self.device.type == "cuda":
+                    with torch.cuda.device(self.device):
+                        torch.cuda.manual_seed(0)
+                return self._validation_metrics(episode_windows)
+        finally:
+            self.set_training_mode(was_training)
+
+    def _validation_metrics(self, episode_windows):
+        totals = {}
+        for name in ("one_step", "open_loop"):
+            totals[name] = {
+                "observation_error": 0.0, "observation_values": 0,
+                "candidate_error": 0.0, "candidate_values": 0,
+                "reward_error": 0.0, "terminal_reward_error": 0.0,
+                "continuation_error": 0.0, "terminal_continuation_error": 0.0,
+                "true_positive": 0, "predicted_positive": 0, "actual_positive": 0,
+            }
+        transition_count = 0
+        terminal_count = 0
+        max_open_loop_steps = 0
         for window in episode_windows:
-            sample = self._window_tensordict(window)
-            world_losses, posterior = self.model_loss(sample)
-            mask_logits = posterior["next", "mask_logits"]
-            masks = sample["next", "action_mask"]
-            mask_errors = F.binary_cross_entropy_with_logits(mask_logits, masks, reduction="none")
-            # Belegte und leere Plätze zählen getrennt, damit 254 leere Plätze nicht gewinnen.
-            positives = masks.sum().clamp_min(1)
-            negatives = (1 - masks).sum().clamp_min(1)
-            mask_loss = 0.5 * ((mask_errors * masks).sum() / positives + (mask_errors * (1 - masks)).sum() / negatives)
-            # Die Root-Zustände liegen vor den Aktionen; echte Terminalzustände starten keine Träume.
-            latent = posterior["state"].detach().reshape(-1, self.state_size)
-            belief = posterior["belief"].detach().reshape(-1, self.hidden_dim)
-            actor_input = TensorDict({"state": latent, "belief": belief}, [latent.shape[0]], device=self.device)
-            actor_losses, imagined = self.actor_loss(actor_input)
-            value_losses, _ = self.value_loss(imagined.detach())
-            losses = {}
-            losses.update(world_losses)
-            losses.update(actor_losses)
-            losses.update(value_losses)
-            losses["loss_model_mask"] = mask_loss
-            total = mask_loss.new_zeros(())
-            for name, value in losses.items():
-                if name.startswith("loss_"):
-                    total = total + value.mean()
-                if isinstance(value, torch.Tensor) and value.numel() == 1:
-                    metrics[name] = metrics.get(name, 0.0) + float(value.detach().item()) / len(episode_windows)
-            if not bool(torch.isfinite(total)):
-                raise FloatingPointError("Dreamer hat einen nicht endlichen Lernfehler erzeugt.")
-            metrics["loss"] = metrics.get("loss", 0.0) + float(total.detach().item()) / len(episode_windows)
-            (total / len(episode_windows)).backward()
-        gradient_norm = torch.nn.utils.clip_grad_norm_(self.parameters(), 100.0, error_if_nonfinite=True)
-        self.optimizer.step()
-        metrics["gradient_norm"] = float(gradient_norm)
+            observations = window["observations"]
+            start = window["train_start"]
+            steps = len(window["actions"])
+            if not 0 <= start < steps or len(observations) != steps + 1:
+                raise ValueError("Ein Prüffenster benötigt T Aktionen, T+1 Zustände und einen gültigen Start.")
+            max_open_loop_steps = max(max_open_loop_steps, steps - start)
+            latent = torch.zeros(1, self.state_size, device=self.device)
+            belief = torch.zeros(1, self.hidden_dim, device=self.device)
+            previous_action = torch.zeros(1, self.candidate_size, device=self.device)
+            latent, belief = self._observe(
+                self._flat_observation(observations[0]).unsqueeze(0),
+                latent, belief, previous_action, deterministic=True,
+            )
+            for index, action in enumerate(window["actions"]):
+                action_features = torch.as_tensor(
+                    observations[index]["candidates"][action], dtype=torch.float32,
+                    device=self.device,
+                ).unsqueeze(0)
+                if index == start:
+                    imagined_latent = latent.clone()
+                    imagined_belief = belief.clone()
+                if index >= start:
+                    predicted_logits, _, predicted_belief = self.prior(latent, belief, action_features)
+                    predicted_latent = F.one_hot(
+                        predicted_logits.argmax(-1), self.stochastic_classes,
+                    ).float().flatten(-2)
+                    imagined_logits, _, imagined_belief = self.prior(
+                        imagined_latent, imagined_belief, action_features,
+                    )
+                    imagined_latent = F.one_hot(
+                        imagined_logits.argmax(-1), self.stochastic_classes,
+                    ).float().flatten(-2)
+                    terminal = bool(window["terminated"][index] or window["truncated"][index])
+                    self._add_prediction_errors(
+                        totals["one_step"], predicted_latent, predicted_belief,
+                        observations[index + 1], window["rewards"][index], terminal,
+                    )
+                    self._add_prediction_errors(
+                        totals["open_loop"], imagined_latent, imagined_belief,
+                        observations[index + 1], window["rewards"][index], terminal,
+                    )
+                    transition_count += 1
+                    if terminal:
+                        terminal_count += 1
+                # Nur die Einschrittprüfung erhält danach die wirkliche Folgebeobachtung.
+                latent, belief = self._observe(
+                    self._flat_observation(observations[index + 1]).unsqueeze(0),
+                    latent, belief, action_features, deterministic=True,
+                )
+        if transition_count == 0:
+            raise ValueError("Die Weltmodellprüfung benötigt mindestens einen Übergang.")
+        metrics = {
+            "sequences": len(episode_windows), "transitions": transition_count,
+            "terminal_transitions": terminal_count, "max_open_loop_steps": max_open_loop_steps,
+        }
+        for name, values in totals.items():
+            metrics[f"{name}_observation_mse"] = values["observation_error"] / max(values["observation_values"], 1)
+            metrics[f"{name}_offered_candidate_mse"] = values["candidate_error"] / max(values["candidate_values"], 1)
+            metrics[f"{name}_reward_mae"] = values["reward_error"] / transition_count
+            metrics[f"{name}_continuation_mae"] = values["continuation_error"] / transition_count
+            metrics[f"{name}_mask_precision"] = values["true_positive"] / max(values["predicted_positive"], 1)
+            metrics[f"{name}_mask_recall"] = values["true_positive"] / max(values["actual_positive"], 1)
+            if terminal_count:
+                metrics[f"{name}_terminal_reward_mae"] = values["terminal_reward_error"] / terminal_count
+                metrics[f"{name}_terminal_continuation_mae"] = values["terminal_continuation_error"] / terminal_count
+        for value in metrics.values():
+            if not math.isfinite(value):
+                raise FloatingPointError("Die Weltmodellprüfung lieferte eine nichtendliche Kennzahl.")
         return metrics
+
+    def _add_prediction_errors(self, totals, latent, belief, observation, reward, terminal):
+        target = self._flat_observation(observation)
+        prediction = self.decoder(latent, belief).reshape(-1)
+        totals["observation_error"] += float((prediction - target).square().sum())
+        totals["observation_values"] += target.numel()
+        actual_mask = torch.as_tensor(observation["action_mask"], dtype=torch.bool, device=self.device)
+        predicted_mask = self.mask_head(latent, belief).reshape(-1) > 0
+        totals["true_positive"] += int((actual_mask & predicted_mask).sum())
+        totals["predicted_positive"] += int(predicted_mask.sum())
+        totals["actual_positive"] += int(actual_mask.sum())
+        candidate_slice = self.observation_slices["candidates"]
+        candidate_errors = (prediction[candidate_slice] - target[candidate_slice]).square()
+        candidate_errors = candidate_errors.reshape(self.action_count, self.candidate_size)
+        totals["candidate_error"] += float(candidate_errors[actual_mask].sum())
+        totals["candidate_values"] += int(actual_mask.sum()) * self.candidate_size
+        reward_error = abs(float(self.reward_head(latent, belief).item()) - float(reward))
+        continuation_target = 1.0
+        if terminal:
+            continuation_target = 0.0
+        continuation_error = abs(float(self.continue_head(latent, belief).sigmoid().item()) - continuation_target)
+        totals["reward_error"] += reward_error
+        totals["continuation_error"] += continuation_error
+        if terminal:
+            totals["terminal_reward_error"] += reward_error
+            totals["terminal_continuation_error"] += continuation_error
 
     def _get_constructor_parameters(self):
         data = super()._get_constructor_parameters()

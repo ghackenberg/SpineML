@@ -18,6 +18,19 @@ class SequenceReplay:
         return len(self.episodes)
 
     def add(self, episode):
+        steps = self.validate_episode(episode)
+        self.episodes.append(episode)
+        self.transition_count += steps
+        while len(self.episodes) > 1 and (
+            len(self.episodes) > self.max_episodes or self.transition_count > self.max_transitions
+        ):
+            oldest = self.episodes.popleft()
+            self.transition_count -= len(oldest["actions"])
+        # Eine zu große einzelne Episode bleibt vollständig statt abgeschnitten.
+        self.oversized_episode = self.transition_count > self.max_transitions
+
+    @staticmethod
+    def validate_episode(episode):
         steps = len(episode["actions"])
         if steps < 1 or len(episode["observations"]) != steps + 1:
             raise ValueError("Eine Dreamer-Episode benötigt T Aktionen und T+1 Beobachtungen.")
@@ -30,15 +43,7 @@ class SequenceReplay:
             finished = episode["terminals"][index] or episode["truncations"][index]
             if finished != (index == steps - 1):
                 raise ValueError("Nur der letzte Übergang darf und muss eine Episode beenden.")
-        self.episodes.append(episode)
-        self.transition_count += steps
-        while len(self.episodes) > 1 and (
-            len(self.episodes) > self.max_episodes or self.transition_count > self.max_transitions
-        ):
-            oldest = self.episodes.popleft()
-            self.transition_count -= len(oldest["actions"])
-        # Eine zu große einzelne Episode bleibt vollständig statt abgeschnitten.
-        self.oversized_episode = self.transition_count > self.max_transitions
+        return steps
 
     def sample_sequences(self, batch_size, sequence_length, rng):
         if not self.episodes:

@@ -62,9 +62,8 @@ def main() -> None:
     dreamer_options = parser.add_argument_group("Nur Dreamer")
     dreamer_options.add_argument("--sequence-length", type=positive_int, default=32, help="Zusammenhängende Entscheidungen je Weltmodell-Trainingsfolge.")
     dreamer_options.add_argument("--imagination-horizon", type=positive_int, default=15, help="Vorausberechnete Schritte im gelernten Weltmodell.")
-    dreamer_options.add_argument("--updates-per-episode", type=positive_int, default=1, help="Lernphasen nach jeder eingetroffenen Episode.")
-    dreamer_options.add_argument("--dreamer-replay-episodes", type=positive_int, default=8, help="Höchstens so viele vollständige Episoden im Dreamer-Speicher behalten.")
-    dreamer_options.add_argument("--dreamer-replay-transitions", type=positive_int, default=10000, help="Übergangslimit des Dreamer-Speichers; eine größere einzelne Episode bleibt vollständig erhalten.")
+    dreamer_options.add_argument("--world-model-updates", type=positive_int, default=10, help="Nach der Datensammlung so viele Lernschritte nur für das Weltmodell ausführen.")
+    dreamer_options.add_argument("--imagination-updates", type=positive_int, default=10, help="Danach Actor und Critic so oft im eingefrorenen Weltmodell trainieren; keine neuen Salabim-Läufe.")
     mc_options = parser.add_argument_group("Nur Monte Carlo")
     mc_options.add_argument("--epochs", type=positive_int, default=4, help="Trainingsdurchgänge über die ausgewählten Replay-Episoden.")
     mc_options.add_argument("--mc-replay-episodes", type=positive_int, default=8, help="Höchstens so viele vollständige Episoden im Replay Buffer behalten.")
@@ -76,7 +75,7 @@ def main() -> None:
     mc_options.add_argument("--exploration-fraction", type=positive_float, default=0.3, help="Anteil der Episoden, in dem Epsilon vom Anfangs- zum Endwert sinkt.")
     mc_options.add_argument("--exploration-initial-eps", type=probability, default=1.0)
     mc_options.add_argument("--exploration-final-eps", type=probability, default=0.05)
-    parser.add_argument("--save-replay-buffer", action="store_true", help="Replay Buffer am Ende zusätzlich als replay_buffer.pkl speichern; kann groß werden.")
+    mc_options.add_argument("--save-replay-buffer", action="store_true", help="Monte-Carlo-Replay am Ende zusätzlich als replay_buffer.pkl speichern; kann groß werden.")
     parser.add_argument("--train-seeds", type=nonnegative_int, nargs="+", default=list(range(1, 11)))
     parser.add_argument("--baseline-seeds", type=nonnegative_int, nargs="+", help="Standard: SEEDS der Optimierungsanwendung.")
     parser.add_argument("--evaluation-seeds", type=nonnegative_int, nargs="+", help="Reservierte Test-Seeds; Standard: TEST_SEEDS der Anwendung.")
@@ -90,13 +89,13 @@ def main() -> None:
     args = parser.parse_args()
 
     dreamer_only_flags = (
-        "--sequence-length", "--imagination-horizon", "--updates-per-episode",
-        "--dreamer-replay-episodes", "--dreamer-replay-transitions",
+        "--sequence-length", "--imagination-horizon", "--world-model-updates", "--imagination-updates",
     )
     mc_only_flags = (
         "--epochs", "--mc-replay-episodes", "--mc-replay-transitions",
         "--mc-train-every-episodes", "--mc-replay-sample-episodes",
         "--exploration-fraction", "--exploration-initial-eps", "--exploration-final-eps",
+        "--save-replay-buffer",
     )
     forbidden_flags = mc_only_flags
     if args.algorithm == "monte-carlo":
@@ -105,6 +104,8 @@ def main() -> None:
         option = argument.split("=", 1)[0]
         if option in forbidden_flags:
             parser.error(f"{option} gehört nicht zu --algorithm {args.algorithm}.")
+    if args.algorithm == "dreamer" and args.episodes < 2:
+        parser.error("Dreamer benötigt mindestens 2 Episoden: eine zum Prüfen und mindestens eine zum Lernen des Weltmodells.")
     if args.batch_size is None:
         args.batch_size = 64
         if args.algorithm == "dreamer":
@@ -145,6 +146,15 @@ def main() -> None:
         parser.error(f'Trainingspakete fehlen oder sind nicht ladbar. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("--device cuda wurde gewählt, aber diese PyTorch-Installation erkennt keine CUDA-GPU.")
+    if args.device != "cpu" and torch.cuda.is_available():
+        # Eine erkannte GPU kann trotzdem für echte Berechnungen nicht verfügbar sein.
+        try:
+            probe = torch.empty(1, device="cuda")
+            torch.cuda.synchronize()
+            del probe
+        except RuntimeError as error:
+            reason = str(error).splitlines()[0]
+            parser.error(f"CUDA erkennt die GPU, kann darauf aber keinen Speicher anlegen: {reason}. GPU/Treiber prüfen oder --device cpu verwenden. Es wurde noch keine Simulation gestartet.")
     torch.set_num_threads(1)
     configuration = load_app_configuration()
     baseline_seeds = args.baseline_seeds
@@ -188,9 +198,6 @@ def main() -> None:
         hyperparameters.update({
             "sequence_length": args.sequence_length,
             "imagination_horizon": args.imagination_horizon,
-            "updates_per_episode": args.updates_per_episode,
-            "replay_episodes": args.dreamer_replay_episodes,
-            "replay_transitions": args.dreamer_replay_transitions,
         })
     else:
         algorithm_name = "MonteCarlo"
@@ -226,8 +233,31 @@ def main() -> None:
     if args.algorithm == "monte-carlo":
         manifest["monte_carlo_mode"] = "asynchronous_off_policy_episode_replay"
         manifest["monte_carlo_correction"] = "self_normalised_future_action_importance_weights"
+    else:
+        manifest["dreamer_phases"] = {
+            "mode": "collect_then_fit_then_frozen_world_imagination",
+            "world_model_updates": args.world_model_updates,
+            "imagination_updates": args.imagination_updates,
+            "data_directory": str(output / "world_model_data"),
+        }
+        manifest["collection_policy"] = "fixed_initial_actor"
+        manifest["episode_metrics_phase"] = "collection_before_training"
     write_json(output / "manifest.json", manifest)
     episodes: list[dict] = []
+    phase_events: list[dict] = []
+
+    def report_phase(phase, completed, total, metrics):
+        event = {
+            "phase": phase, "completed": int(completed), "total": int(total),
+            "elapsed_seconds": perf_counter() - training_started_at,
+            "metrics": dict(metrics),
+        }
+        phase_events.append(event)
+        with (output / "phases.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
+        print(f"Dreamer-Phase {phase}: {completed}/{total}", flush=True)
+        if phase == "validation" and completed == total:
+            model.save(output / "checkpoint_world_model.zip")
 
     class TrainingProgress(BaseCallback):
         def __init__(self):
@@ -251,10 +281,15 @@ def main() -> None:
                 event["episode_elapsed_seconds"] = info.get("episode_elapsed_seconds")
                 if args.algorithm == "monte-carlo":
                     event["episode_epsilon"] = info.get("episode_epsilon")
+                else:
+                    event["phase"] = "collection_before_training"
                 episodes.append(event)
                 with (output / "episodes.jsonl").open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
-                print(f"Episode {len(episodes)}: Seed {event['seed']}, abgeschlossen={event['completed']}, Reward={event['reward']:.5f}, Kosten={event['global_cost']:.5f}", flush=True)
+                episode_label = "Episode"
+                if args.algorithm == "dreamer":
+                    episode_label = "Datensammlung, Episode"
+                print(f"{episode_label} {len(episodes)}: Seed {event['seed']}, abgeschlossen={event['completed']}, Reward={event['reward']:.5f}, Kosten={event['global_cost']:.5f}", flush=True)
             checkpoint_count = len(episodes)
             checkpoint_name = f"checkpoint_episodes_{checkpoint_count}.zip"
             if checkpoint_count >= self.next_checkpoint:
@@ -265,6 +300,7 @@ def main() -> None:
     training_env = None
     model = None
     report = None
+    runtime = None
     interrupted = False
     training_started_at = perf_counter()
     try:
@@ -289,13 +325,36 @@ def main() -> None:
                 **hyperparameters,
             )
         model.set_logger(configure(str(output), ["stdout", "csv"]))
+        runtime = {
+            "requested_device": args.device,
+            "actual_device": str(model.device),
+            "torch_version": torch.__version__,
+            "torch_cuda_version": torch.version.cuda,
+            "cuda_available": bool(torch.cuda.is_available()),
+            "gpu_name": None,
+        }
+        if model.device.type == "cuda":
+            runtime["gpu_name"] = torch.cuda.get_device_name(model.device)
+        manifest["runtime"] = runtime
+        write_json(output / "manifest.json", manifest)
+        print(f"Netzberechnungen auf {runtime['actual_device']}; PyTorch {runtime['torch_version']}.", flush=True)
         active_workers = min(args.workers, args.episodes)
         if args.algorithm == "dreamer":
-            print(f"Dreamer: genau {args.episodes} Episoden mit bis zu {active_workers} Simulationsprozessen; nach jeder eingetroffenen Episode {args.updates_per_episode} Lernphase(n) mit realen Folgen und {args.imagination_horizon} Schritten im Weltmodell.", flush=True)
+            print(f"Dreamer: zuerst genau {args.episodes} Salabim-Episoden mit bis zu {active_workers} Simulationsprozessen sammeln. Danach {args.world_model_updates} Weltmodell-Lernschritte und {args.imagination_updates} Actor/Critic-Lernschritte ohne neue Simulationen ausführen.", flush=True)
         else:
             print(f"Monte Carlo: genau {args.episodes} Episoden mit bis zu {active_workers} unabhängigen Simulationsprozessen; nach je {args.mc_train_every_episodes} fertigen Episoden mit bis zu {args.mc_replay_sample_episodes} Replay-Episoden trainieren. Solange Episoden übrig sind, starten fertige Worker sofort mit dem neuesten verfügbaren Netzstand neu.", flush=True)
         try:
-            model.learn(total_episodes=args.episodes, callback=TrainingProgress())
+            if args.algorithm == "dreamer":
+                model.learn(
+                    total_episodes=args.episodes,
+                    world_model_updates=args.world_model_updates,
+                    imagination_updates=args.imagination_updates,
+                    data_directory=output / "world_model_data",
+                    callback=TrainingProgress(),
+                    phase_callback=report_phase,
+                )
+            else:
+                model.learn(total_episodes=args.episodes, callback=TrainingProgress())
         except KeyboardInterrupt:
             interrupted = True
             print("Training unterbrochen; aktuellen Modellstand speichern ...", flush=True)
@@ -306,6 +365,8 @@ def main() -> None:
         for episode in episodes:
             if episode["completed"]:
                 completed.append(episode)
+        if args.algorithm == "dreamer" and not completed:
+            print("Hinweis: Keine gesammelte Produktion wurde abgeschlossen. Die Daten enthalten nur Limitabbrüche; daraus lässt sich noch keine gute Fabriksteuerung ableiten.", flush=True)
         mean_completed_global_cost = None
         if completed:
             costs = []
@@ -341,6 +402,16 @@ def main() -> None:
             report["last_importance_max_weight"] = model.last_importance_max_weight
         else:
             report["last_train_metrics"] = model.last_train_metrics
+            report["episode_metrics_phase"] = "collection_before_training"
+            report["collection_policy"] = "fixed_initial_actor"
+            report["last_validation_metrics"] = model.last_validation_metrics
+            report["dreamer_phases"] = manifest["dreamer_phases"]
+            report["phase_events"] = phase_events
+            report["training_phase"] = model.training_phase
+            report["phase_progress"] = model.phase_progress
+            report["phase_elapsed_seconds"] = model.phase_elapsed_seconds
+            report["world_model_updates_completed"] = model.world_model_updates_completed
+            report["imagination_updates_completed"] = model.imagination_updates_completed
     except BaseException as error:
         actual_timesteps = 0
         if model is not None:
@@ -349,6 +420,9 @@ def main() -> None:
                   "requested_episodes": args.episodes,
                   "actual_timesteps": actual_timesteps,
                   "episodes": len(episodes), "baseline_elapsed_seconds": baseline_report["elapsed_seconds"]}
+        if model is not None and args.algorithm == "dreamer":
+            report["training_phase"] = model.training_phase
+            report["phase_events"] = phase_events
         raise
     finally:
         try:
@@ -361,6 +435,8 @@ def main() -> None:
             raise
         finally:
             if report is not None:
+                if runtime is not None:
+                    report["runtime"] = runtime
                 report["training_elapsed_seconds"] = perf_counter() - training_started_at
                 report["total_elapsed_seconds"] = perf_counter() - started_at
                 write_json(output / "training_report.json", report)

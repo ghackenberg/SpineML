@@ -35,7 +35,7 @@ def _send_result(results, message, abort):
 
 def _run_dreamer_worker(
     worker_id, factory, observation_space, action_space, policy_kwargs,
-    seed, snapshots, results, abort, remaining_episodes,
+    seed, saved_parameters, version, results, abort, remaining_episodes,
 ):
     environment = None
     failure = None
@@ -50,18 +50,20 @@ def _run_dreamer_worker(
         policy = CandidateDreamerPolicy(
             observation_space, action_space, _actor_learning_rate, **policy_kwargs,
         ).to("cpu")
+        # Alle Sammel-Episoden verwenden denselben unveränderten Netzstand.
+        parameters = th.load(BytesIO(saved_parameters), map_location="cpu", weights_only=True)
+        policy.load_state_dict(parameters, strict=True)
+        del parameters, saved_parameters
         policy.set_training_mode(False)
         episode_index = 0
         while not abort.is_set():
             with remaining_episodes.get_lock():
                 if abort.is_set() or remaining_episodes.value == 0:
                     break
+                # Eindeutige Nummer vor dem Start, unabhängig von der späteren Laufdauer.
+                collection_ticket = remaining_episodes.value
                 remaining_episodes.value -= 1
-            # Der veröffentlichte Netzstand und das Gedächtnis gelten für genau diese Episode.
-            version, saved_parameters = snapshots["latest"]
-            # Nur eigene Snapshots laden und sämtliche Tensoren auf der CPU halten.
-            parameters = th.load(BytesIO(saved_parameters), map_location="cpu", weights_only=True)
-            policy.load_state_dict(parameters, strict=True)
+            # Das rekurrente Gedächtnis beginnt für jede Episode wieder leer.
             recurrent_state = None
             started_at = perf_counter()
             observation, reset_info = environment.reset()
@@ -107,10 +109,11 @@ def _run_dreamer_worker(
                 "worker_id": worker_id,
                 "worker_pid": os.getpid(),
                 "episode_index": episode_index,
+                "collection_ticket": collection_ticket,
                 "elapsed_seconds": perf_counter() - started_at,
             }
             _send_result(results, ("episode", worker_id, episode), abort)
-            # Ohne gemeinsame Episodenbarriere den neuesten fertigen Netzstand übernehmen.
+            # Ohne gemeinsame Episodenbarriere die nächste Sammel-Episode beginnen.
     except BaseException:
         failure = traceback.format_exc()
     finally:
@@ -127,7 +130,7 @@ def _run_dreamer_worker(
 
 
 class DreamerEpisodeRunner:
-    """CPU-Worker simulieren; der Hauptprozess veröffentlicht neue Netzstände."""
+    """CPU-Worker sammeln Episoden mit einem festen Netzstand."""
 
     def __init__(self, factories, observation_space, action_space, policy_kwargs, seed=0):
         self.factories = tuple(factories)
@@ -138,8 +141,6 @@ class DreamerEpisodeRunner:
         self.policy_kwargs = dict(policy_kwargs)
         self.seed = int(seed)
         self._context = multiprocessing.get_context("spawn")
-        self._manager = None
-        self._snapshots = None
         self._results = None
         self._abort = self._context.Event()
         self._remaining_episodes = None
@@ -157,17 +158,20 @@ class DreamerEpisodeRunner:
         self._started = True
         self._worker_count = min(len(self.factories), total_episodes)
         try:
-            self._manager = self._context.Manager()
-            self._snapshots = self._manager.dict()
+            import torch as th
+
+            # Den festen Netzstand nur einmal serialisieren, nicht nach jeder Episode.
+            with BytesIO() as stream:
+                th.save(policy_state, stream)
+                saved_parameters = stream.getvalue()
             self._results = self._context.Queue(maxsize=max(2, self._worker_count))
             self._remaining_episodes = self._context.Value("q", total_episodes)
-            self.publish(policy_state, version)
             for worker_id in range(self._worker_count):
                 process = self._context.Process(
                     target=_run_dreamer_worker,
                     args=(
                         worker_id, self.factories[worker_id], self.observation_space,
-                        self.action_space, self.policy_kwargs, self.seed, self._snapshots,
+                        self.action_space, self.policy_kwargs, self.seed, saved_parameters, int(version),
                         self._results, self._abort, self._remaining_episodes,
                     ),
                 )
@@ -176,16 +180,6 @@ class DreamerEpisodeRunner:
         except BaseException:
             self.close()
             raise
-
-    def publish(self, policy_state, version):
-        if self._snapshots is None or self._closed:
-            raise RuntimeError("Der Episoden-Runner ist nicht aktiv.")
-        import torch as th
-
-        # Torch speichert gemeinsam verwendete Gewichte nur einmal im Snapshot.
-        with BytesIO() as stream:
-            th.save(policy_state, stream)
-            self._snapshots["latest"] = (int(version), stream.getvalue())
 
     @property
     def finished(self):
@@ -236,5 +230,3 @@ class DreamerEpisodeRunner:
         if self._results is not None:
             self._results.cancel_join_thread()
             self._results.close()
-        if self._manager is not None:
-            self._manager.shutdown()

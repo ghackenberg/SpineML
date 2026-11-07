@@ -80,6 +80,7 @@ sources/
             │   ├── CandidateDreamer.py
             │   ├── DreamerEpisodeRunner.py
             │   ├── DreamerNetworks.py
+            │   ├── EpisodeDataset.py
             │   └── SequenceReplay.py
             ├── MonteCarlo/
             │   ├── CandidateMonteCarlo.py
@@ -2959,9 +2960,10 @@ flowchart TB
 
 Wann das Netz angepasst wird, hängt vom gewählten Lernverfahren ab:
 Dreamer lernt aus zusammenhängenden Erfahrungsfolgen; Monte Carlo verwendet
-vollständige beobachtete Returns. Beide sammeln Episoden, ohne auf alle Worker
-zu warten. Während der
-zentrale Prozess trainiert, können andere Worker ihre Episoden weiter ausführen.
+vollständige beobachtete Returns. Bei Monte Carlo können andere Worker weiter
+simulieren, während der zentrale Prozess das Netz trainiert. Der Dreamer-Befehl
+trennt dagegen Datensammlung und Lernen: Erst werden die Salabim-Episoden
+gesammelt und die Worker beendet, dann werden die Netze trainiert.
 Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
 
 **Während einer Episode: Aktionen auswählen und ausführen**
@@ -3180,7 +3182,9 @@ verwendet die öffentlichen DreamerV3-Bausteine aus
 [TorchRL 0.14](https://docs.pytorch.org/rl/0.14/reference/dreamer_v3.html).
 Das ist eine **kompakte, an dieses Projekt angepasste Dreamer-Implementierung**,
 nicht die unveränderte Benchmark-Konfiguration der ursprünglichen Veröffentlichung.
-Die Salabim-Fabrik bleibt die echte Trainingsumgebung und läuft weiterhin auf der CPU.
+Die Salabim-Fabrik erzeugt die echten Erfahrungen und läuft weiterhin auf der CPU.
+Das gelernte **Weltmodell ist ein Ersatzmodell**, keine auf die GPU übertragene
+Salabim-Simulation.
 
 Dreamer lernt drei zusammenarbeitende Bestandteile:
 
@@ -3199,40 +3203,91 @@ bisherigen Verlauf und zusätzlich zufällige kategoriale Zustandsvariablen.
 Voreingestellt sind `hidden_dim=128`, `stochastic_variables=8` und
 `stochastic_classes=8`. Das ist ein anderer Netzaufbau als das Monte-Carlo-Q-Netz.
 
-**Ablauf beim Lernen:**
+**Ablauf des Trainingsbefehls:**
 
-1. Die Worker sammeln vollständige Episoden mit der echten Salabim-Simulation.
-   Ein fertiger Worker übernimmt den neuesten verfügbaren Netzstand und startet
-   die nächste Episode, solange das Episodenbudget noch nicht ausgeschöpft ist.
-2. Der Erfahrungsspeicher bewahrt die Episoden auf. Zum Lernen werden
-   zusammenhängende Ausschnitte gewählt, nicht unabhängig gemischte Einzelaktionen.
-   Mindestens ein Ausschnitt je Lernphase enthält das Ende einer gespeicherten
-   Episode, damit die seltene Endbelohnung vorkommt. Die übrigen Ausschnitte
-   beginnen an zufälligen gespeicherten Übergängen. Diese Auswahl gewichtet
-   Episodenenden bewusst stärker als eine gleichverteilte Auswahl aller Ausschnitte.
-   Der vorangegangene Episodenverlauf wird ohne Gewichtsanpassung verarbeitet,
-   damit der interne Zustand zum Beginn des Ausschnitts passt.
-3. Das Weltmodell lernt aus diesen realen Folgen. Verglichen werden unter anderem
-   vorhergesagte und beobachtete Merkmale, Belohnungen und Episodenfortsetzung.
-4. Aus den gelernten internen Zuständen werden zusätzliche Verläufe im
-   **Weltmodell** berechnet. Dafür wird keine weitere Salabim-Simulation gestartet.
-   Daraus entstehen die Lernfehler für Actor und Critic. Anschließend werden
-   die Netzparameter anhand der Weltmodell-, Actor- und Critic-Fehler angepasst.
-5. Der aktualisierte Netzstand steht für danach gestartete Episoden bereit.
-   Die Netzkopie einer bereits laufenden Episode bleibt unverändert.
+Das Trainingsskript ruft dafür die Methode `CandidateDreamer.learn()` auf.
+`total_episodes` bestimmt die echten Salabim-Episoden, `world_model_updates`
+die Lernschritte für das Ersatzmodell und `imagination_updates` die anschließenden
+Lernschritte für Actor und Critic. Die Methode führt diese Phasen nacheinander aus:
+
+1. **Salabim-Erfahrungen sammeln:** Die Worker führen insgesamt `--episodes`
+   Episoden aus. Die Verläufe werden im Ordner `world_model_data` gespeichert;
+   die Prüfepisode wird darin als separate Datei `validation_episode.pkl`
+   vom Lernen ausgeschlossen.
+   In dieser Phase wird das Netz noch
+   nicht trainiert: Die Aktionen wählt der anfängliche, noch untrainierte Actor
+   unter den tatsächlich angebotenen Kandidaten. Ein fertiger Worker beginnt die
+   nächste Episode, solange das Episodenbudget reicht. Danach werden alle
+   Simulationsprozesse beendet.
+2. **Ersatzmodell lernen:** Das Weltmodell wird mit den gespeicherten realen
+   Verläufen trainiert. `--world-model-updates` bestimmt die Anzahl dieser
+   Lernschritte. Actor und Critic werden dabei noch nicht angepasst.
+3. **Vorhersagen prüfen:** Die zuerst gestartete Episode wird vollständig zum
+   Prüfen zurückgehalten und nicht zum Lernen verwendet. Die Vorhersagen werden
+   mit diesem echten Verlauf verglichen; die Prüfkennzahlen werden protokolliert.
+   Das ist ein zurückgehaltener Verlauf, kein zusätzlicher Test-Seed.
+   Kleine Prüfkennzahlen allein beweisen nicht, dass längere vorausberechnete
+   Fabrikabläufe zuverlässig sind. Der Stand nach dieser Prüfung wird als
+   `checkpoint_world_model.zip` gespeichert.
+4. **Actor und Critic im Ersatzmodell trainieren:** Das Weltmodell wird
+   **eingefroren**, seine Parameter bleiben unverändert. Actor und Critic lernen
+   aus vorausberechneten Verläufen dieses Modells. `--imagination-updates` bestimmt
+   die Zahl ihrer Lernschritte. **Dafür werden keine neuen Salabim-Episoden gestartet.**
+5. **Steuerung in Salabim testen:** Ein eigener
+   [Testbefehl](#auf-getrennten-test-seeds-vergleichen) prüft anschließend, welche
+   Produktionsergebnisse die gelernte Steuerung in der echten Simulation erzielt.
 
 ```mermaid
 flowchart TD
     S["Salabim: reale Episoden sammeln"]
-    R["Erfahrungsspeicher: zusammenhängende Folgen"]
-    W["Weltmodell-Lernfehler aus realen Folgen berechnen"]
-    I["Verläufe im Weltmodell vorausberechnen"]
-    A["Actor- und Critic-Lernfehler berechnen"]
-    U["Netzparameter mit gemeinsamem Optimiererschritt anpassen"]
+    R["Echte Verläufe speichern und Simulationsprozesse beenden"]
+    W["Weltmodell aus gespeicherten Verläufen lernen"]
+    V["Vorhersagen anhand echter Verläufe prüfen"]
+    F["Weltmodell einfrieren"]
+    I["Actor und Critic mit vorgestellten Verläufen trainieren"]
+    T["Eigener Testbefehl: Steuerung wieder in Salabim prüfen"]
 
-    S --> R --> W --> I --> A --> U
-    U -->|"Neuer Netzstand für neue Episoden"| S
+    S --> R --> W --> V --> F --> I --> T
 ```
+
+Die Schritte 2 bis 4 benötigen keine neuen Simulationsläufe. Mit einer passenden
+CUDA-fähigen PyTorch-Installation können ihre Netzberechnungen auf der GPU laufen.
+Die CPU übernimmt weiterhin die Programmsteuerung. Das ist keine Garantie für
+kürzeres Training oder eine gute Steuerung: Ein fehlerhaftes Ersatzmodell kann
+Actor und Critic auf falsche Abläufe trainieren.
+Die Prüfung protokolliert Vorhersagefehler, legt aber keine automatische
+Freigabegrenze für die Modellqualität fest. Dass danach trainiert wird,
+bedeutet deshalb nicht, dass das Ersatzmodell bereits genau genug ist.
+
+**Was wird geprüft?** `one_step_*` bewertet jeweils den vorhergesagten nächsten
+Zustand; vor der nächsten Vorhersage wird wieder die echte Beobachtung verwendet.
+`open_loop_*` lässt das Modell mehrere Schritte ohne diese Korrektur vorhersagen.
+Beide Prüfungen verwenden die gespeicherten echten Aktionen, noch keine vom
+Actor frei gewählte neue Fabrikroute. Die Kennzahlen erfassen:
+
+- **Vorhersagefehler:** Abweichungen der Beobachtungsmerkmale, der tatsächlich
+  angebotenen Kandidaten, der Belohnung und der Episodenfortsetzung. Kleinere
+  Fehler sind besser; die seltene Endbelohnung wird zusätzlich getrennt ausgewiesen.
+- **Aktionsmaske:** `mask_precision` und `mask_recall` prüfen, wie gut das Modell
+  angebotene von leeren Kandidatenplätzen unterscheidet. Höhere Werte sind besser.
+
+Es müssen mindestens zwei Episoden gesammelt werden: eine zum Prüfen und
+mindestens eine zum Lernen. Wie viele reale Episoden und Lernschritte für ein
+verlässliches Ersatzmodell nötig sind, muss experimentell ermittelt werden.
+
+**Welche Daten werden zum Lernen verwendet?** Der Erfahrungsspeicher bewahrt
+vollständige Episoden auf. Zum Lernen werden zusammenhängende Ausschnitte gewählt,
+nicht unabhängig gemischte Einzelaktionen. Mindestens ein Ausschnitt je Lernschritt
+enthält das Ende einer gespeicherten Episode, damit die seltene Endbelohnung
+vorkommt. Die übrigen Ausschnitte beginnen an zufälligen Übergängen. Episodenenden
+werden dadurch bewusst stärker berücksichtigt. Der vorangegangene Episodenverlauf
+wird ohne Gewichtsanpassung verarbeitet, damit der interne Zustand zum Beginn
+des Ausschnitts passt.
+Die Prüfepisode bleibt getrennt. Alle übrigen gesammelten Episoden bleiben auf
+der Festplatte als Trainingsdaten erhalten. Zum Lernen werden nur die benötigten
+Episoden geladen. Dadurch werden teure Simulationsdaten nicht schon vor dem
+Lernen wegen einer kleinen Replay-Grenze verworfen. Der Datenordner kann groß
+werden; einzelne lange Episoden benötigen beim Laden entsprechend Arbeitsspeicher.
 
 **Kandidaten und Masken:** In der echten Simulation gilt immer die vom
 Generator gelieferte Aktionsmaske. Leere Plätze können nicht gewählt werden.
@@ -3389,10 +3444,13 @@ Das Training speichert im Ausgabeordner:
 | --- | --- |
 | `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
 | `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
-| `checkpoint_episodes_*.zip` | Zwischenstände nach standardmäßig `10` weiteren Episoden, zum Beispiel `checkpoint_episodes_10.zip`. `--checkpoint-every` ändert den Abstand. |
-| `replay_buffer.pkl` | Optionaler Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`: vollständige Episoden, aus denen das jeweilige Verfahren seine Trainingsdaten auswählt. |
+| `checkpoint_episodes_*.zip` | Zwischenstände nach standardmäßig `10` weiteren Episoden. Bei Dreamer liegen diese in der Datensammlung, also noch vor dem Lernen. `--checkpoint-every` ändert den Abstand. |
+| `checkpoint_world_model.zip` | Nur Dreamer: Netzstand nach Lernen und Prüfung des Ersatzmodells, vor dem anschließenden Actor/Critic-Training. |
+| `world_model_data/` | Nur Dreamer: alle gesammelten Trainingsepisoden auf der Festplatte. `validation_episode.pkl` enthält separat den Prüfverlauf und wird nie zum Lernen ausgewählt. |
+| `replay_buffer.pkl` | Optionaler Monte-Carlo-Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Dreamer speichert seine Trainingsepisoden immer in `world_model_data/`. |
 | `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl, Abschluss- oder Abbruchstatus sowie Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
 | `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
+| `phases.jsonl` | Nur Dreamer: Fortschritt und Kennzahlen von Datensammlung, Weltmodelltraining, Prüfung und Actor/Critic-Training. |
 | `training_report.json` | Status, Umfang und Rechenzeiten. `requested_episodes` ist das angeforderte Episodenbudget; `actual_timesteps` zählt zusätzlich die gesammelten Entscheidungen. |
 
 **Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
@@ -3431,11 +3489,28 @@ installiert diese Bibliotheken:
 .\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
 ```
 
-**Dreamer trainieren:**
+**Dreamer mit getrennten Phasen trainieren:**
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --output rl_runs/dreamer --episodes 100 --workers 4
+.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --output rl_runs/dreamer --episodes 100 --workers 4 --world-model-updates 10 --imagination-updates 10
 ```
+
+Der Befehl sammelt zuerst 100 echte Episoden. Danach führt er 10 Lernschritte
+für das Ersatzmodell und 10 Lernschritte für Actor und Critic aus. Diese kleinen
+voreingestellten Lernbudgets dienen dem Einstieg, **nicht als Nachweis eines
+ausreichend genauen Ersatzmodells oder einer fertig trainierten Steuerung**.
+`phases.jsonl` protokolliert die Phasen und ihre Kennzahlen. Die Zusammenfassung
+steht in `training_report.json`.
+Manifest und Trainingsbericht enthalten außerdem `runtime`: gewünschtes und
+tatsächlich verwendetes Rechengerät, PyTorch-Version, CUDA-Version der
+PyTorch-Installation und bei GPU-Ausführung den Namen der verwendeten GPU.
+Damit ist beispielsweise erkennbar, ob `--device auto` tatsächlich eine GPU
+oder die CPU gewählt hat.
+Die Produktionskosten und Belohnungen der gesammelten Episoden stammen beim
+Dreamer-Befehl **vom anfänglichen Actor vor dem Training**, nicht von der danach
+gelernten Steuerung. Das gilt auch für `mean_completed_global_cost` im
+Trainingsbericht. `episode_metrics_phase="collection_before_training"` kennzeichnet
+diese Werte. Erst der getrennte Testbefehl bewertet die fertig trainierte Steuerung.
 
 **Monte Carlo trainieren:**
 
@@ -3460,13 +3535,13 @@ gemeinsam trainierte Netz und das Lernverfahren liegen im übergeordneten
 Trainingsprozess. Jeder Worker entscheidet mit seiner lokalen, während einer
 Episode unveränderten Netzkopie und liefert danach den vollständigen Verlauf.
 
-**Dreamer: Wann werden die Netze verändert?** Nach jeder eingetroffenen Episode
-werden `--updates-per-episode` Lernphasen ausgeführt. Eine Lernphase verwendet
-`--batch-size` reale Erfahrungsfolgen von jeweils bis zu `--sequence-length`
-Entscheidungen. Die Weltmodellfehler stammen aus realen Folgen; Actor und Critic
-verwenden Verläufe mit `--imagination-horizon` vorausberechneten Schritten.
-Die übrigen Worker können
-währenddessen weiterlaufen.
+**Dreamer: Wann werden die Netze verändert?** Erst nach Ende der Datensammlung.
+Zunächst wird nur das Weltmodell trainiert, anschließend nur Actor und Critic.
+Ein Lernschritt verwendet `--batch-size` gespeicherte Erfahrungsfolgen von jeweils
+bis zu `--sequence-length` Entscheidungen. Für Actor und Critic werden daraus
+Verläufe mit `--imagination-horizon` Modellschritten vorausberechnet. Während
+dieser Lernphasen laufen keine Salabim-Worker mehr. Den Ablauf erklärt
+[Dreamer: mit einem gelernten Weltmodell lernen](#dreamer-mit-einem-gelernten-weltmodell-lernen).
 
 **Monte Carlo: Wann wird das Netz verändert?** Nach jeweils
 `--mc-train-every-episodes` neu eingetroffenen Episoden, ohne auf die übrigen
@@ -3495,9 +3570,8 @@ Entscheidungen; automatisch übernommene Einzelkandidaten zählen nicht mit.
 | `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse; höchstens so viele wie das Episodenbudget. |
 | `--sequence-length` | `32` | Nur Dreamer: Entscheidungen je zusammenhängendem Trainingsausschnitt. |
 | `--imagination-horizon` | `15` | Nur Dreamer: vorausberechnete Schritte je Verlauf im Weltmodell. |
-| `--updates-per-episode` | `1` | Nur Dreamer: Lernphasen nach jeder eingetroffenen Episode. |
-| `--dreamer-replay-episodes` | `8` | Nur Dreamer: maximale Zahl gespeicherter Episoden. |
-| `--dreamer-replay-transitions` | `10000` | Nur Dreamer: Übergangslimit des Episodenspeichers; eine einzelne größere Episode bleibt vollständig erhalten. |
+| `--world-model-updates` | `10` | Nur Dreamer: Lernschritte für das Weltmodell nach der Datensammlung. |
+| `--imagination-updates` | `10` | Nur Dreamer: Lernschritte für Actor und Critic im danach eingefrorenen Weltmodell. |
 | `--epochs` | `4` | Nur Monte Carlo: Trainingsdurchgänge über die ausgewählten Replay-Episoden. |
 | `--mc-replay-episodes` | `8` | Nur Monte Carlo: maximale Zahl vollständig gespeicherter Episoden. |
 | `--mc-replay-transitions` | `10000` | Nur Monte Carlo: zusätzliches Übergangslimit des Episodenspeichers; eine einzelne größere Episode wird allein vollständig behalten. |
@@ -3511,17 +3585,18 @@ Entscheidungen; automatisch übernommene Einzelkandidaten zählen nicht mit.
 | `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
 | `--device` | `cpu` | Rechengerät der zentralen Netze und ihrer Anpassung. Salabim und die lokalen Worker-Netzkopien bleiben auf der CPU. |
-| `--save-replay-buffer` | aus | Erfahrungsspeicher zusätzlich am Trainingsende speichern. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
+| `--save-replay-buffer` | aus | Nur Monte Carlo: Erfahrungsspeicher zusätzlich am Trainingsende speichern. Dreamer speichert seine Daten ohnehin auf der Festplatte. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
 | `--checkpoint-every` | `10` | Abstand gespeicherter Zwischenstände in Episoden. |
 
-Beide Verfahren speichern vollständige Episoden mit Beobachtungen, Aktionen,
+Beide Verfahren sammeln vollständige Episoden mit Beobachtungen, Aktionen,
 Belohnungen und Netzversionen. Monte Carlo bewahrt zusätzlich die damaligen
-Auswahlwahrscheinlichkeiten auf. Zusätzlich besitzen
-laufende Worker eigene Verläufe und lokale Netzkopien. Dieser Speicher kann bei
-langen Episoden und vielen Workern groß werden. Episoden- und Übergangslimit
-begrenzen den Replay Buffer; sie begrenzen nicht automatisch alle gleichzeitig
-laufenden Simulationen oder deren Übergabepuffer. Mehr Worker garantieren auch
-hier keine kürzere Trainingszeit. Für den Rechner mit 20 logischen Prozessoren
+Auswahlwahrscheinlichkeiten auf. Seine Episoden- und Übergangslimits begrenzen
+den Replay Buffer. Beim Dreamer-Befehl bleiben alle gesammelten Trainingsdaten
+auf der Festplatte erhalten. Zusätzlich besitzen laufende Worker eigene
+Verläufe und lokale Netzkopien. Dieser Speicher kann bei langen Episoden und
+vielen Workern groß werden; die Replay-Grenzen von Monte Carlo begrenzen nicht
+alle gleichzeitig laufenden Simulationen oder deren Übergabepuffer.
+Mehr Worker garantieren auch hier keine kürzere Trainingszeit. Für den Rechner mit 20 logischen Prozessoren
 kann `--workers 20` geprüft werden; der zentrale Lernprozess benötigt ebenfalls
 CPU-Zeit und Arbeitsspeicher.
 
@@ -3532,6 +3607,16 @@ Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.
 PyTorch-Installation und einen geeigneten NVIDIA-Treiber. Die aktuelle
 Implementierung wurde auf der CPU geprüft; ein GPU-Geschwindigkeitsvorteil
 wurde noch nicht gemessen.
+
+**Lokaler GPU-Status:** In `.venv-gpu` ist zusätzlich PyTorch `2.14.1+cu126`
+installiert; die bestehende CPU-Umgebung `.venv` bleibt unverändert.
+Die RTX A1000 wird erkannt, aber der tatsächliche Speichertest schlägt derzeit
+mit `CUDA-capable device(s) is/are busy or unavailable` fehl. Deshalb ist auf
+diesem Rechner noch kein erfolgreicher GPU-Trainingslauf nachgewiesen.
+Die genaue Ursache in der GPU-/Treiberumgebung ist noch offen.
+Der Trainingsbefehl prüft bei `cuda` oder erkannter GPU unter `auto` deshalb
+eine echte Speicherzuteilung **vor** den Baseline-Läufen. Schlägt sie fehl,
+startet keine Simulation; mit `--device cpu` bleibt das Training nutzbar.
 
 ### Auf getrennten Test-Seeds vergleichen
 

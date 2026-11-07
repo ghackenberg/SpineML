@@ -3604,19 +3604,36 @@ Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
 Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.
 `cuda` ohne von PyTorch erkannte CUDA-Unterstützung führt zu einem Fehler.
 `cpu` ist voreingestellt. GPU-Ausführung benötigt eine passende CUDA-fähige
-PyTorch-Installation und einen geeigneten NVIDIA-Treiber. Die aktuelle
-Implementierung wurde auf der CPU geprüft; ein GPU-Geschwindigkeitsvorteil
-wurde noch nicht gemessen.
+PyTorch-Installation und einen geeigneten NVIDIA-Treiber. Die Implementierung
+wurde auf CPU und GPU funktionsgeprüft; ein GPU-Geschwindigkeitsvorteil wurde
+noch nicht nachgewiesen.
 
-**Lokaler GPU-Status:** In `.venv-gpu` ist zusätzlich PyTorch `2.14.1+cu126`
-installiert; die bestehende CPU-Umgebung `.venv` bleibt unverändert.
-Die RTX A1000 wird erkannt, aber der tatsächliche Speichertest schlägt derzeit
-mit `CUDA-capable device(s) is/are busy or unavailable` fehl. Deshalb ist auf
-diesem Rechner noch kein erfolgreicher GPU-Trainingslauf nachgewiesen.
-Die genaue Ursache in der GPU-/Treiberumgebung ist noch offen.
-Der Trainingsbefehl prüft bei `cuda` oder erkannter GPU unter `auto` deshalb
-eine echte Speicherzuteilung **vor** den Baseline-Läufen. Schlägt sie fehl,
-startet keine Simulation; mit `--device cpu` bleibt das Training nutzbar.
+**GPU auf diesem Rechner:** `.venv-gpu` enthält PyTorch `2.14.1+cu126` und nutzt
+die übrigen Projektpakete aus `.venv`. Die bestehende CPU-Umgebung und der
+NVIDIA-Treiber wurden nicht verändert; beide Umgebungsordner bleiben erhalten.
+
+```console
+.\.venv-gpu\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --device cuda --output rl_runs/dreamer_gpu
+```
+
+Die Anwendung setzt `CUDA_MODULE_LOADING=LAZY` **vor dem ersten PyTorch-Import**.
+CUDA lädt dadurch Module und Kernel erst bei Bedarf; eine ausdrücklich gesetzte
+andere Einstellung wird nicht überschrieben. Diese Prozess-Einstellung
+initialisiert selbst noch keine GPU und ändert keine Windows-Einstellungen.
+Sie behebt auf diesem Rechner den zuvor aufgetretenen CUDA-Speicherfehler.
+Der Hintergrund der Einstellung steht in der
+[NVIDIA-Dokumentation zu Lazy Loading](https://docs.nvidia.com/cuda/archive/12.6.0/cuda-c-programming-guide/index.html#lazy-loading).
+
+**Funktionsprüfung:** Zwei vollständige Salabim-Episoden mit insgesamt `2593`
+Entscheidungen wurden auf der CPU gesammelt. Danach wurden Ersatzmodelltraining,
+Vorhersageprüfung und Actor-/Critic-Training auf der RTX A1000 ausgeführt.
+Beim Actor-/Critic-Training blieben die Ersatzmodellparameter unverändert.
+Das ist noch kein Nachweis für ein ausreichend genaues Modell, eine bessere
+Steuerung oder eine kürzere Trainingszeit.
+
+Der Trainingsbefehl prüft bei `cuda` oder erkannter GPU unter `auto` eine echte
+Speicherzuteilung **vor** den Baseline-Läufen. Schlägt sie fehl, startet keine
+Simulation; mit `--device cpu` bleibt das Training nutzbar.
 
 ### Auf getrennten Test-Seeds vergleichen
 

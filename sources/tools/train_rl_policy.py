@@ -131,6 +131,8 @@ def main() -> None:
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         parser.error("Der Ausgabeordner muss neu oder leer sein; vorhandene Modelle werden nicht überschrieben.")
 
+    # CUDA-Module bei Bedarf laden; vor dem ersten PyTorch-Import festlegen.
+    os.environ.setdefault("CUDA_MODULE_LOADING", "LAZY")
     try:
         import torch
         from stable_baselines3.common.callbacks import BaseCallback
@@ -330,6 +332,7 @@ def main() -> None:
             "actual_device": str(model.device),
             "torch_version": torch.__version__,
             "torch_cuda_version": torch.version.cuda,
+            "cuda_module_loading": os.environ.get("CUDA_MODULE_LOADING"),
             "cuda_available": bool(torch.cuda.is_available()),
             "gpu_name": None,
         }

@@ -1,6 +1,10 @@
 """Optionale RL-Umgebung; bestehende Heuristiken benötigen dieses Paket nicht."""
 
 from importlib.util import find_spec
+import os
+
+# Vor optionalen PyTorch-Imports setzen; initialisiert selbst noch keine GPU.
+os.environ.setdefault("CUDA_MODULE_LOADING", "LAZY")
 
 from .Shared.RLCandidatePolicy import DecisionRequest, RLCandidatePolicy
 from .Shared.RLObservationEncoder import RLObservationEncoder

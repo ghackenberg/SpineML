@@ -297,13 +297,16 @@ class MonteCarloAlgorithm(BaseAlgorithm):
                     observations, actions, returns, indices,
                 )
                 masks = candidate_action_mask(observation_tensors, self.action_space.n)
-                if not bool(th.gather(masks, dim=1, index=action_tensor).all()):
+                selected_actions_valid = masks.gather(dim=1, index=action_tensor)
+                if not bool(selected_actions_valid.all()):
                     raise ValueError("Eine gespeicherte Monte-Carlo-Aktion ist ungültig.")
-                predictions = self.policy.q_net(observation_tensors).gather(dim=1, index=action_tensor)
+                q_values = self.policy.q_net(observation_tensors)
+                predictions = q_values.gather(dim=1, index=action_tensor)
                 # Das Lernziel bleibt der tatsächliche Return; korrigiert wird der Einfluss.
                 weight_tensor = th.as_tensor(weights[indices], dtype=th.float32, device=self.device).reshape(-1, 1)
                 squared_errors = F.mse_loss(predictions, return_tensor, reduction="none")
-                loss = (weight_tensor * squared_errors).sum() * len(actions) / len(indices)
+                weighted_errors = weight_tensor * squared_errors
+                loss = weighted_errors.sum() * len(actions) / len(indices)
                 self.policy.optimizer.zero_grad()
                 loss.backward()
                 th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)

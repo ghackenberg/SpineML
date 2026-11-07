@@ -145,6 +145,7 @@ class CandidateDreamerPolicy(BasePolicy):
         if observation_space["candidates"].shape[0] != self.action_count:
             raise ValueError("Kandidatenzahl und Aktionsraum müssen übereinstimmen.")
 
+        # Weltmodell: Beobachtung einlesen, Zustand fortschreiben und Folgen vorhersagen.
         self.encoder = DreamerV3MLP(
             self.observation_size, hidden_dim, depth=2, num_cells=hidden_dim,
         )
@@ -164,6 +165,7 @@ class CandidateDreamerPolicy(BasePolicy):
         self.reward_head = _LatentHead(feature_size, 1, hidden_dim)
         self.continue_head = _LatentHead(feature_size, 1, hidden_dim)
         self.mask_head = _LatentHead(feature_size, self.action_count, hidden_dim)
+        # Actor: jedem angebotenen Kandidaten einen Auswahlwert geben.
         self.actor_network = _CandidateActor(
             self.decoder, self.mask_head, self.observation_slices["candidates"],
             self.action_count, self.candidate_size, feature_size, hidden_dim,
@@ -179,6 +181,7 @@ class CandidateDreamerPolicy(BasePolicy):
                 return_log_prob=True, log_prob_key="action_log_prob",
             ),
         )
+        # Critic: den erwarteten zukünftigen Ertrag des Zustands schätzen.
         self.value_head = _LatentHead(feature_size, 1, hidden_dim)
         value = TensorDictModule(self.value_head, in_keys=["state", "belief"], out_keys=["state_value"])
         prior = TensorDictModule(
@@ -313,7 +316,7 @@ class CandidateDreamerPolicy(BasePolicy):
         length = len(actions) - start
         if length < 1 or len(observations) != len(actions) + 1:
             raise ValueError("Ein Dreamer-Lernfenster benötigt passende Zustände und mindestens eine Aktion.")
-        # Der unveränderte Episodenprefix stellt den heutigen rekurrenten Zustand wieder her.
+        # Der Episodenanfang rekonstruiert das Gedächtnis mit dem aktuellen Netzstand.
         with torch.no_grad():
             latent = torch.zeros(1, self.state_size, device=self.device)
             belief = torch.zeros(1, self.hidden_dim, device=self.device)
@@ -362,6 +365,30 @@ class CandidateDreamerPolicy(BasePolicy):
         """Trainiert nur Actor und Critic; die Weltmodellgewichte bleiben unverändert."""
         return self._train_sequences(episode_windows, "imagination")
 
+    def _world_model_losses(self, sample):
+        losses, posterior = self.model_loss(sample)
+        mask_logits = posterior["next", "mask_logits"]
+        masks = sample["next", "action_mask"]
+        mask_errors = F.binary_cross_entropy_with_logits(mask_logits, masks, reduction="none")
+        # Belegte und leere Plätze zählen getrennt, damit leere Plätze nicht gewinnen.
+        positives = masks.sum().clamp_min(1)
+        negatives = (1 - masks).sum().clamp_min(1)
+        losses["loss_model_mask"] = 0.5 * (
+            (mask_errors * masks).sum() / positives
+            + (mask_errors * (1 - masks)).sum() / negatives
+        )
+        return losses, posterior
+
+    def _imagination_losses(self, posterior):
+        # Zustände vor echten Aktionen, nicht nach dem Episodenende.
+        latent = posterior["state"].detach().reshape(-1, self.state_size)
+        belief = posterior["belief"].detach().reshape(-1, self.hidden_dim)
+        actor_input = TensorDict({"state": latent, "belief": belief}, [latent.shape[0]], device=self.device)
+        losses, imagined = self.actor_loss(actor_input)
+        value_losses, _ = self.value_loss(imagined.detach())
+        losses.update(value_losses)
+        return losses
+
     def _train_sequences(self, episode_windows, phase):
         if not episode_windows:
             raise ValueError("Dreamer benötigt mindestens ein Lernfenster.")
@@ -369,6 +396,7 @@ class CandidateDreamerPolicy(BasePolicy):
         parameters = list(self.parameters())
         previous_flags = []
         active_parameters = set()
+        # Je nach Phase nur das Weltmodell oder nur Actor und Critic verändern.
         if phase != "imagination":
             for parameter in self.model_loss.world_model.parameters():
                 active_parameters.add(id(parameter))
@@ -392,27 +420,10 @@ class CandidateDreamerPolicy(BasePolicy):
                     with torch.no_grad():
                         posterior = self.model_loss.world_model(sample)
                 else:
-                    world_losses, posterior = self.model_loss(sample)
+                    world_losses, posterior = self._world_model_losses(sample)
                     losses.update(world_losses)
-                    mask_logits = posterior["next", "mask_logits"]
-                    masks = sample["next", "action_mask"]
-                    mask_errors = F.binary_cross_entropy_with_logits(mask_logits, masks, reduction="none")
-                    # Belegte und leere Plätze zählen getrennt, damit leere Plätze nicht gewinnen.
-                    positives = masks.sum().clamp_min(1)
-                    negatives = (1 - masks).sum().clamp_min(1)
-                    losses["loss_model_mask"] = 0.5 * (
-                        (mask_errors * masks).sum() / positives
-                        + (mask_errors * (1 - masks)).sum() / negatives
-                    )
                 if phase != "world_model":
-                    # Zustände vor echten Aktionen, nicht nach dem Episodenende.
-                    latent = posterior["state"].detach().reshape(-1, self.state_size)
-                    belief = posterior["belief"].detach().reshape(-1, self.hidden_dim)
-                    actor_input = TensorDict({"state": latent, "belief": belief}, [latent.shape[0]], device=self.device)
-                    actor_losses, imagined = self.actor_loss(actor_input)
-                    value_losses, _ = self.value_loss(imagined.detach())
-                    losses.update(actor_losses)
-                    losses.update(value_losses)
+                    losses.update(self._imagination_losses(posterior))
                 total = torch.zeros((), device=self.device)
                 for name, value in losses.items():
                     if name.startswith("loss_"):

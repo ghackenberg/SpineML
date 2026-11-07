@@ -295,8 +295,8 @@ class RLObservationEncoder:
             machine_id = state.get("machine_name")
             if not machine_id:
                 machine_id = job.get("selected_machine_id")
-                if not machine_id:
-                    machine_id = state.get("next_machine_id")
+            if not machine_id:
+                machine_id = state.get("next_machine_id")
             owned_stores = {}
             for node in _walk(state):
                 if "store_id" in node and "count" in node:
@@ -377,19 +377,19 @@ class RLObservationEncoder:
         operation_id = payload.get("selected_operation_id")
         if not operation_id:
             operation_id = payload.get("operation_id")
-            if not operation_id:
-                operation_id = job.get("selected_operation_id")
-                if not operation_id:
-                    operation_id = current.get("next_operation_id")
+        if not operation_id:
+            operation_id = job.get("selected_operation_id")
+        if not operation_id:
+            operation_id = current.get("next_operation_id")
         machine_id = payload.get("selected_machine_id")
         if not machine_id:
             machine_id = payload.get("planned_machine_id")
-            if not machine_id:
-                machine_id = job.get("selected_machine_id")
-                if not machine_id:
-                    machine_id = current.get("machine_name")
-                    if not machine_id:
-                        machine_id = current.get("next_machine_id")
+        if not machine_id:
+            machine_id = job.get("selected_machine_id")
+        if not machine_id:
+            machine_id = current.get("machine_name")
+        if not machine_id:
+            machine_id = current.get("next_machine_id")
         if machine_id is None and payload.get("sim_machine_id") is not None:
             machine_id = states[payload["sim_machine_id"]]["machine_name"]
         operation = model.get("operations_by_id", {}).get(operation_id, {})

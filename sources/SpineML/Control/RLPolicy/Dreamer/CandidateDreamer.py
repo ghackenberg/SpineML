@@ -210,60 +210,14 @@ class CandidateDreamer(BaseAlgorithm):
             raise ValueError("Dreamer benötigt episode_factories für unabhängige Simulations-Worker.")
         callback = self._prepare_training(total_episodes, callback)
         callback.on_training_start(locals(), globals())
-        validation_replay = SequenceReplay(1, self.replay_transitions)
-        if data_directory is None:
-            self.replay_buffer = SequenceReplay(total_episodes, sys.maxsize)
-        else:
-            self.replay_buffer = EpisodeDataset(data_directory)
         try:
-            started_at = perf_counter()
-            self._report_phase("collection", 0, total_episodes, phase_callback)
-            self._episode_runner = DreamerEpisodeRunner(
-                self.episode_factories, self.observation_space, self.action_space,
-                self.policy_kwargs, self.seed or 0,
+            validation_replay = self._collect_episodes(
+                total_episodes, callback, phase_callback, data_directory,
             )
-            callback.on_rollout_start()
-            try:
-                self._episode_runner.start(
-                    self.policy.state_dict(), self.policy_version, total_episodes=total_episodes,
-                )
-                while not self._episode_runner.finished:
-                    episode = self._episode_runner.get_completed()
-                    if episode is None:
-                        continue
-                    # Diese vollständige Episode wird nie für Parameteränderungen verwendet.
-                    validation_episode = episode["collection_ticket"] == total_episodes
-                    if validation_episode:
-                        validation_replay.add(episode)
-                        if data_directory is not None:
-                            path = Path(data_directory) / "validation_episode.pkl"
-                            with path.open("xb") as stream:
-                                pickle.dump(episode, stream, protocol=pickle.HIGHEST_PROTOCOL)
-                    if not self._record_episode(episode, callback, store_in_replay=not validation_episode):
-                        self.training_phase = "cancelled"
-                        return self
-                    self._report_phase("collection", self.episodes_collected, total_episodes, phase_callback)
-            finally:
-                self._episode_runner.close()
-                self._episode_runner = None
-                self.phase_elapsed_seconds["collection"] = perf_counter() - started_at
-            callback.on_rollout_end()
-
+            if self.training_phase == "cancelled":
+                return self
             self._learn_offline_updates("world_model", world_model_updates, phase_callback)
-
-            started_at = perf_counter()
-            self._report_phase("validation", 0, 1, phase_callback)
-            validation_rng = np.random.default_rng(self.seed)
-            windows = validation_replay.sample_sequences(
-                self.batch_size, self.sequence_length, validation_rng,
-            )
-            self.last_validation_metrics = self.policy.validate_sequences(windows)
-            self.last_validation_metrics["held_out_episodes"] = len(validation_replay)
-            validation_seed = validation_replay.episodes[0].get("seed")
-            if validation_seed is not None:
-                self.last_validation_metrics["held_out_seed"] = int(validation_seed)
-            self.phase_elapsed_seconds["validation"] = perf_counter() - started_at
-            self._report_phase("validation", 1, 1, phase_callback, self.last_validation_metrics)
+            self._validate_world_model(validation_replay, phase_callback)
             # Ab hier bleiben Encoder, Dynamik, Decoder und Vorhersageköpfe unverändert.
             self._learn_offline_updates("imagination", imagination_updates, phase_callback)
             self.policy_version += 1
@@ -271,3 +225,60 @@ class CandidateDreamer(BaseAlgorithm):
         finally:
             callback.on_training_end()
         return self
+
+    def _collect_episodes(self, total_episodes, callback, phase_callback, data_directory):
+        """Sammelt reale Episoden und hält eine davon für die Weltmodellprüfung zurück."""
+        validation_replay = SequenceReplay(1, self.replay_transitions)
+        if data_directory is None:
+            self.replay_buffer = SequenceReplay(total_episodes, sys.maxsize)
+        else:
+            self.replay_buffer = EpisodeDataset(data_directory)
+        started_at = perf_counter()
+        self._report_phase("collection", 0, total_episodes, phase_callback)
+        self._episode_runner = DreamerEpisodeRunner(
+            self.episode_factories, self.observation_space, self.action_space,
+            self.policy_kwargs, self.seed or 0,
+        )
+        callback.on_rollout_start()
+        try:
+            self._episode_runner.start(
+                self.policy.state_dict(), self.policy_version, total_episodes=total_episodes,
+            )
+            while not self._episode_runner.finished:
+                episode = self._episode_runner.get_completed()
+                if episode is None:
+                    continue
+                # Diese vollständige Episode wird nie für Parameteränderungen verwendet.
+                validation_episode = episode["collection_ticket"] == total_episodes
+                if validation_episode:
+                    validation_replay.add(episode)
+                    if data_directory is not None:
+                        path = Path(data_directory) / "validation_episode.pkl"
+                        with path.open("xb") as stream:
+                            pickle.dump(episode, stream, protocol=pickle.HIGHEST_PROTOCOL)
+                if not self._record_episode(episode, callback, store_in_replay=not validation_episode):
+                    self.training_phase = "cancelled"
+                    return validation_replay
+                self._report_phase("collection", self.episodes_collected, total_episodes, phase_callback)
+        finally:
+            self._episode_runner.close()
+            self._episode_runner = None
+            self.phase_elapsed_seconds["collection"] = perf_counter() - started_at
+        callback.on_rollout_end()
+        return validation_replay
+
+    def _validate_world_model(self, validation_replay, phase_callback):
+        """Prüft das Weltmodell mit der zurückgehaltenen Episode, ohne weiterzulernen."""
+        started_at = perf_counter()
+        self._report_phase("validation", 0, 1, phase_callback)
+        validation_rng = np.random.default_rng(self.seed)
+        windows = validation_replay.sample_sequences(
+            self.batch_size, self.sequence_length, validation_rng,
+        )
+        self.last_validation_metrics = self.policy.validate_sequences(windows)
+        self.last_validation_metrics["held_out_episodes"] = len(validation_replay)
+        validation_seed = validation_replay.episodes[0].get("seed")
+        if validation_seed is not None:
+            self.last_validation_metrics["held_out_seed"] = int(validation_seed)
+        self.phase_elapsed_seconds["validation"] = perf_counter() - started_at
+        self._report_phase("validation", 1, 1, phase_callback, self.last_validation_metrics)

@@ -140,7 +140,8 @@ def main() -> None:
         if args.algorithm == "dreamer":
             from SpineML.Control.RLPolicy.Dreamer.CandidateDreamer import CandidateDreamer
             from SpineML.Control.RLPolicy.Dreamer.DreamerNetworks import CandidateDreamerPolicy
-        from SpineML.Control.RLPolicy.MonteCarlo.MonteCarloAlgorithm import MonteCarloAlgorithm, MonteCarloPolicy
+        else:
+            from SpineML.Control.RLPolicy.MonteCarlo.MonteCarloAlgorithm import MonteCarloAlgorithm, MonteCarloPolicy
         from SpineML.Control.RLPolicy.Shared.TrainingSupport import (
             EnvironmentFactory, build_artifact_context, calibrate_references, load_app_configuration,
         )
@@ -193,17 +194,19 @@ def main() -> None:
         "batch_size": args.batch_size, "learning_rate": args.learning_rate,
         "gamma": 1.0, "seed": args.seed,
     }
-    algorithm_name = "Dreamer"
-    policy_name = "CandidateDreamerPolicy"
-    policy_kwargs = {"hidden_dim": 128, "stochastic_variables": 8, "stochastic_classes": 8}
     if args.algorithm == "dreamer":
+        algorithm_class = CandidateDreamer
+        policy_class = CandidateDreamerPolicy
+        algorithm_name = "Dreamer"
+        policy_kwargs = {"hidden_dim": 128, "stochastic_variables": 8, "stochastic_classes": 8}
         hyperparameters.update({
             "sequence_length": args.sequence_length,
             "imagination_horizon": args.imagination_horizon,
         })
     else:
+        algorithm_class = MonteCarloAlgorithm
+        policy_class = MonteCarloPolicy
         algorithm_name = "MonteCarlo"
-        policy_name = "MonteCarloPolicy"
         policy_kwargs = {"embedding_dim": 32, "hidden_dim": 64}
         hyperparameters.update({
             "exploration_fraction": args.exploration_fraction,
@@ -222,7 +225,7 @@ def main() -> None:
         versions["torchrl"] = importlib.metadata.version("torchrl")
         versions["tensordict"] = importlib.metadata.version("tensordict")
     manifest = {
-        "algorithm": algorithm_name, "policy_class": policy_name,
+        "algorithm": algorithm_name, "policy_class": policy_class.__name__,
         "artifact_context": context, "baseline": baseline_report,
         "train_seeds": args.train_seeds, "evaluation_seeds": evaluation_seeds,
         "workers": args.workers, "requested_episodes": args.episodes,
@@ -314,18 +317,11 @@ def main() -> None:
             factories.append(factory)
         # Diese Umgebung liefert nur die Eingabegrößen; simuliert wird in eigenen Workern.
         training_env = factories[0]()
-        if args.algorithm == "dreamer":
-            model = CandidateDreamer(
-                CandidateDreamerPolicy, training_env, episode_factories=factories,
-                policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
-                **hyperparameters,
-            )
-        else:
-            model = MonteCarloAlgorithm(
-                MonteCarloPolicy, training_env, episode_factories=factories,
-                policy_kwargs=manifest["policy_kwargs"], device=args.device, verbose=1,
-                **hyperparameters,
-            )
+        model = algorithm_class(
+            policy_class, training_env, episode_factories=factories,
+            policy_kwargs=policy_kwargs, device=args.device, verbose=1,
+            **hyperparameters,
+        )
         model.set_logger(configure(str(output), ["stdout", "csv"]))
         runtime = {
             "requested_device": args.device,

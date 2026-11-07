@@ -66,7 +66,6 @@ def _run_episode_worker(
             probabilities = []
             terminated = False
             truncated = False
-            info = reset_info
 
             while not terminated and not truncated:
                 if abort.is_set():

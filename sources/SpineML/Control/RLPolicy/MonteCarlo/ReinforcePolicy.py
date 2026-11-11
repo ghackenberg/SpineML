@@ -1,4 +1,4 @@
-"""Ein gemeinsames Netz bewertet alle gültigen Aktionskandidaten."""
+"""Actor-Netz für das Monte-Carlo-Verfahren REINFORCE von Tianshou."""
 
 from __future__ import annotations
 

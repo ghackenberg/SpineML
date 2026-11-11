@@ -1,4 +1,4 @@
-"""Maskiertes REINFORCE mit dem fertigen Lernverfahren von Tianshou."""
+"""Monte-Carlo-Training mit Tianshous fertigem REINFORCE-Verfahren."""
 
 from .ReinforceModel import ReinforceModel
 from .ReinforcePolicy import ReinforcePolicy

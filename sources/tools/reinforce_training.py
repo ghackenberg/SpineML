@@ -16,7 +16,7 @@ def _write_json(path: Path, value: dict) -> None:
 def train_reinforce(args, context: dict, baseline_report: dict, started_at: float) -> None:
     import torch
 
-    from SpineML.Control.RLPolicy.Reinforce.ReinforceModel import ReinforceModel
+    from SpineML.Control.RLPolicy.MonteCarlo.ReinforceModel import ReinforceModel
     from SpineML.Control.RLPolicy.Shared.TrainingSupport import EnvironmentFactory
 
     output = args.output.resolve()

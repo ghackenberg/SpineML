@@ -1,4 +1,4 @@
-"""Bindet den fertigen Tianshou-Trainer an die Fabrikumgebung an."""
+"""Bindet Tianshous Monte-Carlo-Verfahren REINFORCE an die Fabrikumgebung an."""
 
 from __future__ import annotations
 

@@ -77,7 +77,7 @@ sources/
         │   ├── HeuristicPolicyFactory.py
         │   └── WeightOptimization/LocalHeuristicWeightOptimizer.py
         └── RLPolicy/
-            ├── Reinforce/
+            ├── MonteCarlo/
             │   ├── ReinforceModel.py
             │   └── ReinforcePolicy.py
             └── Shared/
@@ -2879,6 +2879,8 @@ nicht automatisch für die vollständige Optimierung.
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
 Für das neuronale Training wird ausschließlich **Tianshou REINFORCE** verwendet.
+Die zugehörigen Dateien liegen im Ordner `Control/RLPolicy/MonteCarlo`,
+weil REINFORCE ein Monte-Carlo-Lernverfahren ist.
 Die Simulation, der ActionGenerator sowie Heuristik und Zufallspolicy bleiben
 unverändert. Frühere eigene Q-Lernverfahren und Dreamer gehören nicht mehr zum
 aktiven Trainingspfad; ihre alten Netzstände sind nicht kompatibel und müssen
@@ -2888,8 +2890,8 @@ neu trainiert werden.
 
 | Datei oder Bibliothek | Aufgabe |
 | --- | --- |
-| [ReinforcePolicy.py](sources/SpineML/Control/RLPolicy/Reinforce/ReinforcePolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
-| [ReinforceModel.py](sources/SpineML/Control/RLPolicy/Reinforce/ReinforceModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
+| [ReinforcePolicy.py](sources/SpineML/Control/RLPolicy/MonteCarlo/ReinforcePolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
+| [ReinforceModel.py](sources/SpineML/Control/RLPolicy/MonteCarlo/ReinforceModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
 | [train_rl_policy.py](sources/tools/train_rl_policy.py) | Liest die Trainingsparameter und bereitet Fabrikmodell und globale Bewertung vor. |
 | [reinforce_training.py](sources/tools/reinforce_training.py) | Schreibt Fortschritt, Zwischenstände, Manifest und Trainingsbericht. Keine eigene Lernregel. |
 | [Shared](sources/SpineML/Control/RLPolicy/Shared) | Gemeinsame Kandidatenauswahl, Beobachtungsencoder, Reward, Gymnasium-Umgebung und Einsatz trainierter Netze. |

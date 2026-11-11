@@ -1,4 +1,4 @@
-"""Vergleicht eine Dreamer- oder Monte-Carlo-Policy auf unbenutzten Test-Seeds."""
+"""Vergleicht eine Tianshou-REINFORCE-Policy auf unbenutzten Test-Seeds."""
 
 from __future__ import annotations
 
@@ -26,19 +26,16 @@ def nonnegative_int(value: str) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", type=Path, required=True, help="Trainingsordner mit manifest.json und model.zip.")
-    parser.add_argument("--checkpoint", default="model.zip", help="Dateiname eines Checkpoints im Trainingsordner.")
+    parser.add_argument("--run-dir", type=Path, required=True, help="Trainingsordner mit manifest.json und gespeichertem Checkpoint.")
+    parser.add_argument("--checkpoint", help="Optionaler Checkpoint-Dateiname im Trainingsordner; Standard: checkpoint_file aus dem Manifest, sonst model.pt.")
     parser.add_argument("--model", type=Path, help="Identische Modelldatei an einem anderen Speicherort.")
     parser.add_argument("--seeds", type=nonnegative_int, nargs="+", help="Standard: reservierte Test-Seeds aus manifest.json.")
     parser.add_argument("--output", type=Path, help="Standard: evaluation.json im Trainingsordner.")
     parser.add_argument("--optimized-weights", type=Path, help="Optional: JSON mit HeuristicWeights oder optimization_result.best_weights.")
     parser.add_argument("--skip-comparisons", action="store_true", help="Nur das RL-Modell ausführen, ohne Zufall und Standardheuristik.")
-    parser.add_argument("--stochastic", "--explore", dest="explore", action="store_true", help="Dreamer: Aktionen zufällig aus seiner Verteilung ziehen; Monte Carlo: gespeicherte Epsilon-Exploration verwenden.")
+    parser.add_argument("--stochastic", "--explore", dest="explore", action="store_true", help="Aktionen zufällig aus den gelernten Auswahlwahrscheinlichkeiten ziehen; sonst jeweils die wahrscheinlichste gültige Aktion wählen.")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
-    checkpoint = directory / args.checkpoint
-    if Path(args.checkpoint).name != args.checkpoint:
-        parser.error("--checkpoint muss ein Dateiname innerhalb des Trainingsordners sein.")
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
@@ -46,8 +43,10 @@ def main() -> None:
     if not isinstance(manifest, dict):
         parser.error("Das Manifest muss einen RL-Trainingslauf beschreiben.")
     try:
-        from SpineML.Control.RLPolicy.Shared.TrainedPolicy import training_algorithm_classes
+        from SpineML.Control.RLPolicy.Shared.TrainedPolicy import training_algorithm_classes, training_checkpoint_path
 
+        manifest_checkpoint = training_checkpoint_path(directory, manifest)
+        checkpoint = training_checkpoint_path(directory, manifest, checkpoint_file=args.checkpoint)
         algorithm_class, policy_class = training_algorithm_classes(manifest)
     except (ImportError, ValueError) as error:
         parser.error(str(error))
@@ -80,9 +79,7 @@ def main() -> None:
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
     algorithm = manifest["algorithm"]
-    policy_name = "RL (Dreamer)"
-    if algorithm == "MonteCarlo":
-        policy_name = "RL (Monte Carlo)"
+    policy_name = "RL (Tianshou REINFORCE)"
     torch.set_num_threads(1)
     context = manifest["artifact_context"]
     model_path = validate_artifact_context(context, args.model)
@@ -103,10 +100,9 @@ def main() -> None:
                                 "weights": asdict(optimized_weights)}
         except (OSError, ValueError, TypeError, KeyError) as error:
             parser.error(f"Optimierter Gewichtssatz nicht lesbar: {error}")
-    output = directory / "evaluation.json"
-    if args.output:
-        output = args.output.resolve()
-    if output == directory / "manifest.json" or output.suffix == ".zip":
+    output = (args.output if args.output else directory / "evaluation.json").resolve()
+    protected_files = {(directory / "manifest.json").resolve(), checkpoint.resolve(), manifest_checkpoint.resolve()}
+    if output in protected_files or output.suffix.lower() in (".zip", ".pt"):
         parser.error("Ein Auswertungsbericht darf weder Manifest noch Modell-Checkpoint ersetzen.")
     output.parent.mkdir(parents=True, exist_ok=True)
     python_rng = random.getstate()
@@ -115,13 +111,13 @@ def main() -> None:
         with torch.random.fork_rng(devices=[]):
             network = algorithm_class.load(
                 checkpoint, device="cpu", seed=None,
-                custom_objects={"policy_class": policy_class},
             )
     finally:
         random.setstate(python_rng)
         np.random.set_state(numpy_rng)
     if not isinstance(network.policy, policy_class):
         parser.error("Der Checkpoint enthält nicht die im Manifest angegebene Netzklasse.")
+    network.policy.set_training_mode(False)
     environment = SpineRLEnv(model_path, evaluation, **context["environment"])
     if network.observation_space != environment.observation_space or network.action_space != environment.action_space:
         environment.close()
@@ -262,8 +258,6 @@ def main() -> None:
               "artifact_context": context, "optimized_weights_source": optimized_source,
               "summary": summary, "runs": results,
               "elapsed_seconds": perf_counter() - started_at}
-    if algorithm == "MonteCarlo":
-        report["exploration_rate"] = float(network.exploration_rate)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print("\nVergleich (Mittelwerte nur, wenn sämtliche Test-Seeds abgeschlossen wurden):")
     for item in summary:

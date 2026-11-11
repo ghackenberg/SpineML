@@ -27,9 +27,7 @@ rl = ["gymnasium>=1.0,<2"]
 rl-training = [
     "gymnasium>=1.0,<2",
     "torch>=2.8,<3",
-    "stable-baselines3>=2.9.2,<2.10",
-    "torchrl==0.14.1",
-    "tensordict==0.14.3",
+    "tianshou==2.0.1",
 ]
 
 [tool.setuptools]

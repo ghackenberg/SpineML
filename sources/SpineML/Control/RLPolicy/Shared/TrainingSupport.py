@@ -241,13 +241,15 @@ class EpisodeSeedWrapper(gym.Wrapper):
         # Auch bei übergebenem seed den nächsten konfigurierten Trainings-Seed verwenden.
         episode_seed = self.seeds[(self.rank + self.episode_index) % len(self.seeds)]
         observation, info = self.env.reset(seed=episode_seed, options=options)
-        self.episode_index += 1
+        # Wiederholtes reset() ohne Episode überspringt keinen Trainings-Seed.
         return observation, self._info(info)
 
     def step(self, action):
         observation, reward, terminated, truncated, info = self.env.step(action)
+        if terminated or truncated:
+            self.episode_index += 1
         if truncated:
-            # Beide Trainer behandeln das Sicherheitslimit als endgültigen Fehlschlag.
+            # Ein Sicherheitslimit ist für das Training ein endgültiger Fehlschlag.
             info = dict(info)
             info["training_limit_terminated"] = True
             terminated = True
@@ -267,7 +269,6 @@ class EnvironmentFactory:
     env_config: dict
     seeds: tuple[int, ...] = (1,)
     rank: int = 0
-    monitor: bool = True
     compact_info: bool = True
 
     def __call__(self):
@@ -283,9 +284,4 @@ class EnvironmentFactory:
             self.rank,
             compact_info=self.compact_info,
         )
-        if self.monitor:
-            # Eine normale .[rl]-Installation benötigt keine Trainingsabhängigkeiten.
-            from stable_baselines3.common.monitor import Monitor
-
-            environment = Monitor(environment)
         return environment

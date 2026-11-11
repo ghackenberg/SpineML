@@ -9,7 +9,7 @@ Maschinen. Diese README beschreibt den Zweig `Foroogh`.
   wählt Aktionen; die Simulation führt diese aus.
 - **Steuerungen vergleichen:** Die heuristische Policy und die Zufallspolicy
   werden anhand derselben Produktionskennzahlen verglichen. Optional lässt
-  sich eine neuronale Kandidatenauswahl mit Dreamer oder Monte Carlo trainieren und auf
+  sich eine neuronale Kandidatenauswahl mit Tianshou REINFORCE trainieren und auf
   getrennten Test-Seeds mit diesen Steuerungen vergleichen.
 - **Heuristik verbessern:** Die Gewichtssuche prüft verschiedene lokale
   Gewichtssätze in vollständigen Simulationsläufen. Unabhängige Läufe können
@@ -52,6 +52,7 @@ sources/
 │   ├── measure_simulation_runtime.py
 │   ├── run_rl_episode.py
 │   ├── train_rl_policy.py
+│   ├── reinforce_training.py
 │   └── evaluate_rl_policy.py
 └── SpineML/
     ├── Configuration/
@@ -76,18 +77,10 @@ sources/
         │   ├── HeuristicPolicyFactory.py
         │   └── WeightOptimization/LocalHeuristicWeightOptimizer.py
         └── RLPolicy/
-            ├── Dreamer/
-            │   ├── CandidateDreamer.py
-            │   ├── DreamerEpisodeRunner.py
-            │   ├── DreamerNetworks.py
-            │   ├── EpisodeDataset.py
-            │   └── SequenceReplay.py
-            ├── MonteCarlo/
-            │   ├── MonteCarloAlgorithm.py
-            │   ├── AsyncEpisodeRunner.py
-            │   └── EpisodeReplayBuffer.py
+            ├── Reinforce/
+            │   ├── ReinforceModel.py
+            │   └── ReinforcePolicy.py
             └── Shared/
-                ├── CandidateQNetwork.py
                 ├── RLCandidatePolicy.py
                 ├── RLObservationEncoder.py
                 ├── RLReward.py
@@ -2885,826 +2878,256 @@ nicht automatisch für die vollständige Optimierung.
 
 ## RLPolicy: neuronale Kandidatenauswahl und Training
 
-Die Dateien sind nach ihrer Aufgabe getrennt:
+Für das neuronale Training wird ausschließlich **Tianshou REINFORCE** verwendet.
+Die Simulation, der ActionGenerator sowie Heuristik und Zufallspolicy bleiben
+unverändert. Frühere eigene Q-Lernverfahren und Dreamer gehören nicht mehr zum
+aktiven Trainingspfad; ihre alten Netzstände sind nicht kompatibel und müssen
+neu trainiert werden.
 
-- **[Dreamer](sources/SpineML/Control/RLPolicy/Dreamer):** Weltmodell und darauf trainierte Aktionsauswahl.
-- **[MonteCarlo](sources/SpineML/Control/RLPolicy/MonteCarlo):** das Monte-Carlo-Lernverfahren.
-- **[Shared](sources/SpineML/Control/RLPolicy/Shared):** Simulationsanbindung, Beobachtungen, Belohnung und Laden trainierter Netze. `CandidateQNetwork` enthält das Kandidatennetz für Monte Carlo.
+### Zuständigkeiten
 
-**RL** steht für **Reinforcement Learning**. Die RL-Steuerung verwendet ein
-neuronales Netz, um aus den Aktionen des [ActionGenerators](#actiongenerator)
-eine auszuwählen. Das Netz soll durch viele Simulationsläufe lernen, welche
-Entscheidungen zu günstigeren Produktionsergebnissen führen.
-
-**Unterschied zur Heuristik:** Bei der [heuristischen Optimierung](#optimierungsvorgang)
-werden lokale `HeuristicWeights` für fest programmierte Bewertungsregeln gesucht.
-Bei RL werden stattdessen die **internen Parameter des neuronalen Netzes**
-trainiert: die Zahlenwerte, mit denen es seine Auswahl berechnet.
-Monte Carlo schätzt für jede Aktion einen **Q-Wert**, also ihre erwartete
-spätere Belohnung. Dreamer lernt zusätzlich ein Modell möglicher Folgezustände
-und trainiert damit seine Aktionsauswahl. Der heuristische Evaluator wird
-bei beiden nicht verwendet. Heuristik und `RandomPolicy` bleiben
-für den Vergleich verfügbar.
-
-Ein gestarteter Simulationslauf heißt beim RL **Episode**. Der reguläre
-Abschluss ist erreicht, wenn **alle Jobprozesse beendet sind**.
-
-Für RL-Versuche gibt es zusätzlich Sicherheitsgrenzen für die Anzahl der
-Entscheidungen (`max_decisions`) und die simulierte Zeit (`max_simulation_time`).
-Ein noch untrainiertes Netz könnte beispielsweise immer wieder Warten wählen.
-Die Grenzen verhindern, dass ein solcher Versuch unbegrenzt weiterläuft.
-Wird eine Grenze erreicht, obwohl Jobs noch unfertig sind, gilt die Episode
-als **abgebrochen, nicht als erfolgreich abgeschlossen**. Die genauen
-[Abbruchbedingungen](#reward-und-episodenende) sind unten beschrieben.
-
-**Überblick: Agent–Environment-Kreislauf**
-
-Im Training gibt es dieselbe Rückkopplung wie im üblichen RL-Grundmodell:
-Der **Agent** wählt eine Aktion; das **Environment** liefert eine Beobachtung
-und eine Belohnung zurück.
-
-```mermaid
-flowchart TB
-    A["Agent mit Dreamer oder Monte Carlo"]
-    E["Environment mit Fabriksimulation"]
-
-    A -->|"action Aₜ"| E
-    E -->|"State Sₜ₊₁"| A
-    E -->|"reward Rₜ₊₁"| A
-
-    style A fill:#ffffff,stroke:#246bff,color:#333333
-    style E fill:#ffffff,stroke:#246bff,color:#333333
-    linkStyle default stroke:#246bff
-```
-
-- **Agent:** Wählt einen angebotenen Kandidaten. Zur Verfügung stehen
-  [Dreamer](#dreamer-mit-einem-gelernten-weltmodell-lernen) und
-  [Monte Carlo](#monte-carlo-aus-vollständigen-episoden-lernen).
-  Beide erhalten dieselben Beobachtungsfelder, verwenden aber unterschiedliche
-  Netze und Lernverfahren.
-- **Environment:** `SpineRLEnv` implementiert die Gymnasium-Schnittstelle
-  mit `reset()` und `step()`. Im Hintergrund simuliert Salabim die Fabrik.
-  Gymnasium ist hier der Schnittstellenstandard, nicht der Fabriksimulator.
-- **Action:** Der Agent übergibt die Nummer eines angebotenen Kandidaten.
-  `RLCandidatePolicy` übernimmt diesen Index und stellt die ausgewählten
-  Aktionen über die Bridge zur Ausführung bereit. Die möglichen Aktionen
-  stammen vom `SpineActionGenerator`.
-- **State (Beobachtung):** `RLObservationEncoder` übersetzt Zustandsdaten und
-  angebotene Kandidaten in Zahlenfelder und Masken. Diese erhält das Netz
-  als Eingabe, nicht die laufenden Salabim-Objekte.
-- **Reward:** Solange die Episode weiterläuft, liefert `SpineRLEnv` die
-  Belohnung `0`. Am Episodenende berechnet `RLReward` den Wert
-  `1 / (1 + global_cost)` bei regulärem Abschluss oder `-1` bei einem Limitabbruch.
-  Diese Belohnung wird zum Lernen verwendet; sie ist kein zusätzliches
-  Eingabefeld der Beobachtung.
-
-Wann das Netz angepasst wird, hängt vom gewählten Lernverfahren ab:
-Dreamer lernt aus zusammenhängenden Erfahrungsfolgen; Monte Carlo verwendet
-vollständige beobachtete Returns. Bei Monte Carlo können andere Worker weiter
-simulieren, während der zentrale Prozess das Netz trainiert. Der Dreamer-Befehl
-trennt dagegen Datensammlung und Lernen: Erst werden die Salabim-Episoden
-gesammelt und die Worker beendet, dann werden die Netze trainiert.
-Die Regeln des Simulationskerns bleiben beim Lernen unverändert.
-
-**Während einer Episode: Aktionen auswählen und ausführen**
-
-1. Die [RL-Umgebung `SpineRLEnv`](sources/SpineML/Control/RLPolicy/Shared/SpineRLEnv.py)
-   startet die Simulation. Sobald eine Auswahl aus mehreren Aktionen nötig ist,
-   wartet sie auf die Entscheidung des Netzes.
-2. Der [Encoder](#numerische-beobachtung-und-aktionsmaske) übersetzt die
-   Zustandsdaten und angebotenen Aktionen in Zahlenfelder. Daraus berechnet
-   das Netz seine Auswahl.
-3. Steht die Auswahl für alle wartenden Objekte fest, gibt die Policy die
-   Aktionen an die Bridge zurück. Die Simulationskomponenten führen sie aus.
-   Bei den nächsten Auswahlpunkten entscheidet das Netz erneut.
-4. Sind alle Jobprozesse beendet, werden die Produktionskennzahlen
-   ausgewertet und in eine **Belohnung** umgerechnet. Ein günstigerer
-   vollständiger Produktionslauf erhält eine höhere Belohnung.
-
-Solange die Episode noch läuft, ist die Belohnung eines Entscheidungsschritts
-`0`. Das bedeutet **nicht „schlechte Entscheidung“**, sondern: Für diesen
-Schritt gibt es noch keine Abschlussbelohnung für den Produktionslauf.
-
-**Beim Training: das Netz anhand gesammelter Daten verändern**
-
-- **Dreamer:** Lernt aus realen Erfahrungsfolgen ein **Weltmodell**. Mit
-  vorhergesagten Verläufen dieses Modells werden anschließend Actor und Critic
-  trainiert. Der Actor liefert die Aktionsauswahl, der Critic schätzt die
-  erwartete spätere Belohnung.
-- **Monte Carlo:** Sammelt vollständige Episoden und berechnet daraus die
-  tatsächlich beobachtete spätere Belohnung, den **Return**, für jede besuchte
-  Entscheidung. Ein Episodenspeicher bewahrt diese Erfahrungen auf. Beim
-  Wiederverwenden älterer Netzstände wird ihr Einfluss durch eine
-  [Off-Policy-Korrektur](#monte-carlo-aus-vollständigen-episoden-lernen) angepasst.
-
-Die Abschlussbelohnung entsteht bei beiden Verfahren erst am Episodenende.
-Die Befehle und Einstellungen stehen unter [Training starten](#training-starten).
-
-**Nach dem Training: das gespeicherte Netz einsetzen**
-
-Die gespeicherte RL-Policy trifft weiter Aktionsentscheidungen, verändert
-ihre Netzparameter dabei aber nicht mehr. Ob sie bessere Produktionsergebnisse
-erzielt, wird mit dem [Vergleich auf getrennten Test-Seeds](#auf-getrennten-test-seeds-vergleichen)
-geprüft.
-
-### Was wählt die RL-Policy aus?
-
-Das Netz erfindet keine Aktionen. Es wählt einen **Index**, also die Nummer
-einer Aktion in der aktuell angebotenen Liste.
-
-**Beispiel:** Ein Job hat Defektschweregrad `0.2`; eine Nacharbeit wurde noch
-nicht gewählt. Seine [Defektmaschine ist verfügbar](#nacharbeitskandidaten),
-eine Alternativroute fehlt. Der Generator bietet diese drei Aktionen an:
-
-| Index für `step(index)` | Angebotene Aktion |
+| Datei oder Bibliothek | Aufgabe |
 | --- | --- |
-| `0` | `job_rework_on_defect_machine`: Nacharbeit auf der Defektmaschine. |
-| `1` | `downgrade_product`: Produkt herabstufen. |
-| `2` | `wait_job`: Zunächst warten. |
+| [ReinforcePolicy.py](sources/SpineML/Control/RLPolicy/Reinforce/ReinforcePolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
+| [ReinforceModel.py](sources/SpineML/Control/RLPolicy/Reinforce/ReinforceModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
+| [train_rl_policy.py](sources/tools/train_rl_policy.py) | Liest die Trainingsparameter und bereitet Fabrikmodell und globale Bewertung vor. |
+| [reinforce_training.py](sources/tools/reinforce_training.py) | Schreibt Fortschritt, Zwischenstände, Manifest und Trainingsbericht. Keine eigene Lernregel. |
+| [Shared](sources/SpineML/Control/RLPolicy/Shared) | Gemeinsame Kandidatenauswahl, Beobachtungsencoder, Reward, Gymnasium-Umgebung und Einsatz trainierter Netze. |
+| [Tianshou `Reinforce`](https://tianshou.org/en/stable/03_api/algorithm/modelfree/reinforce.html) und [`OnPolicyTrainer`](https://tianshou.org/en/stable/03_api/trainer.html) | Fertige Return-Berechnung, Policy-Gradient-Lernregel und Trainingssteuerung. |
 
-Mit `step(0)` wird in diesem Beispiel die Nacharbeit auf der Defektmaschine
-gewählt. Bei der nächsten Entscheidung kann Index `0` eine andere Aktion
-bezeichnen. Die [Aktionsmaske](#numerische-beobachtung-und-aktionsmaske)
-kennzeichnet, welche Indizes gerade gewählt werden dürfen.
+### Was lernt REINFORCE?
 
-### Vom Bridge-Aufruf zur Kandidatenentscheidung
+REINFORCE ist **modellfreier Monte-Carlo-Policy-Gradient** und lernt
+**on-policy**: Der Actor lernt direkt die Auswahlwahrscheinlichkeiten der
+Aktionen aus vollständigen neuen Episoden. Eine Episode ist ein Simulationslauf
+bis zum regulären Ende oder einem Sicherheitslimit.
 
-Die [Bridge](#simulationbridge) ruft `make_decision()` der
-[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/Shared/RLCandidatePolicy.py)
-auf. Diese Policy verbindet den gemeinsamen Generator mit der RL-Auswahl:
-
-1. **Wartende Objekte prüfen:** Die Policy liest die Zustandskopie, den
-   Snapshot, und bearbeitet die Objekte in der gespeicherten Reihenfolge.
-2. **Aktionen erzeugen:** Der `SpineActionGenerator` liefert die Kandidaten.
-   Pick-Aktionen enthalten bereits die EDD-basierte `queue_priority`.
-   Ein in diesem Aufruf bereits für eine Pick-Aktion reservierter Job wird
-   nicht erneut zum Pick angeboten.
-3. **Auswahl anfordern:** Bei nur einem Kandidaten ist keine Auswahl nötig.
-   Bei mehreren wird ein `DecisionRequest` mit Zustand, Kandidaten und
-   bisher gewählten Aktionen an die Auswahlfunktion übergeben. Diese Daten
-   sind Kopien; ihre Veränderung ändert nicht die auszuführenden Aktionen.
-4. **Gewählte Aktion vormerken:** Während des Trainings liefert das Netz
-   seinen Index über `SpineRLEnv.step(index)`. Die Policy speichert die
-   Auswahl und prüft das nächste wartende Objekt.
-5. **Aktionen zustellen:** Erst wenn alle wartenden Objekte bearbeitet sind,
-   gibt die Policy eine vollständige `PolicyDecision` an die Bridge zurück.
-   Die Bridge stellt die Aktionen den Simulationskomponenten zu.
-
-Deshalb bedeutet ein `step()` nicht immer, dass die Simulation schon Zeit
-weitergelaufen ist: Zunächst können mehrere Objekte nacheinander eine Auswahl
-benötigen. Bereits vorgemerkte Aktionen und reservierte Pick-Jobs sind in den
-Netzeingaben berücksichtigt. Die vorgemerkten Aktionen stehen außerdem in
-`info["pending_actions"]`.
-
-Bei direkter Nutzung von `RLCandidatePolicy` kann `expose_forced_actions=True`
-auch einzelne Kandidaten an die Auswahlfunktion melden. Die Trainingsumgebung
-`SpineRLEnv` übernimmt einzelne Kandidaten dagegen automatisch.
-
-### Numerische Beobachtung und Aktionsmaske
-
-Das Netz erhält keine Salabim-Objekte. Der
-[`RLObservationEncoder`](sources/SpineML/Control/RLPolicy/Shared/RLObservationEncoder.py)
-übersetzt die Zustandsdaten und Kandidaten in Zahlenfelder fester Größe.
-Eine Zeile beschreibt ein Objekt oder eine Aktion. Nicht benötigte Zeilen
-werden mit Nullen aufgefüllt; das heißt **Padding**. Zusätzliche Felder, die
-**Masken**, kennzeichnen die tatsächlich belegten Zeilen.
-
-Für `A = max_actions` und `E = max_entities` enthält die Beobachtung:
-
-| Feld | Form | Bedeutung |
-| --- | --- | --- |
-| `context` | `(24,)` | Zeit, aktuell entscheidendes Objekt und zusammengefasste Job-/Entscheidungsdaten. |
-| `entities` | `(E, 49)` | Merkmale der Jobs, Roboter und Maschinen, einschließlich vorgemerkter Aktionen und Pick-Reservierungen. |
-| `entity_mask` | `(E,)` | `1` für eine echte Objektzeile, `0` für Padding. |
-| `candidates` | `(A, 58)` | Aktionsart, beteiligte IDs sowie Job-, Routen-, Maschinen-, Werkzeug- und Puffermerkmale je Kandidat. |
-| `action_mask` | `(A,)` | `1` für einen aktuell angebotenen Kandidaten, `0` für Padding. |
-
-Standardmäßig sind bis zu `256` Objekte und `256` Kandidaten vorgesehen.
-Merkmale werden als `float32` im Bereich `[-1, 1]` gespeichert, Masken als
-`int8` mit `0` oder `1`. Die Methode `action_masks()` liefert die Aktionsmaske
-als `True`-/`False`-Werte: Nur `True`-Einträge dürfen gewählt werden.
-Die technische Prüfung einer Aktion übernimmt der Generator, nicht die Maske.
-
-Die Merkmale umfassen beispielsweise Termindruck, Produktdaten, konfigurierte
-Operationsdauer, Maschinenbelegung, verwendete Defektwahrscheinlichkeit und
-Werkzeugzustand. Ihre Reihenfolge ist in `CONTEXT_FEATURE_NAMES`,
-`ENTITY_FEATURE_NAMES` und `CANDIDATE_FEATURE_NAMES` festgelegt. Objektzeilen
-sind nach ID sortiert; Aktionen behalten die Reihenfolge der Kandidatenliste.
-
-Beim ersten vollständigen Snapshot werden die IDs in sortierten Listen
-gespeichert und Zahlenwerten größer als `0` zugeordnet. Diese Zuordnung bleibt
-beim Neustart einer Episode erhalten. Eine fehlende ID wird als `0` dargestellt.
-Sind mehr Objekte oder Kandidaten vorhanden als vorgesehen, bricht der Encoder
-mit einem Fehler ab; er lässt keine Kandidaten stillschweigend weg.
-Auch andere IDs oder ein geänderter Objektaufbau benötigen eine neue Umgebung
-beziehungsweise einen neuen Encoder.
-
-Die Netzeingaben enthalten nicht alle internen Simulations- und Qualitätsdaten.
-Ob damit jede Entscheidung ausreichend beschrieben ist, muss noch untersucht
-werden. Die zusätzlichen Angaben in `info`, etwa `candidates` und
-`policy_observation`, helfen bei der Fehlersuche; sie werden nicht an das Netz
-weitergegeben.
-
-### Gymnasium-API und Reward
-
-Die Bibliothek **Gymnasium** stellt die gemeinsame Schnittstelle bereit,
-über die das Lernverfahren die Simulation startet und Aktionen übergibt.
-`SpineRLEnv(model_file, global_evaluation, ...)` bildet die Simulation als
-solche RL-Umgebung ab.
-
-Vor dem Start benötigt die Umgebung eine `GlobalSimulationEvaluation` mit
-festen positiven Referenzwerten aus
-[vollständigen Standardheuristik-Läufen](#kalibrierung-seeds-und-gespeicherte-konfiguration).
-[`RLReward`](sources/SpineML/Control/RLPolicy/Shared/RLReward.py) übernimmt eine Kopie
-dieser Werte und der nichtnegativen globalen Zielgewichte. Diese
-Bewertungsvorgaben bleiben während der Episode unverändert; sie werden nicht gelernt.
-
-- **`reset(seed=...)`:** Beendet eine gegebenenfalls laufende Episode und
-  startet eine neue Simulation. An ihrem ersten Auswahlpunkt gibt die Methode
-  `(observation, info)` zurück: die Netzeingaben und zusätzliche Informationen.
-- **`step(index)`:** Übernimmt den gewählten Listenindex. Bei der nächsten
-  Auswahl oder am Episodenende liefert die Methode
-  `(observation, reward, terminated, truncated, info)` zurück.
-  `terminated=True` bedeutet regulären Abschluss, `truncated=True` einen
-  Abbruch wegen eines Limits.
-- **`info`:** Enthält Informationen für die Auswertung und Fehlersuche,
-  etwa Kandidaten, aktuelles Objekt, Simulationszeit und vorgemerkte Aktionen.
-  Am Ende kommen die Kennzahlen `metrics`, die Bewertungszahl `global_cost`
-  und der Abschlussgrund `reward_reason` hinzu.
-
-#### Reward und Episodenende
-
-**Reward** bedeutet hier **Belohnung**: eine Zahl, mit der das Lernverfahren
-eine Rückmeldung über das Produktionsergebnis erhält. Der aktuelle Code gibt
-nicht jeder einzelnen Aktion eine eigene Belohnung:
-
-- **Episode läuft weiter:** `reward = 0`.
-- **Alle Jobprozesse sind beendet:** Die globale Bewertungszahl `global_cost`
-  wird in `reward = 1 / (1 + global_cost)` umgerechnet. Die Kennzahlen,
-  Referenzen und globalen Zielgewichte sind dieselben wie bei der
-  [heuristischen Optimierung](#globale-bewertungszahl).
-- **Abbruch wegen eines Limits:** `reward = -1`.
-
-Bei der globalen Bewertungszahl ist kleiner besser, bei der Belohnung größer.
-Beispielsweise ergeben Kosten von `3` die Belohnung `1 / 4 = 0.25`, Kosten
-von `1` dagegen `1 / 2 = 0.5`. Das günstigere vollständige Ergebnis erhält
-also die höhere Belohnung. Ein regulär beendeter Lauf kann auch Ausschuss
-oder herabgestufte Jobs enthalten; diese gehen in seine globale Bewertung ein.
-
-| Ende | Rückgabe und Beobachtung |
-| --- | --- |
-| Alle Jobprozesse beendet | `terminated=True`, `truncated=False`; alle Zahlenfelder und Masken der Beobachtung sind mit `0` gefüllt. |
-| Entscheidungsgrenze: Nach `max_decisions` beantworteten Auswahlen wird eine weitere Auswahl nötig | `truncated=True`; die Beobachtung dieser unbeantworteten Auswahl bleibt erhalten. Noch nicht zugestellte Aktionen des aktuellen Bridge-Aufrufs werden verworfen (`pending_batch_discarded=True`). |
-| Zeitgrenze `max_simulation_time` erreicht, Jobs noch nicht fertig | `truncated=True`; globale Zustandsmerkmale bleiben erhalten, jedoch ohne aktuell entscheidendes Objekt. Kandidatenfeld und Aktionsmaske sind mit `0` gefüllt. |
-
-Die Tabelle beschreibt die direkte Umgebung und ihre Auswertung. Nach einem
-Abbruch darf kein weiterer `step()` ausgeführt werden, auch wenn noch Kandidaten
-in der letzten Beobachtung stehen. Andere Lernverfahren könnten diesen Zustand
-verwenden, um eine mögliche spätere Belohnung zu schätzen. Das heißt
-**Value-Bootstrapping**; die abgebrochene Episode wird damit nicht fortgesetzt.
-
-Für das Dreamer- und Monte-Carlo-Training gelten beide Limits als endgültiger Fehlschlag.
-Die Zusatzklasse `EpisodeSeedWrapper` in
-[`TrainingSupport.py`](sources/SpineML/Control/RLPolicy/Shared/TrainingSupport.py)
-meldet sie deshalb beiden Trainern als `terminated=True` und
-`truncated=False`. `info["training_limit_terminated"]` und der Abbruchgrund
-halten fest, dass tatsächlich ein Limit erreicht wurde. Monte Carlo beendet
-hier den beobachteten Return; Dreamer lernt für diesen Übergang keine Fortsetzung
-der Episode. Zur Strafe `-1` wird kein geschätzter späterer Erfolg hinzugerechnet.
-
-Ein Timeout oder ein Simulationsfehler wird dagegen als Ausnahme gemeldet.
-Es handelt sich dabei nicht um einen der regulären Limitabbrüche aus der Tabelle.
-
-### Dreamer: mit einem gelernten Weltmodell lernen
-
-[`CandidateDreamer`](sources/SpineML/Control/RLPolicy/Dreamer/CandidateDreamer.py)
-verwendet die öffentlichen DreamerV3-Bausteine aus
-[TorchRL 0.14](https://docs.pytorch.org/rl/0.14/reference/dreamer_v3.html).
-Das ist eine **kompakte, an dieses Projekt angepasste Dreamer-Implementierung**,
-nicht die unveränderte Benchmark-Konfiguration der ursprünglichen Veröffentlichung.
-Die Salabim-Fabrik erzeugt die echten Erfahrungen und läuft weiterhin auf der CPU.
-Das gelernte **Weltmodell ist ein Ersatzmodell**, keine auf die GPU übertragene
-Salabim-Simulation.
-
-Dreamer lernt drei zusammenarbeitende Bestandteile:
-
-- **Weltmodell:** Fasst die Beobachtungen in einem internen Zustand zusammen
-  und lernt, wie sich dieser Zustand nach einer Aktion verändert. Das Modell
-  sagt außerdem Beobachtungsmerkmale, Belohnung und Fortsetzung der Episode voraus.
-- **Actor:** Berechnet die Auswahlwahrscheinlichkeiten der angebotenen Aktionen.
-  Er wird anhand vorhergesagter Verläufe im Weltmodell trainiert.
-- **Critic:** Schätzt die spätere Belohnung eines internen Zustands und hilft,
-  die vorhergesagten Verläufe zu bewerten.
-
-Die Netze stehen in
-[`DreamerNetworks.py`](sources/SpineML/Control/RLPolicy/Dreamer/DreamerNetworks.py).
-Das Weltmodell verwendet ein **RSSM**: einen wiederkehrenden Zustand für den
-bisherigen Verlauf und zusätzlich zufällige kategoriale Zustandsvariablen.
-Voreingestellt sind `hidden_dim=128`, `stochastic_variables=8` und
-`stochastic_classes=8`. Das ist ein anderer Netzaufbau als das Monte-Carlo-Q-Netz.
-
-**Ablauf des Trainingsbefehls:**
-
-Das Trainingsskript ruft dafür die Methode `CandidateDreamer.learn()` auf.
-`total_episodes` bestimmt die echten Salabim-Episoden, `world_model_updates`
-die Lernschritte für das Ersatzmodell und `imagination_updates` die anschließenden
-Lernschritte für Actor und Critic. Die Methode führt diese Phasen nacheinander aus:
-
-1. **Salabim-Erfahrungen sammeln:** Die Worker führen insgesamt `--episodes`
-   Episoden aus. Die Verläufe werden im Ordner `world_model_data` gespeichert;
-   die Prüfepisode wird darin als separate Datei `validation_episode.pkl`
-   vom Lernen ausgeschlossen.
-   In dieser Phase wird das Netz noch
-   nicht trainiert: Die Aktionen wählt der anfängliche, noch untrainierte Actor
-   unter den tatsächlich angebotenen Kandidaten. Ein fertiger Worker beginnt die
-   nächste Episode, solange das Episodenbudget reicht. Danach werden alle
-   Simulationsprozesse beendet.
-2. **Ersatzmodell lernen:** Das Weltmodell wird mit den gespeicherten realen
-   Verläufen trainiert. `--world-model-updates` bestimmt die Anzahl dieser
-   Lernschritte. Actor und Critic werden dabei noch nicht angepasst.
-3. **Vorhersagen prüfen:** Die zuerst gestartete Episode wird vollständig zum
-   Prüfen zurückgehalten und nicht zum Lernen verwendet. Die Vorhersagen werden
-   mit diesem echten Verlauf verglichen; die Prüfkennzahlen werden protokolliert.
-   Das ist ein zurückgehaltener Verlauf, kein zusätzlicher Test-Seed.
-   Kleine Prüfkennzahlen allein beweisen nicht, dass längere vorausberechnete
-   Fabrikabläufe zuverlässig sind. Der Stand nach dieser Prüfung wird als
-   `checkpoint_world_model.zip` gespeichert.
-4. **Actor und Critic im Ersatzmodell trainieren:** Das Weltmodell wird
-   **eingefroren**, seine Parameter bleiben unverändert. Actor und Critic lernen
-   aus vorausberechneten Verläufen dieses Modells. `--imagination-updates` bestimmt
-   die Zahl ihrer Lernschritte. **Dafür werden keine neuen Salabim-Episoden gestartet.**
-5. **Steuerung in Salabim testen:** Ein eigener
-   [Testbefehl](#auf-getrennten-test-seeds-vergleichen) prüft anschließend, welche
-   Produktionsergebnisse die gelernte Steuerung in der echten Simulation erzielt.
+Das ist **keine Monte-Carlo-Q-Control** mit Q-Schätzung, Policy Evaluation,
+Policy Improvement und Epsilon-Greedy. Es gibt keinen Critic, keine Q-Targets,
+kein gelerntes Weltmodell und kein erneutes Lernen aus alten Replay-Episoden.
 
 ```mermaid
 flowchart TD
-    S["Salabim: reale Episoden sammeln"]
-    R["Echte Verläufe speichern und Simulationsprozesse beenden"]
-    W["Weltmodell aus gespeicherten Verläufen lernen"]
-    V["Vorhersagen anhand echter Verläufe prüfen"]
-    F["Weltmodell einfrieren"]
-    I["Actor und Critic mit vorgestellten Verläufen trainieren"]
-    T["Eigener Testbefehl: Steuerung wieder in Salabim prüfen"]
-
-    S --> R --> W --> V --> F --> I --> T
+    A["Aktueller Actor wählt gültige Kandidaten"]
+    B["Salabim: vollständige neue Episoden sammeln"]
+    C["Tianshou: beobachtete Returns berechnen, gamma = 1"]
+    D["Tianshou: Actor mit Policy-Gradient und Adam anpassen"]
+    E["Aktuelle Datengruppe verwerfen"]
+    A --> B --> C --> D --> E --> A
 ```
 
-Die Schritte 2 bis 4 benötigen keine neuen Simulationsläufe. Mit einer passenden
-CUDA-fähigen PyTorch-Installation können ihre Netzberechnungen auf der GPU laufen.
-Die CPU übernimmt weiterhin die Programmsteuerung. Das ist keine Garantie für
-kürzeres Training oder eine gute Steuerung: Ein fehlerhaftes Ersatzmodell kann
-Actor und Critic auf falsche Abläufe trainieren.
-Die Prüfung protokolliert Vorhersagefehler, legt aber keine automatische
-Freigabegrenze für die Modellqualität fest. Dass danach trainiert wird,
-bedeutet deshalb nicht, dass das Ersatzmodell bereits genau genug ist.
+Während der Sammlung bleiben die Actor-Parameter unverändert. Im Training
+werden Aktionen aus seiner Wahrscheinlichkeitsverteilung gezogen. Nach
+`--episodes-per-update` Episoden passt Tianshou die Gewichte an; die letzte
+Datengruppe kann kleiner sein. Erst danach beginnt die nächste Sammlung.
+Der verwendete `VectorReplayBuffer` ist hier nur der Puffer dieser Datengruppe,
+kein Speicher zum späteren Wiederverwenden alter Trainingsphasen.
 
-**Was wird geprüft?** `one_step_*` bewertet jeweils den vorhergesagten nächsten
-Zustand; vor der nächsten Vorhersage wird wieder die echte Beobachtung verwendet.
-`open_loop_*` lässt das Modell mehrere Schritte ohne diese Korrektur vorhersagen.
-Beide Prüfungen verwenden die gespeicherten echten Aktionen, noch keine vom
-Actor frei gewählte neue Fabrikroute. Die Kennzahlen erfassen:
+Bei `gamma=1.0` ist der Return die Summe der tatsächlich beobachteten
+Belohnungen bis zum Episodenende. Da Zwischenbelohnungen `0` sind, erhält
+jede besuchte Entscheidung einer Episode deren Endbelohnung als Return.
+Das ist keine eigene unmittelbare Belohnung jeder Aktion.
 
-- **Vorhersagefehler:** Abweichungen der Beobachtungsmerkmale, der tatsächlich
-  angebotenen Kandidaten, der Belohnung und der Episodenfortsetzung. Kleinere
-  Fehler sind besser; die seltene Endbelohnung wird zusätzlich getrennt ausgewiesen.
-- **Aktionsmaske:** `mask_precision` und `mask_recall` prüfen, wie gut das Modell
-  angebotene von leeren Kandidatenplätzen unterscheidet. Höhere Werte sind besser.
+### Kandidaten, Beobachtung und Aktionsmaske
 
-Es müssen mindestens zwei Episoden gesammelt werden: eine zum Prüfen und
-mindestens eine zum Lernen. Wie viele reale Episoden und Lernschritte für ein
-verlässliches Ersatzmodell nötig sind, muss experimentell ermittelt werden.
+Das Netz erfindet keine Aktionen. Es wählt den **Index eines angebotenen
+Kandidaten**, etwa `step(0)` für den ersten Eintrag der aktuellen Liste.
+Bei der nächsten Auswahl kann derselbe Index eine andere Aktion bezeichnen.
 
-**Welche Daten werden zum Lernen verwendet?** Der Erfahrungsspeicher bewahrt
-vollständige Episoden auf. Zum Lernen werden zusammenhängende Ausschnitte gewählt,
-nicht unabhängig gemischte Einzelaktionen. Mindestens ein Ausschnitt je Lernschritt
-enthält das Ende einer gespeicherten Episode, damit die seltene Endbelohnung
-vorkommt. Die übrigen Ausschnitte beginnen an zufälligen Übergängen. Episodenenden
-werden dadurch bewusst stärker berücksichtigt. Der vorangegangene Episodenverlauf
-wird ohne Gewichtsanpassung verarbeitet, damit der interne Zustand zum Beginn
-des Ausschnitts passt.
-Die Prüfepisode bleibt getrennt. Alle übrigen gesammelten Episoden bleiben auf
-der Festplatte als Trainingsdaten erhalten. Zum Lernen werden nur die benötigten
-Episoden geladen. Dadurch werden teure Simulationsdaten nicht schon vor dem
-Lernen wegen einer kleinen Replay-Grenze verworfen. Der Datenordner kann groß
-werden; einzelne lange Episoden benötigen beim Laden entsprechend Arbeitsspeicher.
+[`RLCandidatePolicy`](sources/SpineML/Control/RLPolicy/Shared/RLCandidatePolicy.py)
+verbindet diese Auswahl mit dem gemeinsamen ActionGenerator und der Bridge.
+Einzelne Kandidaten werden automatisch übernommen. Nur eine Auswahl aus
+mehreren Kandidaten zählt als externe Entscheidung. Mehrere `step()`-Aufrufe
+können nötig sein, bevor die Bridge die vorgemerkten Aktionen gemeinsam zustellt.
 
-**Kandidaten und Masken:** In der echten Simulation gilt immer die vom
-Generator gelieferte Aktionsmaske. Leere Plätze können nicht gewählt werden.
-Das Weltmodell erhält die Merkmale der gewählten Aktion, weil dieselbe
-Indexnummer im nächsten Zustand eine andere Aktion bezeichnen kann.
-Für vorausberechnete Zustände muss das Modell auch die künftigen
-Kandidatenmerkmale und ihre Verfügbarkeit vorhersagen. Diese Vorhersagen
-können falsch sein; sie ersetzen keine technischen Prüfungen der echten Simulation.
+Der [Encoder](sources/SpineML/Control/RLPolicy/Shared/RLObservationEncoder.py)
+übersetzt Zustandskopien und Kandidaten in Zahlenfelder. Das Netz erhält keine
+laufenden Salabim-Objekte. Für `A = max_actions` und `E = max_entities` gilt:
 
-`gamma=1.0` bleibt fest eingestellt, damit die Endbelohnung nicht allein wegen
-zusätzlicher Entscheidungen abgeschwächt wird. Das Weltmodell lernt trotzdem,
-ob eine Episode beendet ist. Die Zahl realer Episoden wird durch `--episodes`
-bestimmt; `--imagination-horizon` begrenzt nur die vorausberechneten Modellschritte.
+| Feld | Form | Inhalt |
+| --- | --- | --- |
+| `context` | `(24,)` | Zeit, aktuell entscheidendes Objekt und zusammengefasster Zustand. |
+| `entities` | `(E, 49)` | Merkmale von Jobs, Robotern und Maschinen. |
+| `entity_mask` | `(E,)` | Echte Objektzeilen statt leerer Auffüllzeilen. |
+| `candidates` | `(A, 58)` | Merkmale der angebotenen Aktionen. |
+| `action_mask` | `(A,)` | Gültige Kandidaten statt leerer Auffüllzeilen. |
 
-Dreamer kann reale Erfahrungen durch Modelltraining mehrfach nutzen. Ob das
-bei dieser Fabrik bessere Ergebnisse oder eine kürzere Trainingszeit ergibt,
-muss der Vergleich zeigen. Fehler des gelernten Weltmodells können auch die
-darauf trainierte Aktionsauswahl beeinträchtigen.
+Zahlenmerkmale sind `float32` in `[-1, 1]`, Masken enthalten `0` oder `1`.
+Der Actor fasst Kontext, Objekt- und Kandidatenmerkmale zusammen und
+bewertet jeden Kandidaten mit demselben Auswahlteilnetz.
+Ungültige Plätze erhalten Auswahlwahrscheinlichkeit `0`. Die technische
+Zulässigkeit einer Aktion prüft weiterhin der ActionGenerator.
 
-### Monte Carlo: aus vollständigen Episoden lernen
+Standardmäßig sind `256` Objekt- und `256` Kandidatenzeilen vorgesehen.
+Zu kleine Kapazitäten oder geänderte Objektzuordnungen führen zu einem Fehler;
+Kandidaten werden nicht stillschweigend weggelassen.
 
-[`MonteCarloAlgorithm`](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloAlgorithm.py)
-trainiert ein einzelnes Kandidaten-Q-Netz mit **asynchron gesammelten Episoden
-und einem Replay Buffer**. Es verwendet
-**kein Zielnetz und keine geschätzten Q-Werte des nächsten Zustands als Lernziel**.
+### Reward und Episodenende
 
-Die beiden eigenen Klassen stehen in `MonteCarloAlgorithm.py`:
+[`SpineRLEnv`](sources/SpineML/Control/RLPolicy/Shared/SpineRLEnv.py)
+stellt die Gymnasium-Schnittstelle bereit: `reset(seed=...)` startet eine
+Episode und liefert `(observation, info)`; `step(index)` liefert
+`(observation, reward, terminated, truncated, info)`. Salabim simuliert
+dahinter unverändert die Fabrik.
 
-- **`MonteCarloAlgorithm` erbt von `BaseAlgorithm`:** Implementiert das Lernverfahren,
-  sammelt Episoden und trainiert das Q-Netz mit dem Replay Buffer.
-- **`MonteCarloPolicy` erbt von `BasePolicy`:** Enthält das `CandidateQNetwork` und
-  liefert die Aktionsvorhersage anhand der Q-Werte. Das Q-Netz bewertet die vom
-  Generator angebotenen Aktionskandidaten; deshalb bleibt sein Name unverändert.
+[`RLReward`](sources/SpineML/Control/RLPolicy/Shared/RLReward.py) verwendet
+dieselben globalen Kosten, Referenzwerte und Zielgewichte wie die Heuristik:
 
-Die Worker-Ausführung steht in
-[`AsyncEpisodeRunner.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/AsyncEpisodeRunner.py):
-
-1. **Episode starten:** Jeder Worker übernimmt den neuesten fertig trainierten
-   Netzstand und dessen Explorationswert `epsilon`. Diese beiden Werte bleiben
-   während seiner Episode unverändert.
-2. **Ergebnis abgeben und sofort neu starten:** Nach dem Episodenende übergibt
-   der Worker seinen Verlauf und fragt erneut den neuesten Netzstand ab.
-   Ist noch keine neue Version verfügbar, verwendet er die bisherige. Er wartet
-   nicht darauf, dass andere Worker ihre Episoden beenden. Eine neue Episode
-   startet nur, solange vom festgelegten Episodenbudget noch eine übrig ist.
-3. **Fertige Episoden speichern:**
-   [`EpisodeReplayBuffer.py`](sources/SpineML/Control/RLPolicy/MonteCarlo/EpisodeReplayBuffer.py)
-   speichert Zustände, gewählte Aktionen, Belohnungen, damalige
-   Auswahlwahrscheinlichkeiten und die Netzversion. Nur vollständige Verläufe
-   gehen in den Replay Buffer ein, einschließlich regulärer Limitabbrüche mit
-   Endbelohnung `-1`.
-4. **Zentral trainieren:** Nach `--mc-train-every-episodes` neu eingetroffenen
-   Episoden werden bis zu `--mc-replay-sample-episodes` gespeicherte Episoden
-   ausgewählt. Das zentrale Netz wird damit `--epochs`-mal trainiert. Die
-   Worker können währenddessen mit ihren festen lokalen Netzkopien weitersimulieren.
-5. **Neuen Netzstand bereitstellen:** Nach der Lernphase wird die neue Version
-   veröffentlicht. Sie gilt für danach gestartete Episoden, nicht rückwirkend
-   für bereits laufende Simulationen.
-
-Es gibt keine gemeinsame Episodenbarriere. Ein voller Übergabepuffer kann
-Worker vorübergehend bremsen, damit nicht unbegrenzt große Verläufe im
-Arbeitsspeicher warten. Die Zahl gleichzeitig laufender Worker und die Zeit
-zum Lernen bestimmen gemeinsam den tatsächlichen Durchsatz.
-
-**Returns berechnen:** Für jede besuchte Entscheidung werden die tatsächlich
-beobachteten Belohnungen bis zum Episodenende zusammengefasst. Im Trainingsskript
-gilt `gamma=1.0`. Da nur am Ende eine Belohnung entsteht, ist der Return entlang
-einer Episode gleich ihrer Endbelohnung.
-
-**Beispiel:** Eine Episode enthält `S1 → Nacharbeit → S2 → Transport → Ende`.
-Die Zwischenbelohnungen sind `0`, die Endbelohnung ist `0.8`. Dann lautet
-der Lernzielwert sowohl für die besuchte Entscheidung `S1, Nacharbeit`
-als auch für `S2, Transport` jeweils `0.8`. Die Zwischenbelohnungen bleiben
-trotzdem `0`; der Return ist das Ergebnis des weiteren Episodenverlaufs,
-nicht eine eigene unmittelbare Belohnung der Aktion.
-
-Auch Monte Carlo wählt nur gültige Kandidaten: mit Wahrscheinlichkeit
-`epsilon` zufällig, sonst den Kandidaten mit dem höchsten Q-Wert. Für dieses
-Off-Policy-Training müssen Anfangs- und Endwert von `epsilon` positiv sein:
-Jeder gültige Kandidat benötigt eine mögliche Auswahlchance.
-
-**Ältere Episoden wiederverwenden:** Ein alter Return beschreibt den Verlauf
-der damaligen Policy. Er wird nicht einfach als unveränderte Aussage über die
-neueste Policy behandelt. Vor jeder Lernphase berechnet der Trainer für die
-gespeicherten Aktionen deren Auswahlwahrscheinlichkeiten unter dem aktuellen,
-für diese Lernphase festgehaltenen Netzstand. Für `Q(Zustand, Aktion)` wird
-das Verhältnis der neuen zur damaligen Wahrscheinlichkeit über die
-**nachfolgenden Aktionen** multipliziert; die bereits fest vorgegebene Aktion
-dieses Q-Werts wird nicht noch einmal gewichtet.
-
-Diese [Importance-Sampling-Gewichte](https://hankyang.seas.harvard.edu/OptimalControlReinforcementLearning/value-rl.html#off-policy-control) werden logarithmisch berechnet und über
-die ausgewählten Trainingsdaten normiert. Trainiert wird ein gewichteter
-quadratischer Fehler:
-
-`Fehler = Summe(normiertes Gewicht × (Q-Schätzung − Return)²)`
-
-Die Targets bleiben tatsächliche vollständige Returns; es wird kein nächster
-Q-Wert hinzugefügt. Die Normierung vermeidet numerischen Überlauf, beseitigt
-aber nicht die möglichen starken Gewichtsunterschiede langer Episoden.
-Bei endlich vielen Daten ist diese selbstnormalisierte Regression nicht
-unverzerrt. Eine bessere oder stabilere Steuerung ist dadurch nicht garantiert.
-`last_importance_ess` zeigt, wie viele gleich stark gewichtete Beispiele dem
-jeweiligen Gewichtsprofil ungefähr entsprechen; ein kleiner Wert weist auf
-wenige dominierende Beispiele hin.
-Die Entscheidungen innerhalb einer Episode sind dabei nicht unabhängig;
-dieser Kennwert misst die Gewichtskonzentration, nicht die Zahl unabhängiger Episoden.
-
-Der Episodenspeicher ist durch Episodenzahl und Übergangszahl begrenzt.
-Alte Episoden werden als ganze Verläufe entfernt. Überschreitet eine einzelne
-Episode das Übergangslimit, bleibt sie allein vollständig erhalten, statt nur
-einen unvollständigen Rest zum Lernen zu verwenden.
-
-Das Kandidaten-Q-Netz steht in
-[`CandidateQNetwork.py`](sources/SpineML/Control/RLPolicy/Shared/CandidateQNetwork.py).
-Es verarbeitet Kontext, Objektzeilen und Kandidatenmerkmale und bewertet
-jeden Kandidaten mit demselben Teilnetz. `embedding_dim=32` und `hidden_dim=64`
-bestimmen die Breite der internen Netzschichten. Die Dateien
-`RLObservationEncoder`, `RLReward` und `SpineRLEnv` werden von beiden Lernverfahren verwendet.
-
-Die direkten Lernziele machen Monte Carlo für die reine Endbelohnung zu
-einer Vergleichsmöglichkeit. Ob es mit demselben Simulationsbudget bessere
-Produktionsergebnisse lernt als Dreamer, muss der Test zeigen.
-
-### Kalibrierung, Seeds und gespeicherte Konfiguration
-
-Vor dem Training führt
-[`TrainingSupport.calibrate_references()`](sources/SpineML/Control/RLPolicy/Shared/TrainingSupport.py)
-vollständige Simulationsläufe mit der Standardheuristik aus. Diese Läufe bilden
-die **Baseline**, also die Vergleichsbasis. Für Makespan, Gesamtverspätung,
-Transportzeit und Werkzeugwechselzeit wird jeweils der Mittelwert berechnet.
-Diese Werte bleiben anschließend die festen Referenzen der globalen Bewertung.
-
-Dieser Vorbereitungsschritt heißt hier **Kalibrierung**. Er trainiert noch
-kein Netz; seine Rechenzeit wird getrennt erfasst. Ist ein Referenzwert null,
-bricht die Vorbereitung mit einem Fehler ab, weil die spätere Bewertung
-diesen Wert als Divisor benötigt.
-
-Die globalen Zielgewichte und die voreingestellten Baseline- und Test-Seeds
-stammen aus der Optimierungsanwendung. Ein [Seed](#seed-und-reproduzierbarkeit)
-bestimmt die reproduzierbaren Zufallsfolgen eines Simulationslaufs:
-
-- **Baseline:** standardmäßig `SEEDS = [1, 2]`; änderbar über
-  `--baseline-seeds`.
-- **Training:** Seeds `1` bis `10`, änderbar über `--train-seeds`. Jeder
-  Simulationsprozess durchläuft diese Liste wiederholt, beginnt aber an einer
-  anderen Stelle. Der separate Parameter `--seed` (Standard `0`) steuert
-  die Anfangsparameter des Netzes und die Zufallsentscheidungen des Lernverfahrens.
-- **Abschließender Test:** `TEST_SEEDS = [101, 102, 103, 104, 105]`, änderbar
-  über `--evaluation-seeds`. Diese Seeds dürfen weder im Training noch in
-  der Baseline verwendet werden. Baseline und Training dürfen dagegen
-  dieselben Seeds enthalten. Innerhalb einer Liste sind keine Duplikate erlaubt.
-
-Bei asynchronem Monte Carlo bestimmen zusätzlich Betriebssystem und Laufzeiten,
-in welcher Reihenfolge Episoden eintreffen und neue Netzversionen übernommen
-werden. Gleiche Seeds allein garantieren deshalb keinen bitgenau identischen
-Trainingsverlauf. Die Auswertung eines fest gespeicherten Netzes ist davon
-zu unterscheiden: Dabei wird nicht weitertrainiert.
-
-Das Training speichert im Ausgabeordner:
-
-| Datei | Inhalt |
+| Verlauf | Belohnung |
 | --- | --- |
-| `manifest.json` | Trainingseinstellungen, Netzaufbau, Paketversionen, Seed-Listen, Baseline-Ergebnisse sowie verwendetes Fabrikmodell und globale Bewertungsvorgaben. |
-| `model.zip` | Gespeicherter Netzstand und Einstellungen des gewählten Lernverfahrens nach dem Training oder einer Unterbrechung mit `Strg+C`. |
-| `checkpoint_episodes_*.zip` | Zwischenstände nach standardmäßig `10` weiteren Episoden. Bei Dreamer liegen diese in der Datensammlung, also noch vor dem Lernen. `--checkpoint-every` ändert den Abstand. |
-| `checkpoint_world_model.zip` | Nur Dreamer: Netzstand nach Lernen und Prüfung des Ersatzmodells, vor dem anschließenden Actor/Critic-Training. |
-| `world_model_data/` | Nur Dreamer: alle gesammelten Trainingsepisoden auf der Festplatte. `validation_episode.pkl` enthält separat den Prüfverlauf und wird nie zum Lernen ausgewählt. |
-| `replay_buffer.pkl` | Optionaler Monte-Carlo-Erfahrungsspeicher am Trainingsende, nur mit `--save-replay-buffer`. Dreamer speichert seine Trainingsepisoden immer in `world_model_data/`. |
-| `episodes.jsonl` | Pro beendeter Episode: Seed, Belohnung, Kosten, Kennzahlen, Entscheidungszahl, Abschluss- oder Abbruchstatus sowie Netzversion und Worker. Die Datei entsteht beim ersten Episodenende. |
-| `progress.csv` | Protokoll der Trainingswerte des gewählten Lernverfahrens. |
-| `phases.jsonl` | Nur Dreamer: Fortschritt und Kennzahlen von Datensammlung, Weltmodelltraining, Prüfung und Actor/Critic-Training. |
-| `training_report.json` | Status, Umfang und Rechenzeiten. `requested_episodes` ist das angeforderte Episodenbudget; `actual_timesteps` zählt zusätzlich die gesammelten Entscheidungen. |
+| Episode läuft weiter | `0` |
+| Alle Jobprozesse beendet | `1 / (1 + global_cost)` |
+| Entscheidungs- oder Simulationszeitlimit bei unfertigen Jobs | `-1` |
 
-**Fabrikmodell und Netz unterscheiden:** Das Fabrikmodell ist die Python-Datei
-mit Layout und Produktionsaufträgen. `model.zip` enthält dagegen den gelernten
-Netzstand. `manifest.json` verbindet beides: Die Datei speichert den Pfad und
-eine SHA-256-Prüfsumme der Fabrikdatei sowie Eingabemerkmale, Objekt- und
-Aktionsarten, Zielgewichte, Referenzen und Umgebungsgrenzen. Die Prüfsumme
-erkennt, ob sich die Fabrikdatei verändert hat.
+Kleinere globale Kosten ergeben eine höhere Abschlussbelohnung.
+Beispielsweise ergeben Kosten von `3` den Reward `0.25`, Kosten von `1`
+den Reward `0.5`. Regulär beendete Läufe können Ausschuss oder herabgestufte
+Jobs enthalten; diese gehen in die globale Bewertung ein.
 
-Beim Laden werden diese Angaben und die Größen der Zahlenfelder geprüft.
-Es gelten die gespeicherten Bewertungsvorgaben, nicht nachträglich geänderte
-App-Einstellungen. `--model` erlaubt eine identische Dateikopie an einem
-anderen Speicherort, aber kein anderes Fabrikmodell.
+Die direkte Umgebung meldet einen regulären Abschluss mit `terminated=True`
+und einen Limitabbruch mit `truncated=True`. Im Training behandelt
+`EpisodeSeedWrapper` beide Limits ausdrücklich als endgültigen Fehlschlag:
+`terminated=True`, `truncated=False`, Endbelohnung `-1`. Der Abbruchgrund
+bleibt gespeichert. Es wird kein geschätzter späterer Erfolg hinzugerechnet.
+Timeouts und Simulationsfehler bleiben dagegen echte Fehler.
 
-Manifestversion und Algorithmus müssen zum gespeicherten Netzstand passen.
-Der Loader wählt anhand des Manifests Dreamer oder Monte Carlo. Netzstände
-entfernter Lernverfahren sind nicht kompatibel und werden mit einer Fehlermeldung
-abgewiesen. Die früheren Monte-Carlo-Klassennamen werden beim Laden weiterhin
-erkannt. Vorhandene Dateien werden weder umgewandelt noch gelöscht;
-für jeden Trainingslauf ist ein neuer, leerer Ausgabeordner zu verwenden.
+### Kalibrierung und Seeds
 
-Nur eigene oder vertrauenswürdige Netzstände laden: SB3-Dateien enthalten
-Python-Objekte und sind nicht als unbedenkliche Datendateien zu behandeln.
-Das gilt ebenso für die optionale Replay-Datei. `model.zip` enthält nicht den
-großen Erfahrungsspeicher. Ein CLI-Befehl zum Fortsetzen eines Trainings mit
-gespeichertem Replay Buffer ist noch nicht vorhanden.
+Vor dem Training berechnet `calibrate_references()` aus vollständigen
+Standardheuristik-Läufen feste positive Referenzwerte für die globale Bewertung.
+Das trainiert noch kein Netz; die Rechenzeit wird getrennt ausgewiesen.
+Fabrikdatei, Prüfsumme, Bewertungsgewichte und Referenzen werden gespeichert.
+
+Die Vorgaben stammen aus der [Optimierungsanwendung](sources/apps/heuristic_optimization_app.py):
+
+- Baseline: `[1, 2]`, änderbar mit `--baseline-seeds`.
+- Training: `1` bis `10`, änderbar mit `--train-seeds`. Worker wiederholen
+  diese Liste mit unterschiedlichen Startpositionen.
+- Test: `[101, 102, 103, 104, 105]`, änderbar mit `--evaluation-seeds`.
+  Test-Seeds dürfen weder in Baseline noch Training vorkommen.
+- `--seed` steuert Netzinitialisierung und zufällige Aktionsauswahl.
+  Innerhalb einer Seed-Liste sind keine Duplikate erlaubt.
+
+Gleiche Seeds sind kein allgemeiner Nachweis bitgenau gleicher Trainingsläufe.
+Die Auswertung eines gespeicherten Netzes verändert seine Gewichte nicht.
 
 ### Training starten
 
-Für das Training werden zusätzlich Gymnasium, PyTorch und Stable-Baselines3
-sowie für Dreamer TorchRL und TensorDict benötigt. Stable-Baselines3 stellt
-hier unter anderem die Speicher- und Callback-Schnittstellen bereit;
-Dreamers Weltmodell stammt aus TorchRL. Die optionale Paketgruppe `rl-training`
-installiert diese Bibliotheken:
+Tianshou `2.0.1` benötigt Python ab `3.11`. Dafür wird hier ausdrücklich
+das installierte Python `3.12` in einer eigenen Umgebung verwendet.
+Die vorhandene `.venv` mit Python `3.10` bleibt unverändert.
+Die Paketgruppe `rl-training` installiert Gymnasium, PyTorch und Tianshou;
+Stable-Baselines3 und TorchRL werden nicht benötigt.
 
 ```console
-.\.venv\Scripts\python.exe -m pip install -e ".[rl-training]"
+py -3.12 -m venv .venv-reinforce
+.\.venv-reinforce\Scripts\python.exe -m pip install -e ".[rl-training]"
+.\.venv-reinforce\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/reinforce --episodes 100 --workers 4 --episodes-per-update 4
 ```
 
-**Dreamer mit getrennten Phasen trainieren:**
-
-```console
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --output rl_runs/dreamer --episodes 100 --workers 4 --world-model-updates 10 --imagination-updates 10
-```
-
-Der Befehl sammelt zuerst 100 echte Episoden. Danach führt er 10 Lernschritte
-für das Ersatzmodell und 10 Lernschritte für Actor und Critic aus. Diese kleinen
-voreingestellten Lernbudgets dienen dem Einstieg, **nicht als Nachweis eines
-ausreichend genauen Ersatzmodells oder einer fertig trainierten Steuerung**.
-`phases.jsonl` protokolliert die Phasen und ihre Kennzahlen. Die Zusammenfassung
-steht in `training_report.json`.
-Manifest und Trainingsbericht enthalten außerdem `runtime`: gewünschtes und
-tatsächlich verwendetes Rechengerät, PyTorch-Version, CUDA-Version der
-PyTorch-Installation und bei GPU-Ausführung den Namen der verwendeten GPU.
-Damit ist beispielsweise erkennbar, ob `--device auto` tatsächlich eine GPU
-oder die CPU gewählt hat.
-Die Produktionskosten und Belohnungen der gesammelten Episoden stammen beim
-Dreamer-Befehl **vom anfänglichen Actor vor dem Training**, nicht von der danach
-gelernten Steuerung. Das gilt auch für `mean_completed_global_cost` im
-Trainingsbericht. `episode_metrics_phase="collection_before_training"` kennzeichnet
-diese Werte. Erst der getrennte Testbefehl bewertet die fertig trainierte Steuerung.
-
-**Monte Carlo trainieren:**
-
-```console
-.\.venv\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm monte-carlo --output rl_runs/monte_carlo --episodes 100 --workers 4 --epochs 4
-```
-
-Ohne `--model` verwendet
-[`train_rl_policy.py`](sources/tools/train_rl_policy.py) die unter `EXAMPLE_FILE`
-eingestellte Fabrikdatei, derzeit [example-5.py](sources/examples/normal/example-5.py).
-`--algorithm` wählt das Lernverfahren; ohne Angabe gilt `monte-carlo`.
-`--output` bestimmt den Ausgabeordner; ohne Angabe gilt je nach Verfahren
-`rl_runs/dreamer` oder `rl_runs/monte_carlo`. Der Ordner muss neu oder leer sein,
-damit kein vorhandenes Netz überschrieben wird. `--help` zeigt die verfügbaren Optionen,
-ohne eine Simulation oder ein Training zu starten.
-Optionen des anderen Lernverfahrens werden mit einer Fehlermeldung abgewiesen:
-beispielsweise `--epochs` bei Dreamer oder `--sequence-length` bei Monte Carlo.
-
-**Wer simuliert, wer lernt?** Der Trainer startet `--workers` getrennte
-Simulationsprozesse. Jeder Worker führt seine eigene Simulation aus. Das
-gemeinsam trainierte Netz und das Lernverfahren liegen im übergeordneten
-Trainingsprozess. Jeder Worker entscheidet mit seiner lokalen, während einer
-Episode unveränderten Netzkopie und liefert danach den vollständigen Verlauf.
-
-**Dreamer: Wann werden die Netze verändert?** Erst nach Ende der Datensammlung.
-Zunächst wird nur das Weltmodell trainiert, anschließend nur Actor und Critic.
-Ein Lernschritt verwendet `--batch-size` gespeicherte Erfahrungsfolgen von jeweils
-bis zu `--sequence-length` Entscheidungen. Für Actor und Critic werden daraus
-Verläufe mit `--imagination-horizon` Modellschritten vorausberechnet. Während
-dieser Lernphasen laufen keine Salabim-Worker mehr. Den Ablauf erklärt
-[Dreamer: mit einem gelernten Weltmodell lernen](#dreamer-mit-einem-gelernten-weltmodell-lernen).
-
-**Monte Carlo: Wann wird das Netz verändert?** Nach jeweils
-`--mc-train-every-episodes` neu eingetroffenen Episoden, ohne auf die übrigen
-Worker zu warten. Bis zu `--mc-replay-sample-episodes` ganze Episoden aus dem
-Speicher werden mit korrigierten Gewichten `--epochs`-mal zum Lernen verwendet.
-Die übrigen Worker laufen währenddessen weiter. Sind am regulären Trainingsende
-weniger neue Episoden übrig, lösen sie trotzdem eine letzte Lernphase aus dem Replay Buffer aus. Den Ablauf erklärt
-[Monte Carlo: aus vollständigen Episoden lernen](#monte-carlo-aus-vollständigen-episoden-lernen).
-
-**Wie viele Simulationen werden ausgeführt?** Bei regulär beendetem
-Training führt `--episodes 100` genau `100` Trainingsepisoden aus, verteilt auf die Worker. Jede gestartete
-Episode läuft bis zum regulären Ende oder einem eingestellten Sicherheitslimit.
-Alle Ergebnisse werden abgeholt; es werden keine zusätzlichen Episoden gestartet.
-Eine am Sicherheitslimit beendete Episode zählt ebenfalls zum Budget und erhält
-die Endbelohnung `-1`. Bei einem Fehler oder `Strg+C` kann das Training vorher enden.
-Die Baseline-Läufe zählen nicht zu diesen `100` Trainingsepisoden.
-Die Zahl der Entscheidungen je Episode darf unterschiedlich sein und wird nur
-zusätzlich protokolliert. Sie bestimmt bei keinem der beiden Verfahren das
-Trainingsbudget. Nur Auswahlpunkte mit mehreren Kandidaten zählen als externe
-Entscheidungen; automatisch übernommene Einzelkandidaten zählen nicht mit.
+Die Installation startet kein Training. Der Trainingsbefehl muss bewusst
+ausgeführt werden. Ohne `--model` gilt `EXAMPLE_FILE` der Anwendung,
+derzeit [example-5.py](sources/examples/normal/example-5.py).
+Ohne `--output` gilt `rl_runs/reinforce`. Der Ausgabeordner muss neu oder
+leer sein. `--help` zeigt die Optionen ohne Simulationsstart.
+Es gibt keine Algorithmusauswahl und keine alten Epsilon-/Replay-Trainingsoptionen.
 
 | Einstellung | Standard | Bedeutung |
 | --- | --- | --- |
-| `--algorithm` | `monte-carlo` | `dreamer` oder `monte-carlo` als Lernverfahren verwenden. |
-| `--episodes` | `100` | Genau so viele vollständige Trainingsepisoden ausführen und auswerten. |
-| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Anzahl getrennter Simulationsprozesse; höchstens so viele wie das Episodenbudget. |
-| `--sequence-length` | `32` | Nur Dreamer: Entscheidungen je zusammenhängendem Trainingsausschnitt. |
-| `--imagination-horizon` | `15` | Nur Dreamer: vorausberechnete Schritte je Verlauf im Weltmodell. |
-| `--world-model-updates` | `10` | Nur Dreamer: Lernschritte für das Weltmodell nach der Datensammlung. |
-| `--imagination-updates` | `10` | Nur Dreamer: Lernschritte für Actor und Critic im danach eingefrorenen Weltmodell. |
-| `--epochs` | `4` | Nur Monte Carlo: Trainingsdurchgänge über die ausgewählten Replay-Episoden. |
-| `--mc-replay-episodes` | `8` | Nur Monte Carlo: maximale Zahl vollständig gespeicherter Episoden. |
-| `--mc-replay-transitions` | `10000` | Nur Monte Carlo: zusätzliches Übergangslimit des Episodenspeichers; eine einzelne größere Episode wird allein vollständig behalten. |
-| `--mc-train-every-episodes` | `4` | Nur Monte Carlo: nach so vielen neu eingetroffenen Episoden lernen. |
-| `--mc-replay-sample-episodes` | `4` | Nur Monte Carlo: höchstens so viele ganze Episoden je Lernphase auswählen. |
-| `--batch-size` | Monte Carlo: `64`; Dreamer: `8` | Monte Carlo: Entscheidungen je Datengruppe. Dreamer: zusammenhängende Erfahrungsfolgen je Lernphase. |
-| `--learning-rate` | Monte Carlo: `0.0001`; Dreamer: `0.0003` | Schrittweite bei der Anpassung der Netzparameter. |
-| `--exploration-fraction` | `0.3` | Nur Monte Carlo: Anteil der Episoden, über den `epsilon` linear sinkt. |
-| `--exploration-initial-eps` / `--exploration-final-eps` | `1.0` / `0.05` | Nur Monte Carlo: positive Anfangs- und Endwahrscheinlichkeit einer zufälligen gültigen Auswahl. |
-| `gamma` | `1.0` | Spätere Belohnung nicht abschwächen. Für beide Verfahren im Trainingsskript festgelegt. |
-| `--max-decisions` / `--max-simulation-time` | `10000` / `10000.0` | Höchstens so viele externe Auswahlen beziehungsweise simulierte Stunden je Trainingsepisode. |
-| `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten für Kandidaten und Objekte. |
-| `--device` | `cpu` | Rechengerät der zentralen Netze und ihrer Anpassung. Salabim und die lokalen Worker-Netzkopien bleiben auf der CPU. |
-| `--save-replay-buffer` | aus | Nur Monte Carlo: Erfahrungsspeicher zusätzlich am Trainingsende speichern. Dreamer speichert seine Daten ohnehin auf der Festplatte. Das Skript bietet noch keinen Befehl zum Fortsetzen eines Trainings. |
-| `--checkpoint-every` | `10` | Abstand gespeicherter Zwischenstände in Episoden. |
+| `--episodes` | `100` | Episodenbudget einschließlich Sicherheitsabbrüchen. |
+| `--workers` | höchstens `4`, begrenzt durch `os.cpu_count()` | Angeforderte Simulationsprozesse. |
+| `--episodes-per-update` | `min(workers, episodes)` | Höchstens so viele neue vollständige Episoden je Lernphase. |
+| `--buffer-size` | automatisch aus Workern, Episoden je Lernphase und Entscheidungslimit | Übergangsplätze für die aktuelle Sammlung. |
+| `--batch-size` | `64` | Entscheidungen je Minibatch der Gewichtsänderung. |
+| `--learning-rate` | `0.0001` | Adam-Schrittweite. |
+| `--seed` | `0` | Zufall des Lernverfahrens. |
+| `--max-decisions` | `10000` | Grenze externer Auswahlen je Episode. |
+| `--max-simulation-time` | `10000.0` | Grenze der simulierten Stunden je Episode. |
+| `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten. |
+| `--checkpoint-every` | `10` | Episodenabstand für Zwischenstände nach Lernphasen. |
+| `--device` | `cpu` | `cpu`, `cuda` oder automatische Auswahl mit `auto`. |
 
-Beide Verfahren sammeln vollständige Episoden mit Beobachtungen, Aktionen,
-Belohnungen und Netzversionen. Monte Carlo bewahrt zusätzlich die damaligen
-Auswahlwahrscheinlichkeiten auf. Seine Episoden- und Übergangslimits begrenzen
-den Replay Buffer. Beim Dreamer-Befehl bleiben alle gesammelten Trainingsdaten
-auf der Festplatte erhalten. Zusätzlich besitzen laufende Worker eigene
-Verläufe und lokale Netzkopien. Dieser Speicher kann bei langen Episoden und
-vielen Workern groß werden; die Replay-Grenzen von Monte Carlo begrenzen nicht
-alle gleichzeitig laufenden Simulationen oder deren Übergabepuffer.
-Mehr Worker garantieren auch hier keine kürzere Trainingszeit. Für den Rechner mit 20 logischen Prozessoren
-kann `--workers 20` geprüft werden; der zentrale Lernprozess benötigt ebenfalls
-CPU-Zeit und Arbeitsspeicher.
+Aktiv sind `min(workers, episodes, episodes_per_update)` getrennte
+CPU-Prozesse über Tianshous
+[`SubprocVectorEnv`](https://tianshou.org/en/stable/03_api/env/venvs.html).
+Der Actor und die Gewichtsänderung liegen im Hauptprozess. Sammlung und
+Lernen wechseln sich ab; es gibt keinen eigenen asynchronen Episodenrunner.
+Mehr Worker garantieren keine bestimmte Beschleunigung oder bessere Steuerung.
 
-Salabim läuft immer auf der CPU. `--device cuda` oder `auto` kann nur die
-Netzberechnung und die Netzanpassungen auf eine passende GPU verlagern.
-`cuda` ohne von PyTorch erkannte CUDA-Unterstützung führt zu einem Fehler.
-`cpu` ist voreingestellt. GPU-Ausführung benötigt eine passende CUDA-fähige
-PyTorch-Installation und einen geeigneten NVIDIA-Treiber. Die Implementierung
-wurde auf CPU und GPU funktionsgeprüft; ein GPU-Geschwindigkeitsvorteil wurde
-noch nicht nachgewiesen.
+Ein zu kleiner Sammelpuffer führt vor der Gewichtsänderung zu einem Fehler,
+statt mit abgeschnittenen Episoden-Returns zu lernen. Lange Episoden und große
+Beobachtungen können viel Arbeitsspeicher benötigen. Ein größerer Wert für
+`--episodes-per-update` kann deshalb einen größeren `--buffer-size` erfordern.
 
-**GPU auf diesem Rechner:** `.venv-gpu` enthält PyTorch `2.14.1+cu126` und nutzt
-die übrigen Projektpakete aus `.venv`. Die bestehende CPU-Umgebung und der
-NVIDIA-Treiber wurden nicht verändert; beide Umgebungsordner bleiben erhalten.
+Salabim bleibt auf der CPU. `--device cuda` betrifft nur das neuronale Netz
+und benötigt eine passende CUDA-PyTorch-Installation. Bei ausdrücklichem
+`cuda` wird eine nicht verfügbare GPU vor den Baseline-Läufen erkannt.
+Ein GPU-Geschwindigkeitsvorteil
+oder eine bessere Produktionssteuerung wird nicht zugesichert.
 
-```console
-.\.venv-gpu\Scripts\python.exe sources/tools/train_rl_policy.py --algorithm dreamer --device cuda --output rl_runs/dreamer_gpu
-```
+### Gespeicherte Dateien
 
-Die Anwendung setzt `CUDA_MODULE_LOADING=LAZY` **vor dem ersten PyTorch-Import**.
-CUDA lädt dadurch Module und Kernel erst bei Bedarf; eine ausdrücklich gesetzte
-andere Einstellung wird nicht überschrieben. Diese Prozess-Einstellung
-initialisiert selbst noch keine GPU und ändert keine Windows-Einstellungen.
-Sie behebt auf diesem Rechner den zuvor aufgetretenen CUDA-Speicherfehler.
-Der Hintergrund der Einstellung steht in der
-[NVIDIA-Dokumentation zu Lazy Loading](https://docs.nvidia.com/cuda/archive/12.6.0/cuda-c-programming-guide/index.html#lazy-loading).
+| Datei | Inhalt |
+| --- | --- |
+| `manifest.json` | Fabrikdatei mit SHA-256-Prüfsumme, Beobachtungsschema, Bewertung, Seed-Listen, Hyperparameter, Paketversionen und Rechengerät. `checkpoint_file` verweist auf `model.pt`. |
+| `model.pt` | Actor-Gewichte sowie Eingabegrößen und Netzbreiten; kein Optimizerzustand oder vollständiger Zustand zum Fortsetzen eines Trainings. |
+| `checkpoint_episodes_*.pt` | Actor-Zwischenstände nach Gewichtsänderungen. |
+| `episodes.jsonl` | Je beendeter Episode Seed, Entscheidungen, Reward, Kosten, Kennzahlen, Abschluss-/Abbruchstatus und Worker-Prozess-ID. |
+| `progress.csv` | Je Lernphase `episodes`, `timesteps`, `gradient_updates` und `last_loss`. |
+| `training_report.json` | Status, angeforderte und erfasste Episoden, erfolgreiche/abgebrochene Episoden, Entscheidungen, Gewichtsänderungen, letzter Loss und Rechenzeiten. |
 
-**Funktionsprüfung:** Zwei vollständige Salabim-Episoden mit insgesamt `2593`
-Entscheidungen wurden auf der CPU gesammelt. Danach wurden Ersatzmodelltraining,
-Vorhersageprüfung und Actor-/Critic-Training auf der RTX A1000 ausgeführt.
-Beim Actor-/Critic-Training blieben die Ersatzmodellparameter unverändert.
-Das ist noch kein Nachweis für ein ausreichend genaues Modell, eine bessere
-Steuerung oder eine kürzere Trainingszeit.
+`--checkpoint-every 10` speichert erst nach einer abgeschlossenen Lernphase,
+die den nächsten Abstand erreicht oder überschritten hat. Bei Vierergruppen
+entsteht der erste Zwischenstand daher nach `12` Episoden, nicht nach `10`.
+`Strg+C` während des Trainings speichert den aktuellen Actor; ein CLI-Befehl
+zum Fortsetzen ist nicht vorhanden.
 
-Der Trainingsbefehl prüft bei `cuda` oder erkannter GPU unter `auto` eine echte
-Speicherzuteilung **vor** den Baseline-Läufen. Schlägt sie fehl, startet keine
-Simulation; mit `--device cpu` bleibt das Training nutzbar.
+Fabrikmodell und Netz sind verschieden: Die Python-Fabrikdatei beschreibt
+Layout und Aufträge, `model.pt` enthält die gelernten Netzgewichte.
+Beim Laden werden Prüfsumme, Beobachtungsschema und Ein-/Ausgabegrößen geprüft.
+`--model` darf eine identische Fabrikdatei an einem anderen Ort angeben,
+aber kein anderes Fabrikmodell. Nur eigene oder vertrauenswürdige Netzdateien laden.
 
 ### Auf getrennten Test-Seeds vergleichen
 
 ```console
-.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/dreamer
-.\.venv\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/monte_carlo
+.\.venv-reinforce\Scripts\python.exe sources/tools/evaluate_rl_policy.py --run-dir rl_runs/reinforce
 ```
 
-[`evaluate_rl_policy.py`](sources/tools/evaluate_rl_policy.py) lädt den
-gespeicherten Netzstand aus `model.zip` und die Einstellungen aus `manifest.json`.
-Das Manifest bestimmt, ob Dreamer oder Monte Carlo geladen wird. Jeder Befehl
-vergleicht den angegebenen Netzstand mit `RandomPolicy` und Standardheuristik.
-Alle verwenden dieselben reservierten Test-Seeds und dieselbe globale Bewertung.
-Der Bericht bezeichnet das geladene Netz als `RL (Dreamer)` oder `RL (Monte Carlo)`.
-Die Netzparameter
-werden dabei nicht weiter verändert.
+Der Befehl lädt `model.pt` über `manifest.json` und vergleicht
+`RL (Tianshou REINFORCE)` mit `Random` und `Heuristic (default)`.
+Alle verwenden dieselben reservierten Test-Seeds und globalen Bewertungsvorgaben.
+Die Netzgewichte bleiben unverändert.
 
-- **Standardauswahl:** Monte Carlo nimmt den gültigen Kandidaten mit dem
-  höchsten Q-Wert; Dreamer verwendet die bevorzugte gültige Aktion des Actors.
-- **`--explore`:** Monte Carlo verwendet Epsilon-Greedy mit dem gespeicherten
-  `epsilon`; Dreamer zieht eine Aktion aus den Wahrscheinlichkeiten seines Actors.
-  `--stochastic` bleibt als Alias verfügbar. Beide berücksichtigen die Aktionsmaske.
-- **`--skip-comparisons`:** Führt nur die RL-Policy aus.
-- **`--seeds`:** Wählt andere Test-Seeds. Sie dürfen weder im Training noch
-  in der Baseline verwendet worden sein.
+- Standardmäßig wird der gültige Kandidat mit der höchsten Actor-Wahrscheinlichkeit gewählt.
+- `--explore`, auch `--stochastic`, zieht stattdessen aus der Actor-Verteilung.
+- `--skip-comparisons` führt nur das Netz aus; `--seeds` wählt andere,
+  von Training und Baseline getrennte Test-Seeds.
+- `--checkpoint checkpoint_episodes_12.pt` prüft einen tatsächlich gespeicherten
+  Zwischenstand. `--output` bestimmt den Berichtspfad.
+- `--optimized-weights gewichte.json` ergänzt die optimierte Heuristik.
+  Unterstützt werden ein direktes `HeuristicWeights`-Dictionary sowie
+  `best_weights` oder `optimization_result.best_weights`.
 
-Alle Steuerungen verwenden das gespeicherte Simulationszeitlimit.
-Für die RL-Policy gilt zusätzlich ihr gespeichertes Entscheidungslimit.
-
-Die Ergebnisdatei `evaluation.json` enthält Kennzahlen, globale Kosten,
-Abschluss- oder Abbruchstatus und die reale Rechenzeit jedes Laufs. Ein
-Mittelwert wird für eine Policy nur ausgegeben, wenn alle angeforderten
-Testläufe abgeschlossen sind. Sonst steht dort `null`, also kein gültiger
-Mittelwert. So wird ein unfertiger Lauf nicht als scheinbar gutes Ergebnis gewertet.
-Bei Fehlern wird der bis dahin erfasste Teilbericht gespeichert.
-
-`--checkpoint checkpoint_episodes_10.zip` lädt einen Zwischenstand statt `model.zip`.
-`--output` bestimmt den Berichtspfad. Mit `--optimized-weights gewichte.json`
-kommt eine vierte Steuerung hinzu: die Heuristik mit einem optimierten lokalen
-Gewichtssatz. Die JSON-Datei darf direkt ein `HeuristicWeights`-Dictionary
-enthalten oder die Felder `best_weights` beziehungsweise
-`optimization_result.best_weights` verwenden. Aus Zeitvergleichsberichten mit
-verschachtelten `measurements` müssen die Gewichte vorher separat exportiert werden.
-
-Erst die vollständigen Testläufe zeigen, wie die trainierte Steuerung abschneidet.
-Ein gespeicherter Zwischenstand oder ein kurzer Trainingsprobelauf allein
-belegt keine Verbesserung.
+`evaluation.json` enthält pro Lauf Kennzahlen, Kosten, Status und reale Rechenzeit.
+Alle Steuerungen haben dasselbe Simulationszeitlimit; für das Netz gilt zusätzlich
+sein Entscheidungslimit. Sobald ein Testlauf einer Policy abbricht, bleiben ihre
+Kosten- und Kennzahlenmittelwerte `null`. Bei Fehlern bleibt der Teilbericht erhalten.
+Erst vollständige getrennte Tests zeigen die Qualität; ein kurzer Trainingsprobelauf
+oder ein niedriger Trainings-Loss beweist keine Verbesserung.
 
 ### Trainiertes Netz im normalen Runner einsetzen
 
-[TrainedCandidatePolicy](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
-verbindet das gespeicherte Netz mit derselben `make_decision()`-Schnittstelle
-wie die anderen Steuerungen. Deshalb kann der normale `SimulationRunner`
-die RL-Policy direkt verwenden. Eine eigene Schleife mit `reset()` und
-`step()` muss dafür nicht geschrieben werden:
+[`TrainedCandidatePolicy`](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
+verwendet dieselbe `make_decision()`-Schnittstelle wie die anderen Policies.
+Dafür ist keine eigene Gymnasium-Schleife nötig:
 
 ```python
 from SpineML.Control.RLPolicy.Shared.TrainedPolicy import TrainedCandidatePolicy
 from SpineML.SimulationExecution.ModelLoader import load_layout_and_scenario
 from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
 
-policy = TrainedCandidatePolicy("rl_runs/dreamer")
+policy = TrainedCandidatePolicy("rl_runs/reinforce")
 layout, scenario = load_layout_and_scenario(policy.model_path)
 runner = SimulationRunner(
     layout, scenario,
@@ -3713,87 +3136,30 @@ runner = SimulationRunner(
 metrics = runner.run_policy(policy, seed=101)
 ```
 
-Für ein Monte-Carlo-Netz wird stattdessen
-`TrainedCandidatePolicy("rl_runs/monte_carlo")` verwendet. Die weitere
-Ausführung bleibt gleich.
-
-Für die Simulation wird die unter `policy.model_path` gespeicherte Fabrikdatei
-geladen. Mit `model_file=...` darf eine identische Kopie an einem anderen Ort
-angegeben werden. Standardmäßig wird auf der CPU die bevorzugte gültige Aktion
-gewählt: bei Monte Carlo nach dem Q-Wert, bei Dreamer nach dem Actor.
-Mit `deterministic=False, seed=101` wird stattdessen die jeweilige zufällige
-Auswahl verwendet. Dreamer führt außerdem seinen internen Zustand von einer
-Entscheidung zur nächsten fort. Die Policy isoliert ihre
-Zufallszustände von den Python-, NumPy- und PyTorch-Zufallsfolgen der Simulation.
-Einzelne Kandidaten werden ohne Netzauswahl übernommen.
-
-Für mehrere Läufe erstellt
-[`TrainedPolicyFactory`](sources/SpineML/Control/RLPolicy/Shared/TrainedPolicy.py)
-jeweils eine neue Policy-Instanz: zunächst
-`factory = TrainedPolicyFactory("rl_runs/dreamer")`, dann `factory(seed)` pro Lauf.
-Diese Factory kann auch in einem `SimulationRunRequest` an den Prozesspool
-übergeben werden. Der Pool muss dieselbe gespeicherte Fabrikdatei verwenden.
-
-Auch bei diesem Einsatz überwacht die RL-Policy ihre gespeicherten Zeit- und
-Entscheidungsgrenzen. Wird ein Limit erreicht oder bleiben Jobs unfertig,
-wird ein Fehler gemeldet. Ein solcher Lauf gilt nicht als gültiges
-Optimierungsergebnis.
+Für zufällige Actor-Auswahl gilt `deterministic=False, seed=101`.
+Die Policy isoliert ihren Zufall vom Zufall der Simulation und überwacht
+die gespeicherten Zeit- und Entscheidungsgrenzen. Unfertige Läufe gelten
+nicht als gültige Optimierungsergebnisse. `TrainedPolicyFactory` erstellt
+für mehrere Läufe jeweils eine neue Policy und ist auch im Prozesspool nutzbar.
 
 <a id="optionale-installation-und-cli-test"></a>
 
 ### Umgebung ohne Training prüfen
 
-Die RL-Umgebung kann auch ohne neuronales Netz geprüft werden. Dafür reicht
-die optionale Paketgruppe `rl`; PyTorch und die Lernverfahren werden nicht benötigt.
-Der folgende Befehl startet einen solchen Prüflauf und trainiert oder lädt
-kein Netz:
+Mit der kleineren Paketgruppe `rl` lässt sich die Simulationsanbindung
+ohne PyTorch und ohne Netztraining prüfen:
 
 ```console
 .\.venv\Scripts\python.exe -m pip install -e ".[rl]"
 .\.venv\Scripts\python.exe sources/tools/run_rl_episode.py --seed 1 --output rl_environment_result.json
 ```
 
-- **Vorbereitung:** [`run_rl_episode.py`](sources/tools/run_rl_episode.py)
-  übernimmt die globalen Zielgewichte und Baseline-Seeds aus
-  `heuristic_optimization_app.py`. Vollständige Standardheuristik-Läufe
-  liefern die Referenzwerte für die Belohnungsberechnung. Ihre Rechenzeit
-  wird getrennt ausgewiesen.
-- **Auswahlverfahren:** `--policy random` wählt zufällig unter den gültigen
-  Nicht-Warteaktionen und wartet nur, wenn keine solche Aktion angeboten wird.
-  `--policy heuristic` verwendet den heuristischen Evaluator und Selector.
-  Beide Verfahren wählen aus den RL-Kandidaten, ohne ein Netz zu verwenden.
-- **Fabrik und Zufall:** `--model` bestimmt die Fabrikdatei. Ohne diese Angabe
-  gilt `EXAMPLE_FILE` aus der Optimierungsanwendung. `--seed` muss nichtnegativ sein.
-- **Grenzen:** `--max-decisions` zählt Auswahlen aus mehreren Kandidaten.
-  Der Standard ist hier `100000`, wie bei direkter Nutzung von `SpineRLEnv`;
-  das Trainingsskript verwendet dagegen `10000`. `--max-simulation-time`
-  begrenzt die simulierte Zeit standardmäßig auf `10000.0` Stunden.
-  Ungültige Befehlsparameter werden vor den Baseline-Läufen abgewiesen.
-- **Ausgabe:** Terminal und optionale JSON-Datei zeigen Status, Belohnung,
-  Kosten, Kennzahlen und Rechenzeiten. Die JSON-Datei enthält außerdem den
-  Namen und die SHA-256-Prüfsumme der Fabrikdatei. `--help` zeigt nur die
-  Hilfe an; dafür ist Gymnasium nicht erforderlich.
+`--policy random` wählt gültige Nicht-Warteaktionen und wartet nur bei Bedarf;
+`--policy heuristic` verwendet die Heuristik. Diese Zufallsauswahl unter
+RL-Kandidaten ist nicht identisch mit der eigenständigen `RandomPolicy`.
+Der Prüfbefehl verwendet standardmäßig `100000` Entscheidungen als Grenze,
+das Training dagegen `10000`.
 
-Die Auswahl `--policy random` in diesem Prüfskript ist nicht dieselbe
-Implementierung wie die eigenständige `RandomPolicy`. Sie verwendet die
-RL-Kandidaten, übernimmt Einzelkandidaten automatisch und behält die
-EDD-Priorität des Generators bei. Die Abläufe müssen daher nicht identisch sein.
-
-### Ressourcen und Parallelität
-
-- **Umgebung schließen:** Bei eigener Nutzung `close()` in einem
-  `finally`-Block aufrufen. Die Methode beendet eine aktive Episode und wartet
-  auf deren Simulationsthread. Dieser Thread führt die Salabim-Simulation
-  innerhalb des jeweiligen Python-Prozesses aus.
-- **Fehler behandeln:** Ungültige Indizes, überschrittene Zeilenkapazitäten,
-  geänderte ID-Zuordnungen, Timeouts und Simulationsfehler werden als Fehler
-  gemeldet. Endet ein Lauf schon vor der ersten Kandidatenauswahl, kann auch
-  `reset()` keine Anfangsbeobachtung liefern und meldet einen Fehler.
-- **Simulationen trennen:** Salabim und der Python-Zufall verwenden gemeinsame
-  Zustände innerhalb eines Prozesses. Dort darf deshalb nur eine RL-Umgebung
-  simulieren; andere Simulationen dürfen nicht gleichzeitig laufen.
-  Parallele Läufe benötigen getrennte Prozesse.
-- **Training ausführen:** Die Episodenrunner starten eigene Worker-Prozesse
-  mit `spawn`, auch bei nur einem Worker. Jeder Worker führt seine Umgebung
-  nacheinander aus und schließt sie am Ende. Große Diagnoseangaben werden vor der Weitergabe an den
-  Trainer aus `info` entfernt; Abschlusskennzahlen und Abbruchgründe bleiben erhalten.
+Bei eigener Umgebungsnutzung immer `close()` aufrufen, auch nach Fehlern.
+Salabim und Python-Zufall besitzen pro Prozess gemeinsame Zustände;
+gleichzeitig laufende Simulationen benötigen deshalb getrennte Prozesse.

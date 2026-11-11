@@ -1,6 +1,6 @@
-"""Verwendet eine gespeicherte Dreamer- oder Monte-Carlo-Policy in der Simulation.
+"""Verwendet eine gespeicherte Tianshou-REINFORCE-Policy in der Fabriksimulation.
 
-Nur eigene/vertraute Checkpoints laden: das SB3-ZIP enthält Python-Objekte.
+Lädt Netzgewichte mit torch.load(weights_only=True), keine gespeicherten Python-Objekte.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import json
 from numbers import Integral
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import random
 
 import numpy as np
@@ -28,19 +28,30 @@ def _validate_options(deterministic: bool, seed: int) -> int:
 
 
 def training_algorithm_classes(manifest: Mapping):
-    """Wählt den gespeicherten Lernalgorithmus und die zugehörige Netzklasse."""
+    """Prüft den gespeicherten Trainer und liefert seine Modell- und Netzklasse."""
     algorithm = manifest.get("algorithm")
     policy_class = manifest.get("policy_class")
-    if algorithm == "Dreamer" and policy_class == "CandidateDreamerPolicy":
-        from ..Dreamer.CandidateDreamer import CandidateDreamer
-        from ..Dreamer.DreamerNetworks import CandidateDreamerPolicy
+    if algorithm == "TianshouREINFORCE" and policy_class == "ReinforcePolicy":
+        from ..Reinforce.ReinforceModel import ReinforceModel
+        from ..Reinforce.ReinforcePolicy import ReinforcePolicy
 
-        return CandidateDreamer, CandidateDreamerPolicy
-    if algorithm == "MonteCarlo" and policy_class in ("MonteCarloPolicy", "CandidateMonteCarloPolicy"):
-        from ..MonteCarlo.MonteCarloAlgorithm import MonteCarloAlgorithm, MonteCarloPolicy
+        return ReinforceModel, ReinforcePolicy
+    raise ValueError("Nur Tianshou-REINFORCE-Checkpoints werden unterstützt. Ältere Q- oder Dreamer-Netze können nicht umgewandelt werden; bitte neu trainieren.")
 
-        return MonteCarloAlgorithm, MonteCarloPolicy
-    raise ValueError("Das Manifest muss einen Dreamer- oder Monte-Carlo-Trainingslauf beschreiben.")
+
+def training_checkpoint_path(
+    run_directory: str | Path,
+    manifest: Mapping,
+    *,
+    checkpoint_file: str | None = None,
+) -> Path:
+    """Ermittelt den Checkpoint innerhalb des Trainingsordners."""
+    name = manifest.get("checkpoint_file", "model.pt") if checkpoint_file is None else checkpoint_file
+    if (not isinstance(name, str) or not name or name in (".", "..")
+            or "\x00" in name or ":" in name
+            or PurePosixPath(name).name != name or PureWindowsPath(name).name != name):
+        raise ValueError("Der Checkpoint muss ein Dateiname innerhalb des Trainingsordners sein.")
+    return Path(run_directory) / name
 
 
 class TrainedCandidatePolicy(Policy):
@@ -58,17 +69,16 @@ class TrainedCandidatePolicy(Policy):
         seed = _validate_options(deterministic, seed)
         self.run_directory = Path(run_directory).resolve()
         manifest_path = self.run_directory / "manifest.json"
-        checkpoint_path = self.run_directory / "model.zip"
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:
             raise ValueError(f"Ungültiges JSON-Manifest: {manifest_path}") from error
         if not isinstance(manifest, dict):
             raise ValueError("Das Manifest muss einen RL-Trainingslauf beschreiben.")
+        checkpoint_path = training_checkpoint_path(self.run_directory, manifest)
         try:
             import torch as th
             from gymnasium import spaces
-            from stable_baselines3.common.utils import get_device
             from .TrainingSupport import validate_artifact_context
 
             algorithm_class, policy_class = training_algorithm_classes(manifest)
@@ -94,7 +104,11 @@ class TrainedCandidatePolicy(Policy):
             max_entities=context["environment"]["max_entities"],
         )
 
-        selected_device = get_device(device)
+        if device == "auto":
+            device = "cuda" if th.cuda.is_available() else "cpu"
+        selected_device = th.device(device)
+        if selected_device.type == "cuda" and not th.cuda.is_available():
+            selected_device = th.device("cpu")
         if selected_device.type not in ("cpu", "cuda"):
             raise ValueError("Die isolierte NN-Vorhersage unterstützt device='cpu' oder CUDA.")
         self._rng_devices = []
@@ -104,15 +118,14 @@ class TrainedCandidatePolicy(Policy):
                 device_index = th.cuda.current_device()
             self._rng_devices.append(device_index)
         # Laden und Vorhersagen dürfen den Zufall der Simulation nicht verändern.
-        # seed=None verhindert SB3s globales Python-/NumPy-Seeding beim Laden.
+        # seed=None verhindert globales Python-/NumPy-Seeding beim Laden.
         python_rng = random.getstate()
         numpy_rng = np.random.get_state()
         try:
             with th.random.fork_rng(devices=self._rng_devices):
-                # Die Netzklasse steht im Manifest; alte Dateipfade im ZIP werden damit ersetzt.
+                # Der Checkpoint enthält Netzgewichte und einfache Metadaten.
                 self.model = algorithm_class.load(
                     checkpoint_path, device=selected_device, seed=None,
-                    custom_objects={"policy_class": policy_class},
                 )
         finally:
             random.setstate(python_rng)

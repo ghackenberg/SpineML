@@ -28,7 +28,7 @@ class MonteCarloModel:
         episodes_per_update: int = 4,
         buffer_capacity: int | None = None,
         max_decisions: int = 10_000,
-        device: str = "cpu",
+        device: str = "cuda",
         seed: int | None = 0,
         embedding_dim: int = 32,
         hidden_dim: int = 64,
@@ -49,11 +49,9 @@ class MonteCarloModel:
             episodes_per_worker = self.episodes_per_update - workers + 1
             buffer_capacity = self.max_decisions * workers * episodes_per_worker
         self.buffer_capacity = positive_integer("buffer_capacity", buffer_capacity)
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
         if self.device.type not in ("cpu", "cuda"):
-            raise ValueError("Für REINFORCE sind CPU und CUDA vorgesehen.")
+            raise ValueError("Das Netz unterstützt CPU und CUDA; trainiert wird nur mit CUDA.")
         if self.device.type == "cuda" and not torch.cuda.is_available():
             raise ValueError("CUDA ist in dieser PyTorch-Installation nicht verfügbar.")
         if seed is not None:
@@ -89,6 +87,8 @@ class MonteCarloModel:
 
     def learn(self, total_episodes: int, *, on_episode=None, on_update=None):
         """Sammelt neue Episoden und lässt Tianshou daraus lernen."""
+        if self.device.type != "cuda":
+            raise ValueError("Das Training benötigt eine CUDA-GPU. CPU ist nur für die Auswertung vorgesehen.")
         # Nur beim Training importieren: Vorhersagen benötigen Tianshou nicht.
         from .MonteCarloTraining import create_algorithm, create_collector, create_trainer
 

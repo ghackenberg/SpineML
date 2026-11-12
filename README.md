@@ -3126,7 +3126,17 @@ Stable-Baselines3 und TorchRL werden nicht benötigt.
 ```console
 py -3.12 -m venv .venv-reinforce
 .\.venv-reinforce\Scripts\python.exe -m pip install -e ".[rl-training]"
-.\.venv-reinforce\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/reinforce --episodes 100 --workers 4 --episodes-per-update 4
+```
+
+Vor dem Training muss in dieser Umgebung eine CUDA-fähige PyTorch-Version
+installiert sein. Dazu die [offizielle PyTorch-Installationsauswahl](https://pytorch.org/get-started/locally/)
+für Windows, Pip, Python und CUDA verwenden und den Installationsbefehl mit
+`.\.venv-reinforce\Scripts\python.exe -m pip` ausführen.
+
+Danach das Training starten:
+
+```console
+.\.venv-reinforce\Scripts\python.exe sources/tools/train_rl_policy.py --output rl_runs/reinforce --episodes 100 --workers 4 --episodes-per-update 4 --device cuda
 ```
 
 Die Installation startet kein Training. Der Trainingsbefehl muss bewusst
@@ -3149,7 +3159,7 @@ Es gibt keine Algorithmusauswahl und keine alten Epsilon-/Replay-Trainingsoption
 | `--max-simulation-time` | `10000.0` | Grenze der simulierten Stunden je Episode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten. |
 | `--checkpoint-every` | `10` | Episodenabstand für Zwischenstände nach Lernphasen. |
-| `--device` | `cpu` | `cpu`, `cuda` oder automatische Auswahl mit `auto`. |
+| `--device` | `cuda` | Das Netz wird ausschließlich auf der CUDA-GPU trainiert. Kein CPU-Fallback. |
 
 Aktiv sind `min(workers, episodes, episodes_per_update)` getrennte
 CPU-Prozesse über Tianshous
@@ -3163,11 +3173,14 @@ statt mit abgeschnittenen Episoden-Returns zu lernen. Lange Episoden und große
 Beobachtungen können viel Arbeitsspeicher benötigen. Ein größerer Wert für
 `--episodes-per-update` kann deshalb einen größeren `--buffer-size` erfordern.
 
-Salabim bleibt auf der CPU. `--device cuda` betrifft nur das neuronale Netz
-und benötigt eine passende CUDA-PyTorch-Installation. Bei ausdrücklichem
-`cuda` wird eine nicht verfügbare GPU vor den Baseline-Läufen erkannt.
-Ein GPU-Geschwindigkeitsvorteil
-oder eine bessere Produktionssteuerung wird nicht zugesichert.
+Das neuronale Netz wird ausschließlich auf der CUDA-GPU trainiert.
+Dafür sind eine NVIDIA-GPU und eine passende CUDA-PyTorch-Installation nötig.
+Ist CUDA nicht verfügbar, bricht der Start vor den Baseline-Läufen ab;
+es wird nicht auf CPU-Training umgeschaltet. Salabim und die parallelen
+Simulationsprozesse bleiben auf der CPU. Gespeicherte Netze können für die
+Auswertung weiterhin ausdrücklich auf der CPU geladen werden.
+Ein GPU-Geschwindigkeitsvorteil oder eine bessere Produktionssteuerung wird
+nicht zugesichert.
 
 ### Gespeicherte Dateien
 

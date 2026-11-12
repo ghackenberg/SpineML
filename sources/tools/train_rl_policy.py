@@ -55,7 +55,7 @@ def parse_arguments():
     parser.add_argument("--max-actions", type=positive_int, default=256)
     parser.add_argument("--max-entities", type=positive_int, default=256)
     parser.add_argument("--checkpoint-every", type=positive_int, default=10)
-    parser.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="Nur das Netz; Salabim bleibt auf der CPU.")
+    parser.add_argument("--device", choices=("cuda",), default="cuda", help="Das Netz wird ausschließlich mit CUDA trainiert; Salabim bleibt auf der CPU.")
     args = parser.parse_args()
     if sys.version_info < (3, 11):
         parser.error("Tianshou 2 benötigt Python ab 3.11. Bitte die .venv-reinforce mit Python 3.12 verwenden.")
@@ -83,15 +83,14 @@ def main() -> None:
         from tools.monte_carlo_training import train_monte_carlo
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen: python -m pip install -e ".[rl-training]"\n{error}')
-    if args.device == "cuda" and not torch.cuda.is_available():
-        parser.error("--device cuda wurde gewählt, aber diese PyTorch-Installation erkennt keine CUDA-GPU.")
-    if args.device != "cpu" and torch.cuda.is_available():
-        try:
-            probe = torch.empty(1, device="cuda")
-            torch.cuda.synchronize()
-            del probe
-        except RuntimeError as error:
-            parser.error(f"Die GPU ist für Berechnungen nicht verfügbar. --device cpu verwenden.\n{error}")
+    if not torch.cuda.is_available():
+        parser.error("Das Training benötigt eine CUDA-GPU und eine passende CUDA-PyTorch-Installation. Kein CPU-Fallback.")
+    try:
+        probe = torch.ones(1, device="cuda")
+        torch.cuda.synchronize()
+        del probe
+    except RuntimeError as error:
+        parser.error(f"Die CUDA-GPU ist für Berechnungen nicht verfügbar. Das Training wurde nicht gestartet.\n{error}")
     torch.set_num_threads(1)
     configuration = load_app_configuration()
     if args.baseline_seeds is None:

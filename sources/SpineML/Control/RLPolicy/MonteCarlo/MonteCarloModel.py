@@ -2,48 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import math
-import os
 from pathlib import Path
 import random
-from time import perf_counter
 
-import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import torch
 
 from .MonteCarloPolicy import MonteCarloPolicy, positive_integer
-
-
-class _EpisodeInfo(gym.Wrapper):
-    """Überträgt Abschlusskennzahlen mit gleichbleibender info-Struktur."""
-
-    def reset(self, **kwargs):
-        self.started_at = perf_counter()
-        observation, _ = self.env.reset(**kwargs)
-        return observation, {"episode_summary": ""}
-
-    def step(self, action):
-        observation, reward, terminated, truncated, info = self.env.step(action)
-        summary = ""
-        if terminated or truncated:
-            info = dict(info)
-            info["worker_pid"] = os.getpid()
-            info["episode_elapsed_seconds"] = perf_counter() - self.started_at
-            summary = json.dumps(info, allow_nan=False)
-        return observation, reward, terminated, truncated, {"episode_summary": summary}
-
-
-@dataclass(frozen=True)
-class _ProcessEnvironment:
-    factory: object
-
-    def __call__(self):
-        torch.set_num_threads(1)
-        return _EpisodeInfo(self.factory())
 
 
 class MonteCarloModel:
@@ -104,6 +72,7 @@ class MonteCarloModel:
         self.gradient_updates = 0
         self.last_loss = None
         self.worker_pids = set()
+        self._on_episode = None
 
     def predict(self, observation, state=None, deterministic=True):
         self.policy.eval()
@@ -119,116 +88,75 @@ class MonteCarloModel:
         return result, state
 
     def learn(self, total_episodes: int, *, on_episode=None, on_update=None):
-        # Keine eigene Loss- oder Return-Berechnung: beides übernimmt Reinforce.
-        from tianshou.algorithm.modelfree.reinforce import DiscreteActorPolicy, Reinforce
-        from tianshou.algorithm.optim import AdamOptimizerFactory
-        from tianshou.data import Collector, VectorReplayBuffer
-        from tianshou.env import SubprocVectorEnv
-        from tianshou.trainer import OnPolicyTrainer, OnPolicyTrainerParams
+        """Sammelt neue Episoden und lässt Tianshou daraus lernen."""
+        # Nur beim Training importieren: Vorhersagen benötigen Tianshou nicht.
+        from .MonteCarloTraining import create_algorithm, create_collector, create_trainer
 
         total_episodes = positive_integer("total_episodes", total_episodes)
         if not self.episode_factories:
             raise ValueError("Zum Training werden Simulationsumgebungen benötigt.")
         if self.episodes_collected:
             raise ValueError("Ein neues Training benötigt ein neues MonteCarloModel.")
-        actor_policy = DiscreteActorPolicy(
-            actor=self.policy, action_space=self.action_space,
-            observation_space=self.observation_space,
-        )
-        self.algorithm = Reinforce(
-            policy=actor_policy, gamma=1.0, return_standardization=False,
-            optim=AdamOptimizerFactory(lr=self.learning_rate),
-        )
-        factories = []
-        for factory in self.episode_factories:
-            factories.append(_ProcessEnvironment(factory))
-        if len(factories) > min(total_episodes, self.episodes_per_update):
-            factories = factories[:min(total_episodes, self.episodes_per_update)]
-        workers = len(factories)
-        if self.buffer_capacity < workers:
-            raise ValueError("--buffer-size benötigt mindestens einen Platz pro Worker.")
 
-        class CompleteEpisodeCollector(Collector):
-            def collect(collector, *args, **kwargs):
-                result = super().collect(*args, **kwargs)
-                # Ringpuffer dürfen keine alten Teile der aktuellen MC-Episoden verdrängen.
-                if len(collector.buffer) != result.n_collected_steps:
-                    raise RuntimeError(
-                        "Der Sammelpuffer ist zu klein für die vollständigen Episoden. "
-                        "--buffer-size erhöhen oder --episodes-per-update verringern. "
-                        "Mit diesen unvollständigen Daten wurde nicht trainiert."
-                    )
-                if len(collector.buffer.unfinished_index()):
-                    raise RuntimeError("REINFORCE darf hier nur aus vollständigen Episoden lernen.")
-                return result
-
-        def record_episode(episode_batch):
-            if len(episode_batch) == 0:
-                raise RuntimeError("--buffer-size ist zu klein für eine vollständige Episode; bitte erhöhen.")
-            summary = str(episode_batch.info.episode_summary[-1])
-            if not summary:
-                raise RuntimeError("Die abgeschlossene Episode enthält keine Produktionskennzahlen.")
-            info = json.loads(summary)
-            length = len(episode_batch)
-            if length != int(info["decision_count"]):
-                raise RuntimeError("Der Sammelpuffer hat Episodenteile verdrängt. --buffer-size erhöhen; es wurde nicht trainiert.")
-            self.episodes_collected += 1
-            self.num_timesteps += length
-            self.worker_pids.add(int(info["worker_pid"]))
-            info["reward"] = float(np.sum(episode_batch.rew))
-            info["timesteps"] = self.num_timesteps
-            if on_episode is not None:
-                on_episode(info)
-            return None
-
-        environments = SubprocVectorEnv(factories, context="spawn")
+        self.algorithm = create_algorithm(self)
+        self._on_episode = on_episode
         collector = None
         try:
-            buffer = VectorReplayBuffer(
-                self.buffer_capacity, workers, ignore_obs_next=True,
-            )
-            collector = CompleteEpisodeCollector(
-                self.algorithm, environments, buffer,
-                on_episode_done_hook=record_episode,
-            )
-            params = OnPolicyTrainerParams(
-                training_collector=collector,
-                collection_step_num_env_steps=None,
-                collection_step_num_episodes=min(self.episodes_per_update, total_episodes),
-                max_epochs=math.ceil(total_episodes / self.episodes_per_update),
-                epoch_num_steps=1, batch_size=self.batch_size,
-                update_step_num_repetitions=1, verbose=False, show_progress=False,
-            )
+            collector = create_collector(self, total_episodes)
+            trainer = create_trainer(self, collector, total_episodes)
 
-            def prepare_collection(epoch, step):
-                params.collection_step_num_episodes = min(
-                    self.episodes_per_update, total_episodes - self.episodes_collected,
+            while self.episodes_collected < total_episodes:
+                # Die letzte Sammlung kann weniger Episoden enthalten.
+                remaining_episodes = total_episodes - self.episodes_collected
+                trainer.params.collection_step_num_episodes = min(
+                    self.episodes_per_update, remaining_episodes,
                 )
 
-            params.training_fn = prepare_collection
-            trainer = OnPolicyTrainer(self.algorithm, params)
-            trainer.reset()
-            while self.episodes_collected < total_episodes:
                 statistics = trainer.execute_epoch()
-                losses = statistics.training_stat.loss
-                self.last_loss = float(losses.mean)
-                # Adams gespeicherter Schrittzähler zählt die echten Gewichtsänderungen.
-                self.gradient_updates = 0
-                for state in self.algorithm.optim.state_dict()["state"].values():
-                    self.gradient_updates = max(self.gradient_updates, int(state.get("step", 0)))
-                if not math.isfinite(self.last_loss):
-                    raise RuntimeError("Das REINFORCE-Training lieferte keinen endlichen Loss.")
+                self._update_training_statistics(statistics)
+
                 if on_update is not None:
                     on_update(self, {
-                        "episodes": self.episodes_collected, "timesteps": self.num_timesteps,
-                        "gradient_updates": self.gradient_updates, "last_loss": self.last_loss,
+                        "episodes": self.episodes_collected,
+                        "timesteps": self.num_timesteps,
+                        "gradient_updates": self.gradient_updates,
+                        "last_loss": self.last_loss,
                     })
             return self
         finally:
+            self._on_episode = None
             if collector is not None:
                 collector.close()
-            else:
-                environments.close()
+
+    def _record_episode(self, episode_batch):
+        """Prüft eine beendete Episode, zählt sie und meldet ihre Kennzahlen."""
+        if len(episode_batch) == 0:
+            raise RuntimeError("--buffer-size ist zu klein für eine vollständige Episode; bitte erhöhen.")
+        summary = str(episode_batch.info.episode_summary[-1])
+        if not summary:
+            raise RuntimeError("Die abgeschlossene Episode enthält keine Produktionskennzahlen.")
+        info = json.loads(summary)
+        length = len(episode_batch)
+        if length != int(info["decision_count"]):
+            raise RuntimeError("Der Sammelpuffer hat Episodenteile verdrängt. --buffer-size erhöhen; es wurde nicht trainiert.")
+
+        self.episodes_collected += 1
+        self.num_timesteps += length
+        self.worker_pids.add(int(info["worker_pid"]))
+        info["reward"] = float(np.sum(episode_batch.rew))
+        info["timesteps"] = self.num_timesteps
+        if self._on_episode is not None:
+            self._on_episode(info)
+        return None
+
+    def _update_training_statistics(self, statistics):
+        """Übernimmt den Loss und zählt Adams bisherige Gewichtsänderungen."""
+        self.last_loss = float(statistics.training_stat.loss.mean)
+        self.gradient_updates = 0
+        for state in self.algorithm.optim.state_dict()["state"].values():
+            self.gradient_updates = max(self.gradient_updates, int(state.get("step", 0)))
+        if not math.isfinite(self.last_loss):
+            raise RuntimeError("Das REINFORCE-Training lieferte keinen endlichen Loss.")
 
     def save(self, path: str | Path) -> None:
         shapes = {}

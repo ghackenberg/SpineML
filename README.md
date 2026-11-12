@@ -53,6 +53,7 @@ sources/
 │   ├── run_rl_episode.py
 │   ├── train_rl_policy.py
 │   ├── monte_carlo_training.py
+│   ├── monte_carlo_reports.py
 │   └── evaluate_rl_policy.py
 └── SpineML/
     ├── Configuration/
@@ -79,6 +80,7 @@ sources/
         └── RLPolicy/
             ├── MonteCarlo/
             │   ├── MonteCarloModel.py
+            │   ├── MonteCarloTraining.py
             │   └── MonteCarloPolicy.py
             └── Shared/
                 ├── RLCandidatePolicy.py
@@ -2891,9 +2893,11 @@ neu trainiert werden.
 | Datei oder Bibliothek | Aufgabe |
 | --- | --- |
 | [MonteCarloPolicy.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloPolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
-| [MonteCarloModel.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
+| [MonteCarloModel.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloModel.py) | Enthält den Ablauf in `learn()`: Training vorbereiten, Episoden sammeln und lernen lassen, Fortschritt melden, Prozesse schließen. Lädt und speichert außerdem die Netzgewichte. |
+| [MonteCarloTraining.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloTraining.py) | Erstellt Lernalgorithmus, Simulationsprozesse, Episodensammler und Tianshou-Trainer. Prüft, dass nur vollständige Episoden zum Lernen verwendet werden. |
 | [train_rl_policy.py](sources/tools/train_rl_policy.py) | Liest die Trainingsparameter und bereitet Fabrikmodell und globale Bewertung vor. |
-| [monte_carlo_training.py](sources/tools/monte_carlo_training.py) | Schreibt Fortschritt, Zwischenstände, Manifest und Trainingsbericht. Keine eigene Lernregel. |
+| [monte_carlo_training.py](sources/tools/monte_carlo_training.py) | Bereitet das Modell vor, startet `learn()` und speichert den fertigen Netzstand. |
+| [monte_carlo_reports.py](sources/tools/monte_carlo_reports.py) | Schreibt Manifest, Episodenprotokoll, Fortschritt, Zwischenstände und Abschlussbericht. |
 | [Shared](sources/SpineML/Control/RLPolicy/Shared) | Gemeinsame Kandidatenauswahl, Beobachtungsencoder, Reward, Gymnasium-Umgebung und Einsatz trainierter Netze. |
 | [Tianshou `Reinforce`](https://tianshou.org/en/stable/03_api/algorithm/modelfree/reinforce.html) und [`OnPolicyTrainer`](https://tianshou.org/en/stable/03_api/trainer.html) | Fertige Return-Berechnung, Policy-Gradient-Lernregel und Trainingssteuerung. |
 
@@ -2918,17 +2922,115 @@ flowchart TD
     A --> B --> C --> D --> E --> A
 ```
 
-Während der Sammlung bleiben die Actor-Parameter unverändert. Im Training
-werden Aktionen aus seiner Wahrscheinlichkeitsverteilung gezogen. Nach
-`--episodes-per-update` Episoden passt Tianshou die Gewichte an; die letzte
-Datengruppe kann kleiner sein. Erst danach beginnt die nächste Sammlung.
-Der verwendete `VectorReplayBuffer` ist hier nur der Puffer dieser Datengruppe,
-kein Speicher zum späteren Wiederverwenden alter Trainingsphasen.
+### Trainingsablauf als Pseudocode
 
-Bei `gamma=1.0` ist der Return die Summe der tatsächlich beobachteten
-Belohnungen bis zum Episodenende. Da Zwischenbelohnungen `0` sind, erhält
-jede besuchte Entscheidung einer Episode deren Endbelohnung als Return.
-Das ist keine eigene unmittelbare Belohnung jeder Aktion.
+Der Pseudocode beschreibt den Ablauf von
+[`MonteCarloModel.learn()`](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloModel.py)
+und dem [Tianshou-Trainer](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloTraining.py).
+Die Zahlen sind ein Beispiel mit vier Simulationsprozessen. Sie lassen sich
+über die angegebenen [Trainingsparameter](#training-starten) ändern.
+**Das Gesamtbudget bestimmt die Anzahl aller Episoden. Die Episoden pro
+Lernphase bestimmen, nach wie vielen neuen Episoden der Actor trainiert wird.**
+
+```text
+Gesamtbudget = 100 Episoden         # --episodes
+Episoden_pro_Lernphase = 4          # --episodes-per-update
+Worker = 4                         # --workers
+Minibatchgröße = 64                 # --batch-size
+Lernrate = 0.0001                   # --learning-rate
+gamma = 1
+Gesammelte_Episoden = 0
+
+Actor-Netz mit zufälligen Parametern erstellen
+Adam einmal mit der vorgegebenen Lernrate erstellen
+Sammelpuffer und Worker-Prozesse einmal erstellen
+
+SOLANGE Gesammelte_Episoden < Gesamtbudget:
+
+    Verbleibende_Episoden = Gesamtbudget − Gesammelte_Episoden
+    Anzahl_dieser_Gruppe =
+        Minimum(Episoden_pro_Lernphase, Verbleibende_Episoden)
+
+    Actor-Parameter während der folgenden Sammlung unverändert lassen
+
+    FÜHRE Anzahl_dieser_Gruppe Episoden AUS,
+    mit höchstens Worker Simulationen gleichzeitig:
+
+        Simulation mit einem Trainings-Seed starten
+        Erste Beobachtung erhalten
+
+        SOLANGE die Episode nicht beendet ist:
+
+            Aktionskandidaten aus der Beobachtung lesen
+
+            Actor berechnet einen Logit pro Kandidat
+            Leere Kandidatenplätze maskieren
+            Logits in Auswahlwahrscheinlichkeiten umrechnen
+
+            Eine Aktion zufällig gemäß diesen Wahrscheinlichkeiten ziehen
+            NICHT automatisch die höchste Wahrscheinlichkeit wählen
+
+            Neue_Beobachtung, Belohnung, Episodenende =
+                Simulation führt die Aktion aus
+
+            Im Sammelpuffer speichern:
+                bisherige Beobachtung mit Kandidaten und Masken
+                gewählte Aktion
+                erhaltene Belohnung
+                Episodenende-Markierung
+
+            Beobachtung = Neue_Beobachtung
+
+        Gesammelte_Episoden += 1
+
+    Prüfen, dass alle Episoden dieser Gruppe vollständig gespeichert sind
+    Bei fehlenden Episodenteilen: Fehler melden, NICHT trainieren
+
+    FÜR jede Episode dieser Gruppe:
+
+        Return G für jede gespeicherte Entscheidung berechnen
+        Bei uns: G = Endbelohnung dieser Episode,
+                 weil gamma = 1 und Zwischenbelohnungen = 0 sind
+
+        Return der jeweiligen gespeicherten Entscheidung zuordnen
+
+    Gesammelte Entscheidungen mischen und anhand der Minibatchgröße aufteilen
+    Einen letzten Rest gegebenenfalls dem vorherigen Minibatch zuordnen
+
+    FÜR jeden Minibatch, mit genau einem Durchlauf über die Daten:
+
+        Actor mit den gespeicherten Beobachtungen erneut auswerten
+        Wahrscheinlichkeit der damals gewählten Aktionen bestimmen
+
+        Loss = −Mittelwert(G × log(Wahrscheinlichkeit der gewählten Aktion))
+
+        Gradienten des Loss berechnen
+        Adam passt die Actor-Gewichte und Bias-Werte an
+
+    Verwendete Episodendaten aus dem Sammelpuffer entfernen
+
+Worker-Prozesse schließen
+Trainiertes Actor-Netz speichern
+```
+
+Mit diesen Werten wird nach den Episoden **1–4** gelernt, danach nach **5–8**
+und so weiter bis **97–100**. Das sind 25 Lernphasen, nicht erst eine Lernphase
+nach allen 100 Episoden. Jede Lernphase kann mehrere Adam-Schritte enthalten,
+weil jeder Minibatch eine Parameteranpassung auslöst.
+
+Der Actor liegt im Hauptprozess; die Worker führen die Simulationen aus.
+Die [RL-Umgebung](#reward-und-episodenende) übernimmt Einzelkandidaten automatisch
+und meldet dem Netz nur Entscheidungen mit mehreren Kandidaten. Eine Episode
+endet regulär oder durch ein Sicherheitslimit. Ihre Endbelohnung ist **nicht**
+die unmittelbare Belohnung jeder vorherigen Aktion, sondern deren später
+berechneter Return.
+
+Im Training gibt es keine zusätzliche Epsilon-Greedy-Regel: Es wird aus den
+Actor-Wahrscheinlichkeiten gezogen. Erst bei der
+[späteren Auswertung](#auf-getrennten-test-seeds-vergleichen) wird standardmäßig
+die Aktion mit der höchsten Wahrscheinlichkeit gewählt. Tianshous
+`VectorReplayBuffer` enthält hier nur die aktuelle Datengruppe, keine alten
+Trainingsgruppen zum späteren Wiederverwenden.
 
 ### Kandidaten, Beobachtung und Aktionsmaske
 

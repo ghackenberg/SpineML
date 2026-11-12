@@ -17,6 +17,16 @@ def positive_integer(name: str, value: int) -> int:
     return int(value)
 
 
+def _create_encoder(input_size: int, embedding_size: int) -> nn.Sequential:
+    """Wandelt Merkmale in einen Vektor mit fester Länge um."""
+    return nn.Sequential(
+        nn.Linear(input_size, embedding_size),
+        nn.Tanh(),
+        nn.Linear(embedding_size, embedding_size),
+        nn.Tanh(),
+    )
+
+
 class MonteCarloPolicy(nn.Module):
     """Tianshou-Actor mit gepooltem Kontext und einem slotunabhängigen Scorer.
 
@@ -59,16 +69,15 @@ class MonteCarloPolicy(nn.Module):
         if self.shapes["entity_mask"] != (max_entities,):
             raise ValueError("entity_mask muss eine Stelle pro Entitätszeile haben.")
 
-        def encoder(size: int) -> nn.Sequential:
-            return nn.Sequential(nn.Linear(size, self.embedding_dim), nn.Tanh(),
-                                 nn.Linear(self.embedding_dim, self.embedding_dim), nn.Tanh())
-
-        self.context_encoder = encoder(self.shapes["context"][0])
-        self.entity_encoder = encoder(entity_size)
-        self.candidate_encoder = encoder(candidate_size)
+        self.context_encoder = _create_encoder(self.shapes["context"][0], self.embedding_dim)
+        self.entity_encoder = _create_encoder(entity_size, self.embedding_dim)
+        self.candidate_encoder = _create_encoder(candidate_size, self.embedding_dim)
         # Kontext + Mittelwert/Maximum beider Mengen + der einzelne Kandidat.
-        self.scorer = nn.Sequential(nn.Linear(6 * self.embedding_dim, self.hidden_dim),
-                                    nn.Tanh(), nn.Linear(self.hidden_dim, 1))
+        self.scorer = nn.Sequential(
+            nn.Linear(6 * self.embedding_dim, self.hidden_dim),
+            nn.Tanh(),
+            nn.Linear(self.hidden_dim, 1),
+        )
 
     @property
     def device(self) -> torch.device:
@@ -79,11 +88,13 @@ class MonteCarloPolicy(nn.Module):
 
     @staticmethod
     def _pool(rows: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        selected = mask.unsqueeze(-1)
-        mean = rows.masked_fill(~selected, 0).sum(dim=1)
-        mean = mean / selected.sum(dim=1).clamp_min(1)
-        maximum = rows.masked_fill(~selected, -torch.inf).amax(dim=1)
-        maximum = maximum.masked_fill(~selected.any(dim=1), 0)
+        # Nur belegte Zeilen gehen in Mittelwert und Maximum ein.
+        row_mask = mask.unsqueeze(-1)
+        row_sum = rows.masked_fill(~row_mask, 0).sum(dim=1)
+        row_count = row_mask.sum(dim=1).clamp_min(1)
+        mean = row_sum / row_count
+        maximum = rows.masked_fill(~row_mask, -torch.inf).amax(dim=1)
+        maximum = maximum.masked_fill(~row_mask.any(dim=1), 0)
         return mean, maximum
 
     def _observations(self, observation: Any) -> dict[str, torch.Tensor]:
@@ -125,10 +136,15 @@ class MonteCarloPolicy(nn.Module):
         context = self.context_encoder(values["context"])
         entity_features = self.entity_encoder(entities)
         candidate_features = self.candidate_encoder(candidates)
-        summary = torch.cat((context, *self._pool(entity_features, entity_mask),
-                             *self._pool(candidate_features, action_mask)), dim=1)
-        summary = summary.unsqueeze(1).expand(-1, self.max_actions, -1)
-        logits = self.scorer(torch.cat((summary, candidate_features), dim=2)).squeeze(-1)
+        entity_mean, entity_maximum = self._pool(entity_features, entity_mask)
+        candidate_mean, candidate_maximum = self._pool(candidate_features, action_mask)
+        summary = torch.cat((
+            context, entity_mean, entity_maximum, candidate_mean, candidate_maximum,
+        ), dim=1)
+        # Jeder Kandidat erhält denselben Kontext und seine eigenen Merkmale.
+        context_per_candidate = summary.unsqueeze(1).expand(-1, self.max_actions, -1)
+        combined_features = torch.cat((context_per_candidate, candidate_features), dim=2)
+        logits = self.scorer(combined_features).squeeze(-1)
         # Ungültige Kandidaten erhalten exakt Wahrscheinlichkeit 0.
         return logits.masked_fill(~action_mask, -torch.inf)
 

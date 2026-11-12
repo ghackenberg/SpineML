@@ -38,11 +38,11 @@ class _EpisodeInfo(gym.Wrapper):
 class _ProcessEnvironment:
     """Erzeugt eine Umgebung im Worker-Prozess."""
 
-    factory: object
+    environment_creator: object
 
     def __call__(self):
         torch.set_num_threads(1)
-        return _EpisodeInfo(self.factory())
+        return _EpisodeInfo(self.environment_creator())
 
 
 class CompleteEpisodeCollector(Collector):
@@ -78,14 +78,14 @@ def create_algorithm(model):
 
 def create_collector(model, total_episodes):
     """Startet die Simulationsprozesse und erstellt den Episodensammler."""
-    worker_count = min(len(model.episode_factories), total_episodes, model.episodes_per_update)
+    worker_count = min(len(model.environment_creators), total_episodes, model.episodes_per_update)
     if model.buffer_capacity < worker_count:
         raise ValueError("--buffer-size benötigt mindestens einen Platz pro Worker.")
-    factories = []
-    for factory in model.episode_factories[:worker_count]:
-        factories.append(_ProcessEnvironment(factory))
+    worker_creators = []
+    for creator in model.environment_creators[:worker_count]:
+        worker_creators.append(_ProcessEnvironment(creator))
 
-    environments = SubprocVectorEnv(factories, context="spawn")
+    environments = SubprocVectorEnv(worker_creators, context="spawn")
     try:
         buffer = VectorReplayBuffer(
             model.buffer_capacity, worker_count, ignore_obs_next=True,

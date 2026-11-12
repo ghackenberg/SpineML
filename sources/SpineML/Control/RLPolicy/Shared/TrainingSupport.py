@@ -261,7 +261,7 @@ class EpisodeSeedWrapper(gym.Wrapper):
 
 
 @dataclass(frozen=True)
-class EnvironmentFactory:
+class EnvironmentCreator:
     """Erstellt eine Trainingsumgebung mit den gespeicherten Einstellungen."""
 
     model_file: str | Path

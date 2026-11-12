@@ -21,7 +21,7 @@ class MonteCarloModel:
         self,
         observation_space: spaces.Dict,
         action_space: spaces.Discrete,
-        episode_factories=(),
+        environment_creators=(),
         *,
         learning_rate: float = 0.0001,
         batch_size: int = 64,
@@ -35,7 +35,7 @@ class MonteCarloModel:
     ):
         self.observation_space = observation_space
         self.action_space = action_space
-        self.episode_factories = tuple(episode_factories)
+        self.environment_creators = tuple(environment_creators)
         self.batch_size = positive_integer("batch_size", batch_size)
         self.episodes_per_update = positive_integer("episodes_per_update", episodes_per_update)
         self.max_decisions = positive_integer("max_decisions", max_decisions)
@@ -43,7 +43,7 @@ class MonteCarloModel:
             raise ValueError("learning_rate muss endlich und positiv sein.")
         self.learning_rate = float(learning_rate)
         if buffer_capacity is None:
-            workers = max(1, min(len(self.episode_factories), self.episodes_per_update))
+            workers = max(1, min(len(self.environment_creators), self.episodes_per_update))
             # Jeder Worker hat einen eigenen Puffer. Ein schneller Worker kann
             # mehrere Episoden sammeln, während die anderen noch ihre erste beenden.
             episodes_per_worker = self.episodes_per_update - workers + 1
@@ -93,7 +93,7 @@ class MonteCarloModel:
         from .MonteCarloTraining import create_algorithm, create_collector, create_trainer
 
         total_episodes = positive_integer("total_episodes", total_episodes)
-        if not self.episode_factories:
+        if not self.environment_creators:
             raise ValueError("Zum Training werden Simulationsumgebungen benötigt.")
         if self.episodes_collected:
             raise ValueError("Ein neues Training benötigt ein neues MonteCarloModel.")

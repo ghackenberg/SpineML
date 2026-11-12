@@ -7,22 +7,23 @@ from tools.monte_carlo_reports import MonteCarloReports, write_manifest
 
 def train_monte_carlo(args, context: dict, baseline_report: dict, started_at: float) -> None:
     from SpineML.Control.RLPolicy.MonteCarlo.MonteCarloModel import MonteCarloModel
-    from SpineML.Control.RLPolicy.Shared.TrainingSupport import EnvironmentFactory
+    from SpineML.Control.RLPolicy.Shared.TrainingSupport import EnvironmentCreator
 
     output = args.output.resolve()
     active_workers = min(args.workers, args.episodes, args.episodes_per_update)
-    factories = []
+    environment_creators = []
     for rank in range(active_workers):
-        factories.append(EnvironmentFactory(
+        environment_creators.append(EnvironmentCreator(
             context["model_file"], context, context["environment"],
             tuple(args.train_seeds), rank,
         ))
 
     # Nur die Ein- und Ausgabegrößen lesen; echte Episoden laufen in eigenen Prozessen.
-    environment = factories[0]()
+    environment = environment_creators[0]()
     try:
         model = MonteCarloModel(
-            environment.observation_space, environment.action_space, factories,
+            environment.observation_space, environment.action_space,
+            environment_creators=environment_creators,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,
             episodes_per_update=args.episodes_per_update,

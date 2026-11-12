@@ -80,7 +80,7 @@ def main() -> None:
         from SpineML.Control.RLPolicy.Shared.TrainingSupport import (
             build_artifact_context, calibrate_references, load_app_configuration,
         )
-        from tools.reinforce_training import train_reinforce
+        from tools.monte_carlo_training import train_monte_carlo
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen: python -m pip install -e ".[rl-training]"\n{error}')
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -122,7 +122,7 @@ def main() -> None:
     }
     context = build_artifact_context(model_file, evaluation, env_config)
     args.output.mkdir(parents=True, exist_ok=True)
-    train_reinforce(args, context, baseline_report, started_at)
+    train_monte_carlo(args, context, baseline_report, started_at)
 
 
 if __name__ == "__main__":

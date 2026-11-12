@@ -52,7 +52,7 @@ sources/
 │   ├── measure_simulation_runtime.py
 │   ├── run_rl_episode.py
 │   ├── train_rl_policy.py
-│   ├── reinforce_training.py
+│   ├── monte_carlo_training.py
 │   └── evaluate_rl_policy.py
 └── SpineML/
     ├── Configuration/
@@ -78,8 +78,8 @@ sources/
         │   └── WeightOptimization/LocalHeuristicWeightOptimizer.py
         └── RLPolicy/
             ├── MonteCarlo/
-            │   ├── ReinforceModel.py
-            │   └── ReinforcePolicy.py
+            │   ├── MonteCarloModel.py
+            │   └── MonteCarloPolicy.py
             └── Shared/
                 ├── RLCandidatePolicy.py
                 ├── RLObservationEncoder.py
@@ -2890,10 +2890,10 @@ neu trainiert werden.
 
 | Datei oder Bibliothek | Aufgabe |
 | --- | --- |
-| [ReinforcePolicy.py](sources/SpineML/Control/RLPolicy/MonteCarlo/ReinforcePolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
-| [ReinforceModel.py](sources/SpineML/Control/RLPolicy/MonteCarlo/ReinforceModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
+| [MonteCarloPolicy.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloPolicy.py) | Eigener Actor für die Dict-Beobachtung, Kandidaten und Aktionsmaske. |
+| [MonteCarloModel.py](sources/SpineML/Control/RLPolicy/MonteCarlo/MonteCarloModel.py) | Verbindet Actor, Salabim-Umgebungen und den fertigen Tianshou-Trainer; lädt und speichert die Netzgewichte. |
 | [train_rl_policy.py](sources/tools/train_rl_policy.py) | Liest die Trainingsparameter und bereitet Fabrikmodell und globale Bewertung vor. |
-| [reinforce_training.py](sources/tools/reinforce_training.py) | Schreibt Fortschritt, Zwischenstände, Manifest und Trainingsbericht. Keine eigene Lernregel. |
+| [monte_carlo_training.py](sources/tools/monte_carlo_training.py) | Schreibt Fortschritt, Zwischenstände, Manifest und Trainingsbericht. Keine eigene Lernregel. |
 | [Shared](sources/SpineML/Control/RLPolicy/Shared) | Gemeinsame Kandidatenauswahl, Beobachtungsencoder, Reward, Gymnasium-Umgebung und Einsatz trainierter Netze. |
 | [Tianshou `Reinforce`](https://tianshou.org/en/stable/03_api/algorithm/modelfree/reinforce.html) und [`OnPolicyTrainer`](https://tianshou.org/en/stable/03_api/trainer.html) | Fertige Return-Berechnung, Policy-Gradient-Lernregel und Trainingssteuerung. |
 

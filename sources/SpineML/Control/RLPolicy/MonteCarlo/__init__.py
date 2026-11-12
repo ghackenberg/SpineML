@@ -1,6 +1,6 @@
 """Monte-Carlo-Training mit Tianshous fertigem REINFORCE-Verfahren."""
 
-from .ReinforceModel import ReinforceModel
-from .ReinforcePolicy import ReinforcePolicy
+from .MonteCarloModel import MonteCarloModel
+from .MonteCarloPolicy import MonteCarloPolicy
 
-__all__ = ["ReinforceModel", "ReinforcePolicy"]
+__all__ = ["MonteCarloModel", "MonteCarloPolicy"]

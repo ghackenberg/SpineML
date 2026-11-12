@@ -15,7 +15,7 @@ from gymnasium import spaces
 import numpy as np
 import torch
 
-from .ReinforcePolicy import ReinforcePolicy, positive_integer
+from .MonteCarloPolicy import MonteCarloPolicy, positive_integer
 
 
 class _EpisodeInfo(gym.Wrapper):
@@ -46,7 +46,7 @@ class _ProcessEnvironment:
         return _EpisodeInfo(self.factory())
 
 
-class ReinforceModel:
+class MonteCarloModel:
     """Unsere Ein-/Ausgabeanbindung; die Lernregel kommt unverändert aus Tianshou."""
 
     def __init__(
@@ -95,7 +95,7 @@ class ReinforceModel:
             np.random.seed(seed)
             torch.manual_seed(seed)
         self.seed = seed
-        self.policy = ReinforcePolicy(
+        self.policy = MonteCarloPolicy(
             observation_space, action_space, embedding_dim, hidden_dim,
         ).to(self.device)
         self.algorithm = None
@@ -130,7 +130,7 @@ class ReinforceModel:
         if not self.episode_factories:
             raise ValueError("Zum Training werden Simulationsumgebungen benötigt.")
         if self.episodes_collected:
-            raise ValueError("Ein neues Training benötigt ein neues ReinforceModel.")
+            raise ValueError("Ein neues Training benötigt ein neues MonteCarloModel.")
         actor_policy = DiscreteActorPolicy(
             actor=self.policy, action_space=self.action_space,
             observation_space=self.observation_space,

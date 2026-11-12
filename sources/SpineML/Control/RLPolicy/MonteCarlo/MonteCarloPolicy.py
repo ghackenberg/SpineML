@@ -17,7 +17,7 @@ def positive_integer(name: str, value: int) -> int:
     return int(value)
 
 
-class ReinforcePolicy(nn.Module):
+class MonteCarloPolicy(nn.Module):
     """Tianshou-Actor mit gepooltem Kontext und einem slotunabhängigen Scorer.
 
     Die Maske wird vor der Wahrscheinlichkeitsverteilung angewendet. Ein leerer

@@ -31,11 +31,12 @@ def training_algorithm_classes(manifest: Mapping):
     """Prüft den gespeicherten Trainer und liefert seine Modell- und Netzklasse."""
     algorithm = manifest.get("algorithm")
     policy_class = manifest.get("policy_class")
-    if algorithm == "TianshouREINFORCE" and policy_class == "ReinforcePolicy":
-        from ..MonteCarlo.ReinforceModel import ReinforceModel
-        from ..MonteCarlo.ReinforcePolicy import ReinforcePolicy
+    # Vor der Umbenennung gespeicherte Tianshou-Netze bleiben ladbar.
+    if algorithm == "TianshouREINFORCE" and policy_class in ("MonteCarloPolicy", "ReinforcePolicy"):
+        from ..MonteCarlo.MonteCarloModel import MonteCarloModel
+        from ..MonteCarlo.MonteCarloPolicy import MonteCarloPolicy
 
-        return ReinforceModel, ReinforcePolicy
+        return MonteCarloModel, MonteCarloPolicy
     raise ValueError("Nur Tianshou-REINFORCE-Checkpoints werden unterstützt. Ältere Q- oder Dreamer-Netze können nicht umgewandelt werden; bitte neu trainieren.")
 
 

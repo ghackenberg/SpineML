@@ -13,10 +13,10 @@ def _write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
-def train_reinforce(args, context: dict, baseline_report: dict, started_at: float) -> None:
+def train_monte_carlo(args, context: dict, baseline_report: dict, started_at: float) -> None:
     import torch
 
-    from SpineML.Control.RLPolicy.MonteCarlo.ReinforceModel import ReinforceModel
+    from SpineML.Control.RLPolicy.MonteCarlo.MonteCarloModel import MonteCarloModel
     from SpineML.Control.RLPolicy.Shared.TrainingSupport import EnvironmentFactory
 
     output = args.output.resolve()
@@ -31,7 +31,7 @@ def train_reinforce(args, context: dict, baseline_report: dict, started_at: floa
     # Nur die Ein- und Ausgabegrößen lesen; echte Episoden laufen in eigenen Prozessen.
     environment = factories[0]()
     try:
-        model = ReinforceModel(
+        model = MonteCarloModel(
             environment.observation_space, environment.action_space, factories,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,
@@ -59,7 +59,7 @@ def train_reinforce(args, context: dict, baseline_report: dict, started_at: floa
         runtime["gpu_name"] = torch.cuda.get_device_name(model.device)
     manifest = {
         "algorithm": "TianshouREINFORCE",
-        "policy_class": "ReinforcePolicy",
+        "policy_class": "MonteCarloPolicy",
         "checkpoint_file": "model.pt",
         "artifact_context": context,
         "baseline": baseline_report,

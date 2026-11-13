@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-import random
 
 from gymnasium import spaces
 import numpy as np
@@ -57,7 +56,6 @@ class MonteCarloModel:
         if seed is not None:
             if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
                 raise ValueError("seed muss eine ganze Zahl zwischen 0 und 2**32-1 sein.")
-            random.seed(seed)
             np.random.seed(seed)
             torch.manual_seed(seed)
         self.seed = seed

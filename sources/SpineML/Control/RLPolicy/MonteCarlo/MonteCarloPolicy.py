@@ -48,25 +48,18 @@ class MonteCarloPolicy(nn.Module):
             raise ValueError("REINFORCE benötigt einen Dict-Beobachtungsraum.")
         if not isinstance(action_space, spaces.Discrete) or action_space.start != 0:
             raise ValueError("REINFORCE benötigt Discrete-Aktionen ab Index 0.")
-        # Erwartete Datenform für die Prüfung: 1 = Zahlenliste, 2 = Tabelle.
-        ranks = {
-            "context": 1,      # Allgemeine Informationen zur aktuellen Entscheidung.
-            "entities": 2,     # Eine Zeile pro Job, Roboter oder Maschine; Spalten sind Merkmale.
-            "entity_mask": 1,  # Welche Objektzeilen sind echt und welche nur Auffüllplätze?
-            "candidates": 2,   # Eine Zeile pro angebotener Aktion; Spalten sind Merkmale.
-            "action_mask": 1,  # Welche Kandidatenplätze sind echt und welche leer?
-        }
-        if set(observation_space.spaces) != set(ranks):
+        # Eingabefelder, deren Größen für den Netzaufbau gespeichert werden.
+        observation_fields = (
+            "context",      # Allgemeine Informationen zur aktuellen Entscheidung.
+            "entities",     # Eine Zeile pro Job, Roboter oder Maschine; Spalten sind Merkmale.
+            "entity_mask",  # Welche Objektzeilen sind echt und welche nur Auffüllplätze?
+            "candidates",   # Eine Zeile pro angebotener Aktion; Spalten sind Merkmale.
+            "action_mask",  # Welche Kandidatenplätze sind echt und welche leer?
+        )
+        if set(observation_space.spaces) != set(observation_fields):
             raise ValueError("Der Beobachtungsraum muss die fünf Kandidatenfelder enthalten.")
-        for name, rank in ranks.items():
-            shape = observation_space[name].shape
-            if shape is None or len(shape) != rank:
-                raise ValueError(f"Ungültige Form des Beobachtungsfeldes {name!r}.")
-            for size in shape:
-                if size < 1:
-                    raise ValueError(f"Leeres Beobachtungsfeld {name!r}.")
         self.shapes = {}
-        for name in ranks:
+        for name in observation_fields:
             self.shapes[name] = observation_space[name].shape
         self.max_actions, candidate_size = self.shapes["candidates"]
         max_entities, entity_size = self.shapes["entities"]

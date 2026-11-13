@@ -48,8 +48,14 @@ class MonteCarloPolicy(nn.Module):
             raise ValueError("REINFORCE benötigt einen Dict-Beobachtungsraum.")
         if not isinstance(action_space, spaces.Discrete) or action_space.start != 0:
             raise ValueError("REINFORCE benötigt Discrete-Aktionen ab Index 0.")
-        ranks = {"context": 1, "entities": 2, "entity_mask": 1,
-                 "candidates": 2, "action_mask": 1}
+        # Erwartete Datenform für die Prüfung: 1 = Zahlenliste, 2 = Tabelle.
+        ranks = {
+            "context": 1,      # Allgemeine Informationen zur aktuellen Entscheidung.
+            "entities": 2,     # Eine Zeile pro Job, Roboter oder Maschine; Spalten sind Merkmale.
+            "entity_mask": 1,  # Welche Objektzeilen sind echt und welche nur Auffüllplätze?
+            "candidates": 2,   # Eine Zeile pro angebotener Aktion; Spalten sind Merkmale.
+            "action_mask": 1,  # Welche Kandidatenplätze sind echt und welche leer?
+        }
         if set(observation_space.spaces) != set(ranks):
             raise ValueError("Der Beobachtungsraum muss die fünf Kandidatenfelder enthalten.")
         for name, rank in ranks.items():

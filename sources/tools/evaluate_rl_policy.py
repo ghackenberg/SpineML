@@ -78,6 +78,16 @@ def main() -> None:
         from SpineML.SimulationExecution.SimulationRunner import SimulationRunner
     except ImportError as error:
         parser.error(f'Trainingspakete fehlen. Installieren: python -m pip install -e ".[rl-training]"\n{error}')
+    if not torch.cuda.is_available():
+        parser.error("NN-Vorhersagen benötigen eine CUDA-GPU und CUDA-PyTorch. Kein CPU-Fallback.")
+    device = torch.device("cuda")
+    try:
+        probe = torch.ones(1, device=device)
+        torch.cuda.synchronize(device)
+        del probe
+    except RuntimeError as error:
+        parser.error(f"Die CUDA-GPU ist für NN-Vorhersagen nicht verfügbar. Die Auswertung wurde nicht gestartet.\n{error}")
+    gpu_index = torch.cuda.current_device()
     algorithm = manifest["algorithm"]
     policy_name = "RL (Tianshou REINFORCE)"
     torch.set_num_threads(1)
@@ -108,9 +118,9 @@ def main() -> None:
     python_rng = random.getstate()
     numpy_rng = np.random.get_state()
     try:
-        with torch.random.fork_rng(devices=[]):
+        with torch.random.fork_rng(devices=[gpu_index]):
             network = algorithm_class.load(
-                checkpoint, device="cpu", seed=None,
+                checkpoint, device=device, seed=None,
             )
     finally:
         random.setstate(python_rng)
@@ -139,7 +149,7 @@ def main() -> None:
             # Exploration erhält einen eigenen Zufallsstrom je Test-Seed.
             policy_python_rng = random.Random(seed).getstate()
             policy_numpy_rng = np.random.RandomState(np.random.SeedSequence(seed).generate_state(4)).get_state()
-            policy_torch_rng = torch.Generator(device="cpu").manual_seed(seed).get_state()
+            policy_cuda_rng = torch.Generator(device=device).manual_seed(seed).get_state()
             run_started_at = perf_counter()
             observation, info = environment.reset(seed=seed)
             terminated = False
@@ -152,12 +162,12 @@ def main() -> None:
                 try:
                     random.setstate(policy_python_rng)
                     np.random.set_state(policy_numpy_rng)
-                    with torch.random.fork_rng(devices=[]):
-                        torch.set_rng_state(policy_torch_rng)
+                    with torch.random.fork_rng(devices=[gpu_index]):
+                        torch.cuda.set_rng_state(policy_cuda_rng, gpu_index)
                         action, recurrent_state = network.predict(
                             observation, state=recurrent_state, deterministic=not args.explore,
                         )
-                        policy_torch_rng = torch.get_rng_state()
+                        policy_cuda_rng = torch.cuda.get_rng_state(gpu_index)
                     policy_python_rng = random.getstate()
                     policy_numpy_rng = np.random.get_state()
                 finally:

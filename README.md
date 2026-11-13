@@ -3159,7 +3159,7 @@ Es gibt keine Algorithmusauswahl und keine alten Epsilon-/Replay-Trainingsoption
 | `--max-simulation-time` | `10000.0` | Grenze der simulierten Stunden je Episode. |
 | `--max-actions` / `--max-entities` | `256` / `256` | Feste Zeilenkapazitäten. |
 | `--checkpoint-every` | `10` | Episodenabstand für Zwischenstände nach Lernphasen. |
-| `--device` | `cuda` | Das Netz wird ausschließlich auf der CUDA-GPU trainiert. Kein CPU-Fallback. |
+| `--device` | `cuda` | Netztraining und Vorhersagen verwenden ausschließlich CUDA. Kein CPU-Fallback. |
 
 Aktiv sind `min(workers, episodes, episodes_per_update)` getrennte
 CPU-Prozesse über Tianshous
@@ -3173,12 +3173,12 @@ statt mit abgeschnittenen Episoden-Returns zu lernen. Lange Episoden und große
 Beobachtungen können viel Arbeitsspeicher benötigen. Ein größerer Wert für
 `--episodes-per-update` kann deshalb einen größeren `--buffer-size` erfordern.
 
-Das neuronale Netz wird ausschließlich auf der CUDA-GPU trainiert.
+Training und Vorhersagen des neuronalen Netzes verwenden ausschließlich die CUDA-GPU.
 Dafür sind eine NVIDIA-GPU und eine passende CUDA-PyTorch-Installation nötig.
 Ist CUDA nicht verfügbar, bricht der Start vor den Baseline-Läufen ab;
-es wird nicht auf CPU-Training umgeschaltet. Salabim und die parallelen
-Simulationsprozesse bleiben auf der CPU. Gespeicherte Netze können für die
-Auswertung weiterhin ausdrücklich auf der CPU geladen werden.
+es wird nicht auf die CPU umgeschaltet. Auch das Laden und Auswerten
+gespeicherter Netze verlangt CUDA. Salabim und die parallelen
+Simulationsprozesse bleiben auf der CPU.
 Ein GPU-Geschwindigkeitsvorteil oder eine bessere Produktionssteuerung wird
 nicht zugesichert.
 
@@ -3215,6 +3215,9 @@ Der Befehl lädt `model.pt` über `manifest.json` und vergleicht
 `RL (Tianshou REINFORCE)` mit `Random` und `Heuristic (default)`.
 Alle verwenden dieselben reservierten Test-Seeds und globalen Bewertungsvorgaben.
 Die Netzgewichte bleiben unverändert.
+
+Auch dieser Vergleich führt die Netzvorhersagen auf der CUDA-GPU aus.
+Ohne nutzbares CUDA startet keine Auswertung.
 
 - Standardmäßig wird der gültige Kandidat mit der höchsten Actor-Wahrscheinlichkeit gewählt.
 - `--explore`, auch `--stochastic`, zieht stattdessen aus der Actor-Verteilung.

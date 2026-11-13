@@ -65,7 +65,7 @@ class TrainedCandidatePolicy(Policy):
         model_file: str | Path | None = None,
         deterministic: bool = True,
         seed: int = 0,
-        device: str = "cpu",
+        device: str = "cuda",
     ):
         seed = _validate_options(deterministic, seed)
         self.run_directory = Path(run_directory).resolve()
@@ -105,19 +105,21 @@ class TrainedCandidatePolicy(Policy):
             max_entities=context["environment"]["max_entities"],
         )
 
-        if device == "auto":
-            device = "cuda" if th.cuda.is_available() else "cpu"
         selected_device = th.device(device)
-        if selected_device.type == "cuda" and not th.cuda.is_available():
-            selected_device = th.device("cpu")
-        if selected_device.type not in ("cpu", "cuda"):
-            raise ValueError("Die isolierte NN-Vorhersage unterstützt device='cpu' oder CUDA.")
-        self._rng_devices = []
-        if selected_device.type == "cuda":
-            device_index = selected_device.index
-            if device_index is None:
-                device_index = th.cuda.current_device()
-            self._rng_devices.append(device_index)
+        if selected_device.type != "cuda":
+            raise ValueError("NN-Vorhersagen benötigen eine CUDA-GPU. CPU-Ausführung ist nicht vorgesehen.")
+        if not th.cuda.is_available():
+            raise ValueError("CUDA ist in dieser PyTorch-Installation nicht verfügbar. Kein CPU-Fallback.")
+        try:
+            probe = th.ones(1, device=selected_device)
+            th.cuda.synchronize(selected_device)
+            del probe
+        except RuntimeError as error:
+            raise RuntimeError("Die CUDA-GPU ist für NN-Vorhersagen nicht verfügbar.") from error
+        device_index = selected_device.index
+        if device_index is None:
+            device_index = th.cuda.current_device()
+        self._rng_devices = [device_index]
         # Laden und Vorhersagen dürfen den Zufall der Simulation nicht verändern.
         # seed=None verhindert globales Python-/NumPy-Seeding beim Laden.
         python_rng = random.getstate()
@@ -154,10 +156,7 @@ class TrainedCandidatePolicy(Policy):
         self._python_rng_state = random.Random(seed).getstate()
         # SeedSequence übernimmt auch Seeds oberhalb von 2**32-1.
         self._numpy_rng_state = np.random.RandomState(np.random.SeedSequence(seed).generate_state(4)).get_state()
-        self._cpu_rng_state = th.Generator(device="cpu").manual_seed(seed).get_state()
-        self._cuda_rng_state = None
-        if self._rng_devices:
-            self._cuda_rng_state = th.Generator(device=selected_device).manual_seed(seed).get_state()
+        self._cuda_rng_state = th.Generator(device=selected_device).manual_seed(seed).get_state()
         self._candidate_policy = RLCandidatePolicy(self._select_candidate)
 
     def _select_candidate(self, request: DecisionRequest) -> int:
@@ -174,9 +173,7 @@ class TrainedCandidatePolicy(Policy):
             random.setstate(self._python_rng_state)
             np.random.set_state(self._numpy_rng_state)
             with th.random.fork_rng(devices=self._rng_devices):
-                th.set_rng_state(self._cpu_rng_state)
-                if self._rng_devices:
-                    th.cuda.set_rng_state(self._cuda_rng_state, self._rng_devices[0])
+                th.cuda.set_rng_state(self._cuda_rng_state, self._rng_devices[0])
                 observation_copy = {}
                 for name, value in observation.items():
                     observation_copy[name] = value.copy()
@@ -185,9 +182,7 @@ class TrainedCandidatePolicy(Policy):
                     state=self._recurrent_state,
                     deterministic=self.deterministic,
                 )
-                self._cpu_rng_state = th.get_rng_state()
-                if self._rng_devices:
-                    self._cuda_rng_state = th.cuda.get_rng_state(self._rng_devices[0])
+                self._cuda_rng_state = th.cuda.get_rng_state(self._rng_devices[0])
             self._python_rng_state = random.getstate()
             self._numpy_rng_state = np.random.get_state()
         finally:
@@ -216,7 +211,7 @@ class TrainedPolicyFactory:
 
     run_directory: str | Path
     deterministic: bool = True
-    device: str = "cpu"
+    device: str = "cuda"
 
     def __post_init__(self) -> None:
         _validate_options(self.deterministic, 0)

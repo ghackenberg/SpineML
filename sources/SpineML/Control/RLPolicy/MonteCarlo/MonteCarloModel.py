@@ -50,9 +50,9 @@ class MonteCarloModel:
             buffer_capacity = self.max_decisions * workers * episodes_per_worker
         self.buffer_capacity = positive_integer("buffer_capacity", buffer_capacity)
         self.device = torch.device(device)
-        if self.device.type not in ("cpu", "cuda"):
-            raise ValueError("Das Netz unterstützt CPU und CUDA; trainiert wird nur mit CUDA.")
-        if self.device.type == "cuda" and not torch.cuda.is_available():
+        if self.device.type != "cuda":
+            raise ValueError("Das Netz benötigt CUDA für Training und Vorhersagen.")
+        if not torch.cuda.is_available():
             raise ValueError("CUDA ist in dieser PyTorch-Installation nicht verfügbar.")
         if seed is not None:
             if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
@@ -80,6 +80,7 @@ class MonteCarloModel:
                 actions = logits.argmax(dim=1)
             else:
                 actions = torch.distributions.Categorical(logits=logits).sample()
+        # Nur den gewählten Kandidatenindex an die CPU-Simulation zurückgeben.
         result = actions.cpu().numpy()
         if np.ndim(observation["context"]) == 1:
             result = result.reshape(())
@@ -87,8 +88,6 @@ class MonteCarloModel:
 
     def learn(self, total_episodes: int, *, on_episode=None, on_update=None):
         """Sammelt neue Episoden und lässt Tianshou daraus lernen."""
-        if self.device.type != "cuda":
-            raise ValueError("Das Training benötigt eine CUDA-GPU. CPU ist nur für die Auswertung vorgesehen.")
         # Nur beim Training importieren: Vorhersagen benötigen Tianshou nicht.
         from .MonteCarloTraining import create_algorithm, create_collector, create_trainer
 
@@ -170,9 +169,14 @@ class MonteCarloModel:
         }, Path(path))
 
     @classmethod
-    def load(cls, path: str | Path, *, device="cpu", seed=None):
+    def load(cls, path: str | Path, *, device="cuda", seed=None):
+        device = torch.device(device)
+        if device.type != "cuda":
+            raise ValueError("Das Netz benötigt CUDA für Training und Vorhersagen.")
+        if not torch.cuda.is_available():
+            raise ValueError("CUDA ist in dieser PyTorch-Installation nicht verfügbar.")
         # Ausschließlich Tensoren und einfache Metadaten laden, keine Python-Objekte.
-        checkpoint = torch.load(Path(path), map_location="cpu", weights_only=True)
+        checkpoint = torch.load(Path(path), map_location=device, weights_only=True)
         if checkpoint.get("format_version") != 1 or checkpoint.get("algorithm") != "TianshouREINFORCE":
             raise ValueError("Kein unterstützter Tianshou-REINFORCE-Checkpoint.")
         observation_spaces = {}

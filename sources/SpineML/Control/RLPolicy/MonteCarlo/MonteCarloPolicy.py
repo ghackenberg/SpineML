@@ -48,7 +48,7 @@ class MonteCarloPolicy(nn.Module):
             raise ValueError("REINFORCE benötigt einen Dict-Beobachtungsraum.")
         if not isinstance(action_space, spaces.Discrete) or action_space.start != 0:
             raise ValueError("REINFORCE benötigt Discrete-Aktionen ab Index 0.")
-        # Eingabefelder, deren Größen für den Netzaufbau gespeichert werden.
+        # Eingabefelder des Netzes.
         observation_fields = (
             "context",      # Allgemeine Informationen zur aktuellen Entscheidung.
             "entities",     # Eine Zeile pro Job, Roboter oder Maschine; Spalten sind Merkmale.
@@ -58,17 +58,15 @@ class MonteCarloPolicy(nn.Module):
         )
         if set(observation_space.spaces) != set(observation_fields):
             raise ValueError("Der Beobachtungsraum muss die fünf Kandidatenfelder enthalten.")
-        self.shapes = {}
-        for name in observation_fields:
-            self.shapes[name] = observation_space[name].shape
-        self.max_actions, candidate_size = self.shapes["candidates"]
-        max_entities, entity_size = self.shapes["entities"]
-        if self.shapes["action_mask"] != (self.max_actions,) or action_space.n != self.max_actions:
+        self.observation_space = observation_space
+        self.max_actions, candidate_size = observation_space["candidates"].shape
+        max_entities, entity_size = observation_space["entities"].shape
+        if observation_space["action_mask"].shape != (self.max_actions,) or action_space.n != self.max_actions:
             raise ValueError("Aktionsraum, Kandidaten und action_mask müssen gleich groß sein.")
-        if self.shapes["entity_mask"] != (max_entities,):
+        if observation_space["entity_mask"].shape != (max_entities,):
             raise ValueError("entity_mask muss eine Stelle pro Entitätszeile haben.")
 
-        self.context_encoder = _create_encoder(self.shapes["context"][0], self.embedding_dim)
+        self.context_encoder = _create_encoder(observation_space["context"].shape[0], self.embedding_dim)
         self.entity_encoder = _create_encoder(entity_size, self.embedding_dim)
         self.candidate_encoder = _create_encoder(candidate_size, self.embedding_dim)
         # Kontext + Mittelwert/Maximum beider Mengen + der einzelne Kandidat.
@@ -100,7 +98,8 @@ class MonteCarloPolicy(nn.Module):
         result = {}
         try:
             unbatched = np.ndim(observation["context"]) == 1
-            for name, shape in self.shapes.items():
+            for name, field_space in self.observation_space.spaces.items():
+                shape = field_space.shape
                 value = torch.as_tensor(observation[name], device=self.device)
                 if unbatched:
                     value = value.unsqueeze(0)
